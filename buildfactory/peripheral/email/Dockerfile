@@ -8,10 +8,10 @@
 # Unlike the Hub/control services (bind-mounted source on a shared lean image),
 # the two packages are COPIED in: the mail backend is pluggable as a UNIT
 # (design §1) and boto3 is its only third-party dep — a dedicated image keeps
-# that dep out of every other service. Rebuild with `make mail-up`.
+# that dep out of every other service. This reference image is not wired into
+# the active Team Compose.
 #
-# Build context = repo root (compose: build.context ".", dockerfile this
-# file), filtered by the root .dockerignore.
+# Manual build context = repo root, filtered by the root .dockerignore.
 FROM python:3.12-slim
 
 RUN pip install --no-cache-dir boto3

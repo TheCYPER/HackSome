@@ -1,7 +1,6 @@
-# Build-context filter for images built from the REPO ROOT (currently only
-# peripheral/email/Dockerfile → the singleton mail-router service). Allowlist style:
-# without this, `make mail-up` would ship the whole repo
-# (~2GB: .venv-cua, .git, state/) to the daemon on every build.
+# Build-context filter for manually building the retained reference
+# peripheral/email/Dockerfile from the repository root. Without this, a direct
+# build would ship the whole repo (~2GB: .venv-cua, .git, state/) to the daemon.
 # NB: orchestration/Dockerfile.control builds from context `orchestration` and
 # is NOT affected by this file.
 *

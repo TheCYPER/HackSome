@@ -27,7 +27,8 @@ resident Lead
 - quiet heartbeat 默认每 60 秒检查一次；只有 Goal 队列为空时才唤醒 Lead。
   batch 清空仍会通过 `goal_batch_drained` 立即唤醒。
 - Lead 与 Worker 对 `/project` 完整读写；Verifier 的 canonical `/project` 只读。
-- 三个 active AgentSpec 都是 `skills: []`。Skill 框架保留，但第一版不物化 Skill。
+- 三个 active AgentSpec 都是 `skills: []`。Skill 框架保留，但仓库不再附带或
+  物化任何业务 Skill。
 
 `/project/reference/challenge.md` 与
 `/project/reference/initial-idea-card.md` 只是初始化材料。Agent 可以修改、
@@ -77,6 +78,7 @@ make validate
 ```
 
 Active 契约见
-`.trellis/spec/backend/hackathon-team-runtime-contracts.md`。旧 Company、mail、
-Department 和 Peripheral 源码暂时保留为 BuildFactory 上游参考，但不进入
-`docker-compose.yml` 的 active runtime。
+`.trellis/spec/backend/hackathon-team-runtime-contracts.md`。生产角色配置只保留
+`lead.yaml`、`team-worker.yaml` 和 `team-verifier.yaml`；旧 Company、mail、
+Department 和 Peripheral 的 Python 源码暂时保留为上游参考，但不再保留对应
+角色 YAML、业务 Skill 或独立 mail Compose，也不进入 active runtime。

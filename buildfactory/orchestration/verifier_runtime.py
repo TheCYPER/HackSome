@@ -77,7 +77,10 @@ class DockerVerifierBackend:
         self.shared_mount_target = shared_mount_target
         self.team_mode = team_mode
         self.spec = AgentSpec.load(
-            str(spec_path or self.repo / "agents" / "ephemeral" / "verifier.yaml")
+            str(
+                spec_path
+                or self.repo / "agents" / "ephemeral" / "team-verifier.yaml"
+            )
         )
 
     @staticmethod
@@ -522,11 +525,7 @@ def main() -> None:
         or f"{company_id}_default",
         task_timeout=int(os.environ.get("VERIFIER_TURN_TIMEOUT_SECS", "3600")),
         ready_timeout=float(os.environ.get("AGENT_READY_TIMEOUT_SECS", "80")),
-        spec_path=(
-            repo / "agents" / "ephemeral" / "team-verifier.yaml"
-            if team_mode
-            else None
-        ),
+        spec_path=repo / "agents" / "ephemeral" / "team-verifier.yaml",
         shared_mount_target="/project" if team_mode else "/company",
         team_mode=team_mode,
     )

@@ -1,7 +1,8 @@
 # Hackathon Team Runtime 契约
 
-> 本文描述 HackSome `buildfactory/` 的 active 第一版。旧 V7 Company 文件仍可作为
-> 上游实现参考，但不得进入 active Compose、Prompt、角色 loadout 或方法白名单。
+> 本文描述 HackSome `buildfactory/` 的 active 第一版。旧 V7 Company Python 源码仍可
+> 作为上游实现参考，但不再保留生产角色 YAML、业务 Skill 或独立 mail Compose，
+> 也不得进入 active Compose、Prompt、角色 loadout 或方法白名单。
 
 ## 1. 固定内核
 
@@ -72,8 +73,9 @@ Worker Prompt 包含 Goal intent、`/project` 权限与完整 `submit_result` �
 Verifier Prompt 包含 intent、private acceptance、只读职责与完整
 `submit_verdict` 命令。
 
-三个 active AgentSpec 必须精确声明 `skills: []`。Skill materialization 框架保留，
-但第一版不发现或物化任何业务 Skill。
+生产 AgentSpec 只能是 `lead.yaml`、`team-worker.yaml` 和
+`team-verifier.yaml`，三者必须精确声明 `skills: []`。Skill materialization
+框架保留，但仓库不再附带、发现或物化任何业务 Skill。
 
 ## 5. Active 方法白名单
 

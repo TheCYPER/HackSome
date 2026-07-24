@@ -9,6 +9,12 @@ One approved Idea Card creates one Team. The Team mounts only its own
 `state/<team>/project/` at `/project`. The two files under `project/reference/`
 initialize the Team but do not freeze its direction.
 
+The only production AgentSpec manifests are `agents/lead.yaml`,
+`agents/ephemeral/team-worker.yaml`, and
+`agents/ephemeral/team-verifier.yaml`. All three declare `skills: []`; the
+generic materialization framework remains, but BuildFactory bundles no business
+Skill catalog or independent mail Compose.
+
 The deterministic control plane owns Goal, Worker, review, command, session,
 and telemetry state. Model runtimes may change anything under `/project`, but
 they do not mutate control-plane files directly.

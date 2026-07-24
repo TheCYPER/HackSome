@@ -183,9 +183,11 @@ class BlockingCreateVerifierBackend:
         return f"container output for {definition.instance_id}"
 
 
-def test_department_provisioner_accepts_only_fixed_creation_command(tmp_path):
+def test_department_provisioner_accepts_only_fixed_creation_command(
+    tmp_path, department_specs
+):
     layout = CompanyLayout.initialize(tmp_path / "new-company")
-    catalog = DepartmentCatalog.load("agents/departments")
+    catalog = DepartmentCatalog.load(department_specs)
     creation_id = "department-request"
     atomic_write_json(
         layout.departments / "requests" / f"{creation_id}.json",
@@ -216,9 +218,11 @@ def test_department_provisioner_accepts_only_fixed_creation_command(tmp_path):
     assert not hasattr(service, "retire")
 
 
-def test_department_provision_failure_retries_same_command_and_container(tmp_path):
+def test_department_provision_failure_retries_same_command_and_container(
+    tmp_path, department_specs
+):
     layout = CompanyLayout.initialize(tmp_path / "new-company")
-    catalog = DepartmentCatalog.load("agents/departments")
+    catalog = DepartmentCatalog.load(department_specs)
     creation_id = "department-request"
     atomic_write_json(
         layout.departments / "requests" / f"{creation_id}.json",

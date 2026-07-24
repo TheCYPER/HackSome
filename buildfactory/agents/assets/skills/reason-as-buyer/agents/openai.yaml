@@ -1,4 +1,0 @@
-interface:
-  display_name: "Reason as Buyer"
-  short_description: "Examine discovery, trust, choice, and payment friction"
-  default_prompt: "Use $reason-as-buyer to reason from the concrete buyer's situation without treating role-play as evidence."

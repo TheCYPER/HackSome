@@ -27,7 +27,7 @@ def test_env_file_parser_never_evaluates_shell_text(tmp_path):
     }
 
 
-def test_ephemeral_codex_home_gets_bound_skills_auth_and_account_env(tmp_path):
+def test_ephemeral_worker_home_gets_zero_skills_auth_and_account_env(tmp_path):
     account = tmp_path / "account"
     account.mkdir()
     (account / "codex-auth.json").write_text('{"tokens":"seed"}', encoding="utf-8")
@@ -37,7 +37,9 @@ def test_ephemeral_codex_home_gets_bound_skills_auth_and_account_env(tmp_path):
         "STRIPE_SECRET_KEY=test-stripe\n",
         encoding="utf-8",
     )
-    spec = AgentSpec.load(str(ROOT / "agents" / "ephemeral" / "worker.yaml"))
+    spec = AgentSpec.load(
+        str(ROOT / "agents" / "ephemeral" / "team-worker.yaml")
+    )
     home = tmp_path / "home"
 
     info = materialize_ephemeral_home(
@@ -47,34 +49,16 @@ def test_ephemeral_codex_home_gets_bound_skills_auth_and_account_env(tmp_path):
         include_account_secrets=True,
     )
 
-    assert set(info.skills) == {
-        "company-state",
-        "check-email",
-        "send-email",
-        "submit-work",
-        "challenge-thesis",
-        "trace-causal-chain",
-        "reason-as-buyer",
-        "integrate-new-information",
-        "mine-customer-voice",
-        "de-ai-ify",
-        "design-asset",
-        "gen-image",
-        "visual-iterate",
-        "deploy-site",
-        "provision-ga4",
-        "operate-twitter",
-    }
-    assert (home / "skills" / "submit-work" / "SKILL.md").is_file()
-    assert (home / "skills" / "check-email" / "SKILL.md").is_file()
-    assert (home / "skills" / "send-email" / "SKILL.md").is_file()
+    assert info.skills == []
+    skills_root = home / "skills"
+    assert not skills_root.exists() or list(skills_root.iterdir()) == []
     assert (home / "codex" / "auth.json").read_text(encoding="utf-8") == '{"tokens":"seed"}'
     config = (home / "codex" / "config.toml").read_text(encoding="utf-8")
     assert "test-user" in config
     assert "test-stripe" in config
 
 
-def test_verifier_materialization_keeps_minimal_loadout_without_serializing_unused_secret(
+def test_verifier_materialization_keeps_zero_skill_loadout_without_serializing_unused_secret(
     tmp_path,
 ):
     account = tmp_path / "account"
@@ -83,7 +67,9 @@ def test_verifier_materialization_keeps_minimal_loadout_without_serializing_unus
     (account / "secrets.env").write_text(
         "STRIPE_SECRET_KEY=must-not-appear\n", encoding="utf-8"
     )
-    spec = AgentSpec.load(str(ROOT / "agents" / "ephemeral" / "verifier.yaml"))
+    spec = AgentSpec.load(
+        str(ROOT / "agents" / "ephemeral" / "team-verifier.yaml")
+    )
     home = tmp_path / "home"
 
     materialize_ephemeral_home(
@@ -97,9 +83,8 @@ def test_verifier_materialization_keeps_minimal_loadout_without_serializing_unus
     assert "must-not-appear" not in config
     assert "stripe" not in config.lower()
     assert "playwright" in config
-    assert {path.name for path in (home / "skills").iterdir()} == {
-        "company-state-readonly",
-    }
+    skills_root = home / "skills"
+    assert not skills_root.exists() or list(skills_root.iterdir()) == []
 
 
 def test_account_package_docker_args_share_env_file_and_read_only_mount(tmp_path):

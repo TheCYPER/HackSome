@@ -1,4 +1,4 @@
-"""V7 template MCP assets and credential-safety contracts."""
+"""Active Team template MCP assets and credential-safety contracts."""
 
 import json
 from pathlib import Path
@@ -11,13 +11,9 @@ from agent.spec import AgentSpec
 ROOT = Path(__file__).resolve().parents[2]
 AGENTS = ROOT / "agents"
 ROLE_SPECS = {
-    "ceo": AGENTS / "ceo.yaml",
-    "strategist": AGENTS / "departments" / "strategist.yaml",
-    "researcher": AGENTS / "departments" / "researcher.yaml",
-    "builder": AGENTS / "departments" / "builder.yaml",
-    "growth": AGENTS / "departments" / "growth.yaml",
-    "worker": AGENTS / "ephemeral" / "worker.yaml",
-    "verifier": AGENTS / "ephemeral" / "verifier.yaml",
+    "lead": AGENTS / "lead.yaml",
+    "team-worker": AGENTS / "ephemeral" / "team-worker.yaml",
+    "team-verifier": AGENTS / "ephemeral" / "team-verifier.yaml",
 }
 FULL_SERVER_SET = {"cua-local", "dataforseo", "gsc", "ga4", "playwright", "stripe"}
 CREDENTIAL_MARKERS = ("USERNAME", "PASSWORD", "CREDENTIALS", "TOKEN", "KEY", "SECRET")
@@ -33,22 +29,20 @@ def _servers(role: str) -> dict:
 
 
 @pytest.mark.parametrize("role", ROLE_SPECS)
-def test_every_v7_template_resolves_an_existing_mcp_asset(role):
+def test_every_active_template_resolves_an_existing_mcp_asset(role):
     path = _mcp_path(role)
     assert path.is_file()
     assert isinstance(_servers(role), dict)
 
 
-@pytest.mark.parametrize(
-    "role", ["ceo", "strategist", "researcher", "builder", "growth", "worker"]
-)
+@pytest.mark.parametrize("role", ["lead", "team-worker"])
 def test_decision_and_execution_templates_keep_the_full_tool_field(role):
     assert set(_servers(role)) == FULL_SERVER_SET
 
 
 def test_verifier_mcp_is_deliberately_narrow_and_independent():
-    assert set(_servers("verifier")) == {"cua-local", "playwright"}
-    assert _mcp_path("verifier").name == "verifier-v7.json"
+    assert set(_servers("team-verifier")) == {"cua-local", "playwright"}
+    assert _mcp_path("team-verifier").name == "verifier-v7.json"
     assert not (AGENTS / "mcp" / "verifier.json").exists()
 
 

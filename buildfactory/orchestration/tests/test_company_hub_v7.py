@@ -14,6 +14,20 @@ PROVISIONER = ActorContext("manager", "department-provisioner")
 PERIPHERAL = ActorContext("manager", "peripheral")
 
 
+@pytest.fixture(autouse=True)
+def _company_hub_uses_fixture_catalog(department_specs, monkeypatch):
+    company_hub_class = CompanyHub
+
+    def create_hub(*args, **kwargs):
+        kwargs.setdefault("department_specs_path", department_specs)
+        return company_hub_class(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "orchestration.tests.test_company_hub_v7.CompanyHub",
+        create_hub,
+    )
+
+
 def _request(method, payload=None, request_id=None):
     return {
         "version": 1,

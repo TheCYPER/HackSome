@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 
-from agent.spec import AgentSpec
 from orchestration.company_hub import CompanyHub
 from orchestration.departments import DepartmentController
 from orchestration.method_adapter import ActorContext
@@ -19,8 +18,13 @@ def _request(method, payload, request_id):
     }
 
 
-def test_v7_exposes_no_department_retirement_product_surface(tmp_path):
-    hub = CompanyHub(tmp_path / "brand-new-company")
+def test_v7_exposes_no_department_retirement_product_surface(
+    tmp_path, department_specs
+):
+    hub = CompanyHub(
+        tmp_path / "brand-new-company",
+        department_specs_path=department_specs,
+    )
     methods = set(hub.adapter._handlers)
 
     assert not methods.intersection(
@@ -35,10 +39,6 @@ def test_v7_exposes_no_department_retirement_product_surface(tmp_path):
     for name in ("retire", "delete", "merge", "recreate", "drain"):
         assert not hasattr(DepartmentController, name)
 
-    ceo = AgentSpec.load(str(ROOT / "agents" / "ceo.yaml"))
-    active_skill_names = {Path(path).name for path in ceo.skills}
-    assert "create-role" not in active_skill_names
-    assert "review-role" not in active_skill_names
     assert importlib.util.find_spec("orchestration.role") is None
     assert importlib.util.find_spec("orchestration.provisioner") is None
 
@@ -76,8 +76,13 @@ def test_v6_product_modules_templates_and_protocol_skills_are_absent():
     assert not (ROOT / "orchestration" / "Dockerfile.broker").exists()
 
 
-def test_v7_goal_has_no_supersede_method_or_relationship_fields(tmp_path):
-    hub = CompanyHub(tmp_path / "brand-new-company")
+def test_v7_goal_has_no_supersede_method_or_relationship_fields(
+    tmp_path, department_specs
+):
+    hub = CompanyHub(
+        tmp_path / "brand-new-company",
+        department_specs_path=department_specs,
+    )
     assert "supersede_goal" not in hub.adapter._handlers
 
     # The scheduler is tested through the real Department method boundary;

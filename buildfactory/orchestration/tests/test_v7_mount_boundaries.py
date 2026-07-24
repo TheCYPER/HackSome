@@ -136,10 +136,10 @@ def test_verifier_runtime_mounts_company_read_only_and_no_internal_state(
 
 
 def test_department_runtime_mounts_company_rw_and_uses_fixed_900_template(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, department_specs
 ):
     calls = []
-    catalog = DepartmentCatalog.load(ROOT / "agents" / "departments")
+    catalog = DepartmentCatalog.load(department_specs)
     backend = dp.DockerDepartmentBackend(repo=ROOT, company_id="new-company")
 
     def run(args):
