@@ -5,7 +5,8 @@
 
 TEAM ?= hackathon-team
 ACCOUNT ?= foundagent
-COMPOSE := TEAM=$(TEAM) ACCOUNT=$(ACCOUNT) docker compose
+TEAM_STATE_ROOT ?= $(abspath state/$(TEAM))
+COMPOSE := TEAM=$(TEAM) ACCOUNT=$(ACCOUNT) TEAM_STATE_ROOT=$(TEAM_STATE_ROOT) docker compose
 PY := $(shell test -x .venv-cua/bin/python && echo .venv-cua/bin/python || echo python3)
 
 # Usage:
@@ -14,23 +15,23 @@ init:
 	test -n "$(CHALLENGE_FILE)"
 	test -n "$(IDEA_CARD_FILE)"
 	$(PY) -m orchestration.team_store \
-		--root state/$(TEAM) \
+		--root "$(TEAM_STATE_ROOT)" \
 		--challenge-file "$(CHALLENGE_FILE)" \
 		--idea-card-file "$(IDEA_CARD_FILE)"
-	chmod -R ugo+rwX state/$(TEAM)
+	chmod -R ugo+rwX "$(TEAM_STATE_ROOT)"
 
 shared:
-	mkdir -p state/$(TEAM)/project state/$(TEAM)/ledger \
-		state/$(TEAM)/inbox state/$(TEAM)/workers \
-		state/$(TEAM)/reviews state/$(TEAM)/control \
-		state/$(TEAM)/sessions/lead/codex \
-		state/$(TEAM)/telemetry/services state/$(TEAM)/telemetry/runs \
+	mkdir -p "$(TEAM_STATE_ROOT)"/project "$(TEAM_STATE_ROOT)"/ledger \
+		"$(TEAM_STATE_ROOT)"/inbox "$(TEAM_STATE_ROOT)"/workers \
+		"$(TEAM_STATE_ROOT)"/reviews "$(TEAM_STATE_ROOT)"/control \
+		"$(TEAM_STATE_ROOT)"/sessions/lead/codex \
+		"$(TEAM_STATE_ROOT)"/telemetry/services "$(TEAM_STATE_ROOT)"/telemetry/runs \
 		accounts/$(ACCOUNT)
-	chmod -R ugo+rwX state/$(TEAM)
+	chmod -R ugo+rwX "$(TEAM_STATE_ROOT)"
 
 check-init:
-	test -f state/$(TEAM)/project/reference/challenge.md
-	test -f state/$(TEAM)/project/reference/initial-idea-card.md
+	test -f "$(TEAM_STATE_ROOT)"/project/reference/challenge.md
+	test -f "$(TEAM_STATE_ROOT)"/project/reference/initial-idea-card.md
 
 up: shared check-init
 	$(COMPOSE) up -d --build

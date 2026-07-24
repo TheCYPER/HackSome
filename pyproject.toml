@@ -24,6 +24,7 @@ where = ["src"]
 hacksome = [
   "prompts/*.md",
   "prompts/creative/*.md",
+  "build_approval_ui/*",
   "review_ui/*",
   "schemas/*.json",
   "schemas/creative/*.json",

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import ipaddress
 import json
+import os
 import sys
 import webbrowser
 from collections.abc import Sequence
@@ -13,6 +14,16 @@ from pathlib import Path
 from typing import Any
 
 from hacksome.codex import CodexRunner
+from hacksome.build_approval.build_adapter import (
+    SubprocessBuildControlAdapter,
+)
+from hacksome.build_approval.contracts import ApprovalError
+from hacksome.build_approval.server import (
+    ApprovalServerConfig,
+    ApprovalServerError,
+    BuildApprovalServer,
+)
+from hacksome.build_approval.service import ApprovalService
 from hacksome.config import CodexConfig
 from hacksome.creative.benchmark import (
     BenchmarkManifest,
@@ -36,6 +47,10 @@ from hacksome.creative.workflow import (
 )
 from hacksome.hub import RunHub
 from hacksome.models import CodexDoctorResult
+from hacksome.post_card.catalog import (
+    PostCardCatalogError,
+    project_post_card_catalog,
+)
 from hacksome.state import StateError
 from hacksome.workflow import (
     UsefulIdeaWorkflow,
@@ -201,6 +216,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
     resume.add_argument("run_dir", type=Path)
 
+    approve = commands.add_parser(
+        "approve",
+        help="serve the shared Build Dispatch Board for a completed run",
+    )
+    approve.add_argument("run_dir", type=Path)
+    approve.add_argument("--approval-root", type=Path)
+    approve.add_argument(
+        "--build-root",
+        type=Path,
+        default=Path("buildfactory/state/build-pool"),
+    )
+    approve.add_argument(
+        "--build-python",
+        type=Path,
+        default=Path(sys.executable),
+    )
+    approve.add_argument("--host", default="127.0.0.1")
+    approve.add_argument("--port", type=_port, default=0)
+    approve.add_argument(
+        "--max-active-teams",
+        type=_positive_int,
+        default=2,
+    )
+    approve.add_argument("--no-open", action="store_true")
+
+    for name, help_text in (
+        ("build-status", "inspect Build Approval and Team pool state"),
+        ("build-reconcile", "replay authorized handoffs and Team lifecycle"),
+        ("build-validate", "validate the frozen Approval ledger offline"),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("run_dir", type=Path)
+        command.add_argument("--approval-root", type=Path)
+        command.add_argument(
+            "--build-root",
+            type=Path,
+            default=Path("buildfactory/state/build-pool"),
+        )
+        command.add_argument(
+            "--build-python",
+            type=Path,
+            default=Path(sys.executable),
+        )
+        command.add_argument(
+            "--max-active-teams",
+            type=_positive_int,
+            default=2,
+        )
+        command.add_argument("--json", action="store_true")
+
     benchmark = commands.add_parser(
         "benchmark",
         help="validate and plan an offline Creative benchmark",
@@ -323,6 +388,7 @@ def _run_useful_command(args: argparse.Namespace, challenge: str) -> int:
     print(f"Run directory: {workflow.run_dir}")
     index = asyncio.run(workflow.execute())
     print(f"Idea Cards: {index}")
+    _print_build_approval_next(workflow.run_dir)
     return 0
 
 
@@ -366,7 +432,26 @@ def _print_creative_outcome(outcome: CreativeRunOutcome) -> int:
         raise ValueError(f"unsupported Creative outcome status: {outcome.status!r}")
     if outcome.next_command is not None:
         print(f"Next: {outcome.next_command}")
+    elif outcome.status == "completed":
+        _print_build_approval_next(outcome.run_dir)
     return 1 if outcome.status == "finalizing" else 0
+
+
+def _print_build_approval_next(run_dir: Path) -> None:
+    try:
+        catalog = project_post_card_catalog(run_dir)
+    except (OSError, PostCardCatalogError, StateError):
+        # A workflow result can be supplied by a test double or older integration
+        # that has not persisted the route-neutral catalog inputs yet.  The hint
+        # must never turn an otherwise successful Idea run into a CLI failure.
+        return
+    if catalog.cards:
+        print(f"Next: hacksome approve {run_dir}")
+    else:
+        print(
+            "No final Idea Cards are available to Build. "
+            f"Open the explicit empty state with: hacksome approve {run_dir}"
+        )
 
 
 def _status_command(args: argparse.Namespace) -> int:
@@ -569,6 +654,118 @@ def _resume_command(args: argparse.Namespace) -> int:
     outcome = asyncio.run(workflow.resume())
     print(f"Run directory: {outcome.run_dir}")
     return _print_creative_outcome(outcome)
+
+
+def _build_adapter(args: argparse.Namespace) -> SubprocessBuildControlAdapter:
+    executable = args.build_python.expanduser().resolve()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise ValueError(
+            f"--build-python must be an executable file: {executable}"
+        )
+    return SubprocessBuildControlAdapter(
+        build_root=args.build_root,
+        build_python=executable,
+        max_active_teams=args.max_active_teams,
+    )
+
+
+def _approval_service(
+    args: argparse.Namespace,
+    *,
+    with_build: bool,
+) -> ApprovalService:
+    return ApprovalService.open(
+        args.run_dir,
+        approval_root=args.approval_root,
+        build_adapter=_build_adapter(args) if with_build else None,
+    )
+
+
+def _approve_command(args: argparse.Namespace) -> int:
+    service = _approval_service(args, with_build=True)
+    config = ApprovalServerConfig(
+        approval_root=service.store.root,
+        host=args.host,
+        port=args.port,
+    )
+    server = BuildApprovalServer(service, config)
+    try:
+        print(f"Build Approval URL: {server.approval_url}")
+        print("Serving the Build Dispatch Board; press Ctrl-C to stop.")
+        if not args.no_open:
+            webbrowser.open(server.approval_url)
+        server.serve_forever()
+    finally:
+        server.stop()
+    return 0
+
+
+def _print_build_snapshot(payload: dict[str, Any]) -> None:
+    print(f"Run: {payload['run_id']}")
+    print(
+        f"Route: {payload['route_id']}/"
+        f"{payload['route_contract_version']}"
+    )
+    print(f"Approval: {payload['approval_status']}")
+    print(f"Active cap: {payload['max_active_teams']}")
+    if payload.get("source_integrity_error"):
+        print(f"Source integrity: {payload['source_integrity_error']}")
+    cards = payload.get("cards", [])
+    if not cards:
+        print("Cards: none")
+        return
+    print("Cards:")
+    for card in cards:
+        suffix = f" · {card['team_id']}" if card.get("team_id") else ""
+        queue = (
+            f" · queue {card['queue_position']}"
+            if card.get("queue_position") is not None
+            else ""
+        )
+        print(
+            f"  {card['ordinal'] + 1:02d} "
+            f"{card['status']}: {card['title']}{suffix}{queue}"
+        )
+
+
+def _build_status_command(args: argparse.Namespace) -> int:
+    payload = _approval_service(args, with_build=True).snapshot()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        _print_build_snapshot(payload)
+    return 0
+
+
+def _build_reconcile_command(args: argparse.Namespace) -> int:
+    payload = _approval_service(args, with_build=True).reconcile()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        _print_build_snapshot(payload)
+    return 0
+
+
+def _build_validate_command(args: argparse.Namespace) -> int:
+    service = _approval_service(args, with_build=False)
+    errors = service.validate()
+    payload = {
+        "valid": not errors,
+        "approval_root": str(service.store.root),
+        "errors": errors,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    elif errors:
+        print(
+            f"Build Approval validation failed with {len(errors)} error(s):",
+            file=sys.stderr,
+        )
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+    else:
+        print("Build Approval is valid.")
+    return 1 if errors else 0
 
 
 def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
@@ -948,6 +1145,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _review_command(args)
         if args.command == "resume":
             return _resume_command(args)
+        if args.command == "approve":
+            return _approve_command(args)
+        if args.command == "build-status":
+            return _build_status_command(args)
+        if args.command == "build-reconcile":
+            return _build_reconcile_command(args)
+        if args.command == "build-validate":
+            return _build_validate_command(args)
         if args.command == "benchmark":
             return _benchmark_command(args)
         if args.command == "doctor":
@@ -962,6 +1167,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         WorkflowError,
         CreativeWorkflowError,
         CreativeFeedbackError,
+        ApprovalError,
+        ApprovalServerError,
+        PostCardCatalogError,
         ReviewServerError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)

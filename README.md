@@ -137,6 +137,58 @@ hacksome resume runs/<run-id>
 持久化事实的 partial report；partial report 不会产生有效 Idea Card、
 Memory Record 或 Build handoff。
 
+## 共享 Build Approval
+
+Useful 与 Creative 的 completed run 都进入同一个 post-card 边界。先离线校验
+source run，再把最终 Card 顺序、精确 Markdown、hash、provenance 与五字段
+handoff 冻结到 run 外部的 Approval control root。source run 本身不会被修改。
+
+打开本机 Dispatch Board：
+
+```bash
+hacksome approve runs/<run-id>
+```
+
+页面默认只监听 loopback，首次 URL 使用一次性 join token 换取 HttpOnly、
+SameSite=Strict cookie。不要把 join URL、cookie 或本机 credential path 放进
+日志、截图或报告。若只想打印 URL 而不自动打开浏览器：
+
+```bash
+hacksome approve runs/<run-id> --no-open
+```
+
+一次 Approval batch 必须选择 1–10 张尚未授权的 Card。同一个 run 可以连续提交
+多批；每张 Card 最多授权一次，request ID 重放保持幂等。显式关闭 Approval 后
+不能再授权未选 Card，但关闭不会 pause 或停止已经授权的 Team。空 catalog 也能
+打开页面并显式关闭。
+
+每张获批 Card 对应一个稳定、隔离的 Build Team。默认全局最多两个 Team 占用
+active slot，其余按授权顺序 FIFO 排队；Team 完成一轮 Goal 不会自动释放 slot，
+只有 Build operator 的显式 pause 才会释放。查看、重放交接或离线校验：
+
+```bash
+hacksome build-status runs/<run-id>
+hacksome build-status runs/<run-id> --json
+hacksome build-reconcile runs/<run-id>
+hacksome build-validate runs/<run-id>
+```
+
+Approval ledger、outbox 和 receipt 默认位于
+`<runs-dir>/.hacksome/approvals/<run-id>/`；Build registry 与 Team root 默认位于
+`buildfactory/state/build-pool/`。两侧通过 fixed-argv、`shell=False` 的纯 JSON
+subprocess 边界通信。进程在 batch commit 或 Build response 后中断时，重复执行
+`build-reconcile` 会补齐 outbox/receipt，而不会创建第二个 Team。
+
+首次使用真实 Build runtime 前先确认 Docker/Compose、账户包和 Codex 登录：
+
+```bash
+docker compose -f buildfactory/docker-compose.yml config --quiet
+hacksome doctor
+```
+
+可用 `--build-root`、`--build-python` 和 `--max-active-teams` 覆盖可信的本机启动
+参数；Browser API 不接受路径、命令、Compose service 或环境变量。
+
 ## 查看、校验与 Benchmark
 
 ```bash
@@ -185,13 +237,13 @@ Creative 的最终 Build handoff 只包含：
 ```
 
 其中两个 Markdown 字段有意对齐 BuildFactory 的 `TeamLayout.bootstrap()` 输入。
-当前没有自动消费 handoff 或启动容器：Build gate 必须先选择一张卡、复核
-`idea_card_sha256`，再由未来的顶层 adapter 初始化 Team。Team 身份也不能只用
-可能跨 run 重复的 `idea_card_id`，至少要绑定 `source_run_id + idea_card_id +
-idea_card_sha256`。
+共享 Approval adapter 会先复核 `idea_card_sha256`，再把 exact handoff 交给
+Build registry。Team 身份绑定 `source_run_id + idea_card_id +
+idea_card_sha256`，不会只使用可能跨 run 重复的 `idea_card_id`。
 
-Idea 工作流到此结束。Build 侧可以再选零张或多张卡；未选择不等于 Creative
-质量 reject。本仓库当前不把 Build、GitHub 发布或 Pitch 偷塞进 Idea 阶段。
+Idea 工作流到 Card 为止，Approval 是独立的 Build 资源决策。Build 侧可以选零张
+或多张卡；未选择不等于 Creative 质量 reject。Build Agent 也可以修改、继续或
+放弃初始 Card；本仓库不把 Build 忠实度、GitHub 发布或 Pitch 偷塞进 Idea 阶段。
 
 ## 测试
 
