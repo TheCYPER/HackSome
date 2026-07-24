@@ -5,6 +5,7 @@ from orchestration.control_client import BoundActor
 from orchestration.department_provisioner import DepartmentProvisionerService
 from orchestration.departments import DepartmentCatalog
 from orchestration.runtime_store import CompanyLayout, atomic_write_json
+from orchestration.scheduler import WorkerLaunch
 from orchestration.verifier_runtime import VerifierCommandService, verifier_prompt
 from orchestration.worker_manager import WorkerCommandService
 
@@ -60,10 +61,20 @@ class FakeWorkerManager:
         self.created = []
         self.runs = []
         self.stops = []
+        self.workers = {}
 
     def create_worker(self, launch):
         self.created.append(launch)
+        self.workers[launch.worker_id] = {
+            "id": launch.worker_id,
+            "goal_id": launch.goal_id,
+            "owner_department": launch.owner_department,
+            "state": "ready",
+        }
         return {"id": launch.worker_id}
+
+    def get(self, worker_id):
+        return dict(self.workers[worker_id])
 
     def run_worker(self, worker_id, prompt, *, resume):
         self.runs.append((worker_id, prompt, resume))
@@ -268,6 +279,62 @@ def test_worker_command_runs_one_goal_and_reports_complete_turn(tmp_path):
     assert (run_dir / "runtime.jsonl").read_text() == "full output"
     assert (run_dir / "container.log").read_text() == "container output for worker-1"
     assert "goal_id=goal-1" in (run_dir / "harness.log").read_text()
+
+
+def test_team_resume_recreates_missing_worker_from_lifecycle_owner(tmp_path):
+    layout = CompanyLayout.initialize(tmp_path / "hackathon-team")
+    atomic_write_json(
+        layout.ledger / "goal-1.json",
+        {
+            "id": "goal-1",
+            "intent": "keep improving the product",
+            "status": "awaiting_rework",
+        },
+    )
+    manager = FakeWorkerManager()
+    manager.create_worker(
+        WorkerLaunch(
+            goal_id="goal-1",
+            worker_id="worker-1",
+            intent="keep improving the product",
+            acceptance=None,
+            owner_department="lead",
+            command_id="start:goal-1:1",
+        )
+    )
+    manager.created.clear()
+    manager.workers["worker-1"]["state"] = "missing"
+    hub = FakeHub()
+    service = WorkerCommandService(
+        layout,
+        manager=manager,
+        hub=hub,
+        max_workers=1,
+        team_mode=True,
+    )
+
+    result = service._process(
+        {
+            "version": 1,
+            "command_id": "resume:goal-1:1",
+            "action": "resume_worker",
+            "goal_id": "goal-1",
+            "worker_id": "worker-1",
+            "feedback": "continue from the real state",
+            "session_token": "session-1",
+        }
+    )
+
+    assert result["ok"] is True
+    assert manager.created[0].owner_department == "lead"
+    assert len(manager.runs) == 1
+    assert manager.runs[0][0] == "worker-1"
+    assert manager.runs[0][2] is True
+    assert "continue from the real state" in manager.runs[0][1]
+    assert [call[0] for call in hub.calls] == [
+        "worker_resumed",
+        "worker_turn_finished",
+    ]
 
 
 def test_verifier_instance_handles_one_review_then_is_stopped(tmp_path):

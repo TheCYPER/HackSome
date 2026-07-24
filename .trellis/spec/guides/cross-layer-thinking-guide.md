@@ -102,6 +102,32 @@ Rendering code may format fields, but it must not redefine the payload contract.
 
 ---
 
+## Process Timeout Is A Lifecycle Boundary
+
+A timeout in a host-side process wrapper does not prove that work stopped in
+the child execution environment. For `docker exec`, SSH, remote jobs, browser
+drivers, and process supervisors, trace both lifecycles explicitly:
+
+```text
+host client lifetime ≠ remote process lifetime
+```
+
+Before reporting timeout to a scheduler or enqueueing retry:
+
+- parse and preserve partial output, including continuation identifiers;
+- terminate or isolate the remote execution owner and its child processes;
+- persist a non-runnable lifecycle state;
+- only then allow retry or resume;
+- on supervisor restart, treat an unreceipted `running` execution without a
+  process-local claim as orphaned and retire it before command replay;
+- test that recovery reconstructs identity from durable lifecycle state rather
+  than optional business payload fields.
+
+If cleanup cannot be proven, fail closed. Never mark the execution slot ready
+while an old process may still mutate the same mounted files.
+
+---
+
 ## Checklist for Cross-Layer Features
 
 Before implementation:

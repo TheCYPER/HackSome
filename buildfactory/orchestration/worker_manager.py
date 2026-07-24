@@ -73,7 +73,7 @@ class DockerWorkerBackend:
         image: str | None = None,
         account_id: str | None = None,
         network: str | None = None,
-        task_timeout: int = 3600,
+        task_timeout: int = 21600,
         ready_timeout: float = 80.0,
         spec_path: str | Path | None = None,
         shared_mount_target: str = "/company",
@@ -259,6 +259,7 @@ class WorkerManager:
         # rows are still reconciled.
         self._lifecycle_guard = threading.Lock()
         self._creating: set[str] = set()
+        self._running: set[str] = set()
 
     def _path(self, worker_id: str) -> Path:
         return self.root / f"{worker_id}.json"
@@ -368,6 +369,19 @@ class WorkerManager:
                 self._creating.discard(launch.worker_id)
 
     def run_worker(self, worker_id: str, prompt: str, *, resume: bool) -> RunResult:
+        with self._lifecycle_guard:
+            if worker_id in self._running:
+                raise WorkerManagerError("worker already has an active turn")
+            self._running.add(worker_id)
+        try:
+            return self._run_worker_claimed(worker_id, prompt, resume=resume)
+        finally:
+            with self._lifecycle_guard:
+                self._running.discard(worker_id)
+
+    def _run_worker_claimed(
+        self, worker_id: str, prompt: str, *, resume: bool
+    ) -> RunResult:
         with file_lock(self._lock_path):
             row = self._load(worker_id)
             if row["state"] not in ("ready", "running"):
@@ -377,7 +391,20 @@ class WorkerManager:
                 row["continuity_unavailable"] = True
             row["state"] = "running"
             self._save(row)
-        result = self.backend.run(self._definition(row), prompt, resume_token=token)
+        definition = self._definition(row)
+        result = self.backend.run(definition, prompt, resume_token=token)
+        timeout_cleanup_error = None
+        if result.timed_out:
+            # Killing the host-side `docker exec` client does not kill Codex,
+            # test servers, or browser jobs inside the dedicated Worker
+            # container. Retire the entire container before Hub can enqueue a
+            # same-Goal resume. Home, workspace, and session files are host
+            # mounts, so recreation preserves continuity without permitting
+            # two turns to write `/project` concurrently.
+            try:
+                self.backend.stop(definition)
+            except Exception as exc:  # noqa: BLE001 - persist cleanup failure for safe retry
+                timeout_cleanup_error = str(exc)
         with file_lock(self._lock_path):
             row = self._load(worker_id)
             row["turns"] += 1
@@ -387,6 +414,7 @@ class WorkerManager:
                 "ok": result.ok,
                 "text": result.text,
                 "error": result.error,
+                "timed_out": result.timed_out,
                 "session_token": result.session_token,
                 "cost_usd": result.cost_usd,
                 "usage": result.usage,
@@ -396,7 +424,15 @@ class WorkerManager:
             # late turn result is still auditable, but it must never resurrect
             # a lifecycle that the control path already stopped.
             if row["state"] not in ("stopping", "stopped"):
-                row["state"] = "ready" if result.ok else "running"
+                if result.timed_out:
+                    row["state"] = "missing" if timeout_cleanup_error is None else "create_failed"
+                    row["last_error"] = (
+                        "turn timed out; execution container retired"
+                        if timeout_cleanup_error is None
+                        else f"turn timed out; container cleanup failed: {timeout_cleanup_error}"
+                    )
+                else:
+                    row["state"] = "ready"
             self._save(row)
         return result
 
@@ -425,18 +461,55 @@ class WorkerManager:
     def reconcile(self) -> list[dict]:
         observed = self.backend.inspect(self.company_id)
         changes: list[dict] = []
+        orphaned: list[tuple[str, WorkerDefinition]] = []
         with self._lifecycle_guard:
             creating = set(self._creating)
+            running = set(self._running)
             with file_lock(self._lock_path):
                 for row in self.list_workers():
                     if row["id"] in creating:
                         continue
                     actual = observed.get(row["id"])
+                    if (
+                        row["state"] == "running"
+                        and row["id"] not in running
+                        and actual is not None
+                    ):
+                        # A fresh manager cannot attach to the stdout/result of
+                        # an exec owned by the previous manager. Retire the
+                        # dedicated container before replaying its unreceipted
+                        # command; otherwise both turns can mutate /project.
+                        row["state"] = "stopping"
+                        row["last_error"] = (
+                            "orphaned active turn detected during reconcile"
+                        )
+                        self._save(row)
+                        orphaned.append((row["id"], self._definition(row)))
+                        continue
                     if row["state"] in ACTIVE_STATES and actual is None:
                         row["state"] = "missing"
                         row["last_error"] = "container missing during reconcile"
                         self._save(row)
                         changes.append({"worker_id": row["id"], "state": "missing"})
+        for worker_id, definition in orphaned:
+            cleanup_error = None
+            try:
+                self.backend.stop(definition)
+            except Exception as exc:  # noqa: BLE001 - recovery must stay fail closed
+                cleanup_error = str(exc)
+            with file_lock(self._lock_path):
+                row = self._load(worker_id)
+                if row["state"] == "stopping":
+                    row["state"] = (
+                        "missing" if cleanup_error is None else "create_failed"
+                    )
+                    row["last_error"] = (
+                        "orphaned active turn container retired"
+                        if cleanup_error is None
+                        else f"orphaned turn cleanup failed: {cleanup_error}"
+                    )
+                    self._save(row)
+            changes.append({"worker_id": worker_id, "state": row["state"]})
         return changes
 
 
@@ -660,13 +733,23 @@ class WorkerCommandService:
             # Reconcile a lost container without inventing a replacement
             # Worker: the id, home, workspace, Goal, and session files remain
             # bound to the original lifecycle.
+            owner_department = worker.get("owner_department")
+            if not isinstance(owner_department, str) or not owner_department:
+                owner_department = persisted_goal.get("owner_department")
+            if not isinstance(owner_department, str) or not owner_department:
+                if self.team_mode:
+                    owner_department = "lead"
+                else:
+                    raise WorkerManagerError(
+                        "resume command has no bound owner department"
+                    )
             self.manager.create_worker(
                 WorkerLaunch(
                     goal_id=command["goal_id"],
                     worker_id=command["worker_id"],
                     intent=persisted_goal["intent"],
                     acceptance=None,
-                    owner_department=persisted_goal["owner_department"],
+                    owner_department=owner_department,
                     command_id=command["command_id"],
                 )
             )
@@ -716,6 +799,7 @@ class WorkerCommandService:
                 "finished_at": time.time(),
                 "ok": result.ok,
                 "error": result.error,
+                "timed_out": result.timed_out,
                 "session_token": result.session_token,
                 "usage": result.usage,
             },
@@ -788,7 +872,7 @@ def main() -> None:
             else os.environ.get("COMPANY_NETWORK")
         )
         or f"{company_id}_default",
-        task_timeout=int(os.environ.get("WORKER_TURN_TIMEOUT_SECS", "3600")),
+        task_timeout=int(os.environ.get("WORKER_TURN_TIMEOUT_SECS", "21600")),
         ready_timeout=float(os.environ.get("AGENT_READY_TIMEOUT_SECS", "80")),
         spec_path=(
             repo / "agents" / "ephemeral" / "team-worker.yaml"

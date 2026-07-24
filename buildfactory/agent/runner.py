@@ -30,6 +30,13 @@ AGENT_HOME_MOUNT = "/home/kasm-user/.claude"
 _NO_EVENT_ERRORS = ("no result event", "no turn.completed")
 
 
+def _timeout_text(value: str | bytes | None) -> str:
+    """Normalize TimeoutExpired output without discarding a partial JSONL stream."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
 def run_task(
     spec: AgentSpec,
     task: str,
@@ -85,15 +92,23 @@ def run_task(
     try:
         r = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        return RunResult(
-            ok=False,
-            text="",
-            error="timeout",
-            cost_usd=None,
-            raw_tail="",
-            raw_output=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
-            stderr=(exc.stderr or "") if isinstance(exc.stderr, str) else "",
-        )
+        stdout = _timeout_text(exc.stdout)
+        stderr = _timeout_text(exc.stderr)
+        # A timed-out docker exec client does not terminate the process inside
+        # the container. The lifecycle owner must retire that dedicated
+        # container before it accepts a resume. Still parse the partial event
+        # stream first: Codex emits thread.started near the beginning, and that
+        # persisted token is what lets the recreated Worker resume the same
+        # session instead of silently starting a second one.
+        res = runtime.parse_output(stdout, 124)
+        res.ok = False
+        res.error = "timeout"
+        res.timed_out = True
+        res.raw_output = stdout
+        res.stderr = stderr
+        if not res.raw_tail:
+            res.raw_tail = stdout[-800:]
+        return res
 
     res = runtime.parse_output(r.stdout, r.returncode)
     res.raw_output = r.stdout or ""

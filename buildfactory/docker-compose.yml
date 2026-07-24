@@ -109,7 +109,7 @@ services:
     environment:
       <<: *manager-env
       WORKER_MAX: "1"
-      WORKER_TURN_TIMEOUT_SECS: ${WORKER_TURN_TIMEOUT_SECS:-3600}
+      WORKER_TURN_TIMEOUT_SECS: ${WORKER_TURN_TIMEOUT_SECS:-21600}
 
   verifier-manager:
     <<: *manager
