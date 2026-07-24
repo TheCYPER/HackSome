@@ -16,6 +16,7 @@ ACTIVE_CHARTERS = {
     ROOT / "agents" / "assets" / "team-worker-charter.md",
     ROOT / "agents" / "assets" / "team-verifier-charter.md",
 }
+SHARED_TOOL_PROMPT = ROOT / "agents" / "assets" / "shared-tool-use.md"
 
 
 def test_all_team_roles_declare_and_materialize_zero_skills(tmp_path, monkeypatch):
@@ -42,5 +43,6 @@ def test_production_inventory_contains_only_active_zero_skill_specs():
 
     assert production_specs == ACTIVE_SPECS
     assert set((ROOT / "agents" / "assets").rglob("*charter.md")) == ACTIVE_CHARTERS
+    assert SHARED_TOOL_PROMPT.is_file()
     assert not (ROOT / "agents" / "assets" / "skills").exists()
     assert not (ROOT / "docker-compose.mail.yml").exists()

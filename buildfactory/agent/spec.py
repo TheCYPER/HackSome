@@ -29,6 +29,7 @@ _FIELDS = (
     "credentials",
     "model",
     "effort",
+    "system_prompt_fragments",
     "system_prompt",
     "skills",
     "hooks",
@@ -49,6 +50,8 @@ class AgentSpec:
     credentials: str = "subscription"      # subscription | api-key
     model: str | None | UnsetType = UNSET    # UNSET=runtime default; null=CLI default; str=pin
     effort: str | None | UnsetType = UNSET   # neutral vocabulary low|medium|high|xhigh|max
+    system_prompt_fragments: list[str] = field(default_factory=list)
+                                             # ordered shared assets prepended to role charter
     system_prompt: str | None = None       # path (relative to base_dir) → charter injection
     skills: list[str] = field(default_factory=list)   # paths (relative to base_dir) → skills dir
     hooks: str | None = None               # path (relative to base_dir) → runtime hook merge
@@ -90,11 +93,22 @@ class AgentSpec:
         return rel if os.path.isabs(rel) else os.path.join(self.base_dir, rel)
 
     def read_system_prompt(self) -> str | None:
-        """Content of the system_prompt file (charter injection), or None."""
-        if not self.system_prompt:
+        """Assemble declared shared fragments followed by the role charter.
+
+        Every path is relative to this spec's yaml. Fragments are explicit per
+        role rather than globally injected, so adding a role does not silently
+        change its system prompt.
+        """
+        prompt_paths = list(self.system_prompt_fragments)
+        if self.system_prompt:
+            prompt_paths.append(self.system_prompt)
+        if not prompt_paths:
             return None
-        with open(self.resolve(self.system_prompt)) as f:
-            return f.read().strip()
+        parts: list[str] = []
+        for path in prompt_paths:
+            with open(self.resolve(path)) as f:
+                parts.append(f.read().strip())
+        return "\n\n".join(parts)
 
     def skill_paths(self) -> list[str]:
         return [self.resolve(s) for s in self.skills]

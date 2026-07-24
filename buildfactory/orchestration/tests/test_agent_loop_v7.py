@@ -1,9 +1,11 @@
 import subprocess
 import inspect
+from pathlib import Path
 
 import pytest
 
 import orchestration.agent_loop as agent_loop
+import orchestration.lead_loop as lead_loop
 from orchestration.agent_loop import WakeOutcome, build_v7_wake_prompt
 from orchestration.notes import NotesStore
 from orchestration.run_logs import RunLogRecorder
@@ -250,6 +252,120 @@ def test_wake_gate_suppresses_model_until_it_allows_wake(tmp_path, monkeypatch):
 
     assert inbox.waits == 2
     assert wake_calls == ["heartbeat"]
+
+
+@pytest.mark.parametrize("override_text", (None, "OPERATOR OVERRIDE"))
+def test_resident_loop_uses_agent_spec_prompt_unless_operator_overrides(
+    tmp_path, monkeypatch, override_text
+):
+    captured = []
+    spec_path = Path(__file__).resolve().parents[2] / "agents" / "lead.yaml"
+    monkeypatch.setenv("AGENT_SPEC", str(spec_path))
+    *_, assembled_prompt = agent_loop._role_config("lead")
+    override_path = None
+    if override_text is not None:
+        override = tmp_path / "override.md"
+        override.write_text(override_text)
+        override_path = str(override)
+
+    def fake_wake(_session_id, _prompt, **kwargs):
+        captured.append(kwargs["charter"])
+        raise StopLoop
+
+    monkeypatch.setattr(agent_loop, "wake", fake_wake)
+
+    with pytest.raises(StopLoop):
+        agent_loop.agent_loop(
+            key="lead",
+            session_file=tmp_path / "session",
+            heartbeat=60,
+            charter_path=override_path,
+            system_prompt=assembled_prompt,
+            inbox=ReliableInbox([]),
+            context_loader=lambda: {},
+            prompt_builder=lambda *_args: "LEAD WAKE",
+        )
+
+    expected = override_text or assembled_prompt
+    assert captured == [expected]
+    if override_text is None:
+        assert captured[0].startswith("# Shared Tool-Use Environment")
+        assert "# Hackathon Lead" in captured[0]
+
+
+@pytest.mark.parametrize("override_state", ("missing", "empty"))
+def test_resident_loop_invalid_operator_override_falls_back_to_agent_spec_prompt(
+    tmp_path, monkeypatch, override_state
+):
+    captured = []
+    spec_path = Path(__file__).resolve().parents[2] / "agents" / "lead.yaml"
+    monkeypatch.setenv("AGENT_SPEC", str(spec_path))
+    *_, assembled_prompt = agent_loop._role_config("lead")
+    override_path = tmp_path / "override.md"
+    if override_state == "empty":
+        override_path.write_text("")
+
+    def fake_wake(_session_id, _prompt, **kwargs):
+        captured.append(kwargs["charter"])
+        raise StopLoop
+
+    monkeypatch.setattr(agent_loop, "wake", fake_wake)
+
+    with pytest.raises(StopLoop):
+        agent_loop.agent_loop(
+            key="lead",
+            session_file=tmp_path / "session",
+            heartbeat=60,
+            charter_path=str(override_path),
+            system_prompt=assembled_prompt,
+            inbox=ReliableInbox([]),
+            context_loader=lambda: {},
+            prompt_builder=lambda *_args: "LEAD WAKE",
+        )
+
+    assert captured == [assembled_prompt]
+    assert captured[0].startswith("# Shared Tool-Use Environment")
+    assert "# Hackathon Lead" in captured[0]
+
+
+def test_role_config_returns_fully_assembled_lead_prompt(monkeypatch):
+    spec_path = Path(__file__).resolve().parents[2] / "agents" / "lead.yaml"
+    monkeypatch.setenv("AGENT_SPEC", str(spec_path))
+
+    *_, prompt = agent_loop._role_config("lead")
+
+    assert prompt.startswith("# Shared Tool-Use Environment")
+    assert "# Hackathon Lead" in prompt
+    assert prompt.index("# Shared Tool-Use Environment") < prompt.index(
+        "# Hackathon Lead"
+    )
+
+
+def test_lead_main_passes_agent_spec_prompt_to_resident_loop(monkeypatch):
+    spec_path = Path(__file__).resolve().parents[2] / "agents" / "lead.yaml"
+    captured = {}
+    client = object()
+    inbox = object()
+    monkeypatch.setenv("AGENT_SPEC", str(spec_path))
+    monkeypatch.delenv("AGENT_CHARTER", raising=False)
+    monkeypatch.setattr(lead_loop, "HubClient", lambda: client)
+    monkeypatch.setattr(
+        lead_loop,
+        "RemoteInbox",
+        lambda actual_client: inbox if actual_client is client else None,
+    )
+    monkeypatch.setattr(
+        lead_loop,
+        "agent_loop",
+        lambda **kwargs: captured.update(kwargs),
+    )
+
+    lead_loop.main()
+
+    assert captured["charter_path"] is None
+    assert captured["system_prompt"].startswith("# Shared Tool-Use Environment")
+    assert "# Hackathon Lead" in captured["system_prompt"]
+    assert captured["inbox"] is inbox
 
 
 def test_resident_loop_has_no_v6_prompt_or_direct_state_fallbacks():

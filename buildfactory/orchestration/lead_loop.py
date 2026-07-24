@@ -122,7 +122,16 @@ def main() -> None:
     heartbeat = int(
         os.environ.get("AGENT_HEARTBEAT_SECS", str(DEFAULT_LEAD_HEARTBEAT_SECS))
     )
-    provider, model, effort, role_mcp, session_mode, idle, strategic = _role_config(key)
+    (
+        provider,
+        model,
+        effort,
+        role_mcp,
+        session_mode,
+        idle,
+        strategic,
+        role_prompt,
+    ) = _role_config(key)
     mcp_config = os.environ.get("AGENT_MCP") or role_mcp or DEFAULT_MCP_CONFIG
     client = HubClient()
     inbox = RemoteInbox(client)
@@ -136,6 +145,7 @@ def main() -> None:
         session_file=session_file,
         heartbeat=heartbeat,
         charter_path=charter_path,
+        system_prompt=role_prompt,
         mcp_config=mcp_config,
         model=model,
         effort=effort,

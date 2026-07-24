@@ -5,6 +5,7 @@ and is tested in test_runtimes.py; the spec keeps the declaration semantics —
 including the load-bearing absent-vs-null distinction for model/effort."""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -54,6 +55,7 @@ def test_load_full_spec(tmp_path):
     assert spec.name == "demo"
     assert spec.provider == "claude-code"
     assert spec.credentials == "subscription"
+    assert spec.system_prompt_fragments == []
     assert spec.system_prompt == "assets/charter.md"
     assert spec.skills == ["assets/skills/demo-skill"]
     assert spec.mcp_config == "/opt/foundagent/mcp.json"
@@ -68,6 +70,7 @@ def test_load_team_worker():
     assert spec.effort == "xhigh"
     assert spec.credentials == "subscription"
     assert spec.skills == []
+    assert spec.system_prompt_fragments == ["../assets/shared-tool-use.md"]
     assert spec.system_prompt == "../assets/team-worker-charter.md"
     assert spec.hooks is None
 
@@ -103,6 +106,7 @@ def test_defaults_minimal_spec():
     assert spec.credentials == "subscription"
     assert spec.mcp_config == "/opt/foundagent/mcp.json"
     assert spec.permission_mode == "bypass"
+    assert spec.system_prompt_fragments == []
     assert spec.skills == []
     assert spec.session == "fresh"       # issue #207: resume is the opt-in exception
     assert spec.idle == "stop"           # 07-08: proactive is the opt-in exception
@@ -171,6 +175,60 @@ def test_read_system_prompt_and_skill_paths(tmp_path):
     assert os.path.isabs(paths[0])
     assert os.path.basename(paths[0]) == "demo-skill"
     assert os.path.exists(os.path.join(paths[0], "SKILL.md"))
+
+
+def test_system_prompt_fragments_precede_role_charter(tmp_path):
+    agents = tmp_path / "agents"
+    assets = agents / "assets"
+    assets.mkdir(parents=True)
+    (assets / "shared.md").write_text("SHARED TOOL GUIDANCE\n")
+    (assets / "charter.md").write_text("ROLE CHARTER\n")
+    spec_path = agents / "demo.yaml"
+    spec_path.write_text(
+        "name: demo\n"
+        "system_prompt_fragments:\n"
+        "  - assets/shared.md\n"
+        "system_prompt: assets/charter.md\n"
+    )
+
+    spec = AgentSpec.load(str(spec_path))
+
+    assert spec.system_prompt_fragments == ["assets/shared.md"]
+    assert spec.read_system_prompt() == "SHARED TOOL GUIDANCE\n\nROLE CHARTER"
+
+
+def test_active_roles_share_one_tool_prompt_without_losing_role_boundaries():
+    shared_path = os.path.join(AGENTS, "assets", "shared-tool-use.md")
+    shared = Path(shared_path).read_text(encoding="utf-8").strip()
+    prompts = {}
+
+    for role, path in ROLE_SPECS.items():
+        spec = AgentSpec.load(path)
+        assert len(spec.system_prompt_fragments) == 1, role
+        assert os.path.realpath(spec.resolve(spec.system_prompt_fragments[0])) == (
+            os.path.realpath(shared_path)
+        ), role
+        prompt = spec.read_system_prompt()
+        assert prompt is not None
+        assert prompt.startswith(shared + "\n\n"), role
+        assert prompt.count("# Shared Tool-Use Environment") == 1, role
+        prompts[role] = prompt
+
+    for required in (
+        "GitHub CLI (`gh`)",
+        "Vercel CLI (`vercel`)",
+        "meaningful, independently verifiable step",
+        "create a project repository",
+        "deploy the product",
+        "Markdown under\n`/project`",
+    ):
+        assert required in shared
+    assert "never grants permission or overrides the role charter" in shared
+    assert "Lead remains responsible for judgment and Goal delegation" in shared
+    assert "Verifier remains read-only" in shared
+    assert "# Hackathon Lead" in prompts["lead"]
+    assert "# One-Goal Hackathon Worker" in prompts["team-worker"]
+    assert "# Fresh Hackathon Verifier" in prompts["team-verifier"]
 
 
 def test_model_effort_unset_override_and_null(tmp_path):

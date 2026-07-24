@@ -90,7 +90,6 @@ services:
       AGENT_KEY: lead
       AGENT_KIND: lead
       AGENT_SPEC: /opt/foundagent-orch/agents/lead.yaml
-      AGENT_CHARTER: /opt/foundagent-orch/agents/assets/lead-charter.md
       AGENT_LOOP_MODULE: orchestration.lead_loop
       AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-60}
       AGENT_CLAUDE_TIMEOUT: ${AGENT_CLAUDE_TIMEOUT:-3600}
