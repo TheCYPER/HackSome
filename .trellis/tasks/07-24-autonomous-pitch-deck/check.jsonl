@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "Verify prompt freezing, role isolation, file contracts, explicit model pinning, failure handling, and automatic publication."}
+{"file": "buildfactory/.trellis/spec/backend/agent-execution-contracts.md", "reason": "Verify real Codex session creation and resume, explicit sol/xhigh argv, credentials isolation, and runtime result handling."}
+{"file": ".trellis/tasks/07-24-autonomous-pitch-deck/research/current-system-findings.md", "reason": "Check the implementation preserves the selected ClaudeHack patterns while using Project copy and Director to Reviewer to HTML to Script ordering."}

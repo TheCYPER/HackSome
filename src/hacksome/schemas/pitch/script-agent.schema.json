@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "artifact"],
+  "properties": {
+    "status": {"type": "string", "const": "completed"},
+    "artifact": {"type": "string", "const": "pitch-script.md"}
+  }
+}

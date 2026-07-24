@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "artifact", "issues"],
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "REVISE"]},
+    "artifact": {"type": "string", "const": "outline-review.md"},
+    "issues": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slide_id", "problem", "required_change"],
+        "properties": {
+          "slide_id": {"type": "string", "minLength": 1},
+          "problem": {"type": "string", "minLength": 1},
+          "required_change": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
