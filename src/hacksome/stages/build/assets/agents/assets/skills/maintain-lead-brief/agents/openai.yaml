@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Lead Brief"
+  short_description: "Keep a bounded, evidence-based Lead checkpoint"
+  default_prompt: "Use $maintain-lead-brief to inspect live project evidence and checkpoint this Lead wake."

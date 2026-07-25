@@ -99,6 +99,10 @@ class ComposeTeamLifecycle:
                 "TEAM_STATE_ROOT": str(
                     Path(row["_absolute_control_root"]).resolve()
                 ),
+                "LEAD_REFLECTION_MEMORY_ENABLED": os.environ.get(
+                    "LEAD_REFLECTION_MEMORY_ENABLED",
+                    "0",
+                ),
             }
         )
         return environment

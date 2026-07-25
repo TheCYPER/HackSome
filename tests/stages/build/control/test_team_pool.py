@@ -6,10 +6,32 @@ import pytest
 from hacksome.stages.build.control.handoff import BuildAuthorizationEnvelopeV1
 from hacksome.stages.build.control.runtime_store import StoreError
 from hacksome.stages.build.control.team_operator import TeamOperator
-from hacksome.stages.build.control.team_pool import FakeTeamLifecycle
+from hacksome.stages.build.control.team_pool import (
+    ComposeTeamLifecycle,
+    FakeTeamLifecycle,
+)
 from hacksome.stages.build.control.team_registry import RegistryConflictError
-
 from tests.stages.build.control.test_handoff import envelope
+
+
+def test_compose_lifecycle_propagates_reflection_rollout_flag(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("LEAD_REFLECTION_MEMORY_ENABLED", "1")
+    lifecycle = ComposeTeamLifecycle(
+        build_ops_root=tmp_path / "ops",
+        repository_root=tmp_path / "repo",
+    )
+
+    environment = lifecycle._environment(
+        {
+            "team_id": "demo-team",
+            "_absolute_control_root": str(tmp_path / "state" / "demo-team"),
+        }
+    )
+
+    assert environment["LEAD_REFLECTION_MEMORY_ENABLED"] == "1"
 
 
 def test_ten_teams_two_slots_fifo_pause_and_receipt_replay(tmp_path):
@@ -44,16 +66,18 @@ def test_ten_teams_two_slots_fifo_pause_and_receipt_replay(tmp_path):
 
     operator.pause(receipts[0]["team_id"], request_id="pause-first")
     after = operator.list()
-    assert next(
-        team
-        for team in after["teams"]
-        if team["team_id"] == receipts[0]["team_id"]
-    )["observed_state"] == "paused"
-    assert next(
-        team
-        for team in after["teams"]
-        if team["team_id"] == receipts[2]["team_id"]
-    )["observed_state"] == "active"
+    assert (
+        next(
+            team for team in after["teams"] if team["team_id"] == receipts[0]["team_id"]
+        )["observed_state"]
+        == "paused"
+    )
+    assert (
+        next(
+            team for team in after["teams"] if team["team_id"] == receipts[2]["team_id"]
+        )["observed_state"]
+        == "active"
+    )
 
     replay = operator.authorize(values[0])
     assert replay == receipts[0]

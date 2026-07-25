@@ -32,18 +32,18 @@ def _materialize(tmp_path, monkeypatch, key: str, relative_spec: str):
 
 
 @pytest.mark.parametrize(
-    ("key", "relative_spec"),
+    ("key", "relative_spec", "expected_skills"),
     [
-        ("lead", "lead.yaml"),
-        ("team-worker", "ephemeral/team-worker.yaml"),
-        ("team-verifier", "ephemeral/team-verifier.yaml"),
+        ("lead", "lead.yaml", ["maintain-lead-brief"]),
+        ("team-worker", "ephemeral/team-worker.yaml", []),
+        ("team-verifier", "ephemeral/team-verifier.yaml", []),
     ],
 )
-def test_active_team_templates_materialize_zero_skills(
-    tmp_path, monkeypatch, key, relative_spec
+def test_active_team_templates_materialize_role_specific_skills(
+    tmp_path, monkeypatch, key, relative_spec, expected_skills
 ):
     info = _materialize(tmp_path, monkeypatch, key, relative_spec)
-    assert info.skills == []
+    assert info.skills == expected_skills
 
 
 def test_unknown_key_is_charter_only(tmp_path):
@@ -76,4 +76,4 @@ def test_deprecated_loadout_overlay_cannot_mutate_fixed_template(
 ):
     monkeypatch.setenv("AGENT_LOADOUT", str(tmp_path / "arbitrary.yaml"))
     info = _materialize(tmp_path, monkeypatch, "lead", "lead.yaml")
-    assert info.skills == []
+    assert info.skills == ["maintain-lead-brief"]

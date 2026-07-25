@@ -30,6 +30,7 @@ shared:
 		$(OPS_ROOT)/state/$(TEAM)/workers \
 		$(OPS_ROOT)/state/$(TEAM)/reviews \
 		$(OPS_ROOT)/state/$(TEAM)/control \
+		$(OPS_ROOT)/state/$(TEAM)/memory \
 		$(OPS_ROOT)/state/$(TEAM)/sessions/lead/codex \
 		$(OPS_ROOT)/state/$(TEAM)/telemetry/services \
 		$(OPS_ROOT)/state/$(TEAM)/telemetry/runs \

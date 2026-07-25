@@ -483,7 +483,7 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                retry_backoff: float = 5.0,
                wake_completed: Callable[[dict], object] | None = None,
                context_loader: Callable[[], dict],
-               prompt_builder: Callable[[dict | None, str, str, str], str] | None = None,
+               prompt_builder: Callable[[dict | None, str, str, str, dict], str] | None = None,
                wake_gate: Callable[[dict | None, dict], bool] | None = None,
                completion_owns_ack: bool = False) -> None:
     """Run one resident actor against the V7 Hub boundary.
@@ -565,7 +565,7 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                 strategic=strategic,
             )
         else:
-            prompt = prompt_builder(event, wake_id, trigger, now)
+            prompt = prompt_builder(event, wake_id, trigger, now, context)
         outcome = wake(
             session_id,
             prompt,

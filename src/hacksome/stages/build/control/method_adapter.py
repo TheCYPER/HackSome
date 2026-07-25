@@ -14,16 +14,16 @@ from pathlib import Path
 from typing import Callable, Literal, Protocol
 
 from hacksome.stages.build.control.runtime_store import (
-    atomic_write_json,
     append_jsonl,
+    atomic_write_json,
     file_lock,
     read_json,
     require_identifier,
 )
 
-
 ActorKind = Literal["lead", "ceo", "department", "worker", "verifier", "manager"]
 Handler = Callable[["ActorContext", dict, str], object]
+AuditRequest = Callable[[object], object]
 AuditResult = Callable[[object], object]
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -55,7 +55,14 @@ class ActorContext:
 
     def __post_init__(self) -> None:
         require_identifier(self.actor_id, label="actor id")
-        if self.kind not in ("lead", "ceo", "department", "worker", "verifier", "manager"):
+        if self.kind not in (
+            "lead",
+            "ceo",
+            "department",
+            "worker",
+            "verifier",
+            "manager",
+        ):
             raise MethodError("invalid_actor", f"unknown actor kind: {self.kind!r}")
 
 
@@ -73,12 +80,18 @@ class MethodRequest:
         allowed = {"version", "request_id", "method", "payload"}
         extra = set(raw) - allowed
         if extra:
-            raise MethodError("invalid_request", f"unknown request fields: {sorted(extra)}")
+            raise MethodError(
+                "invalid_request", f"unknown request fields: {sorted(extra)}"
+            )
         if raw.get("version") != 1:
-            raise MethodError("unsupported_version", "only method protocol version 1 is supported")
+            raise MethodError(
+                "unsupported_version", "only method protocol version 1 is supported"
+            )
         request_id = raw.get("request_id")
         if not isinstance(request_id, str) or not _REQUEST_ID.fullmatch(request_id):
-            raise MethodError("invalid_request_id", f"invalid request_id: {request_id!r}")
+            raise MethodError(
+                "invalid_request_id", f"invalid request_id: {request_id!r}"
+            )
         method = raw.get("method")
         if not isinstance(method, str) or not method:
             raise MethodError("invalid_method", "method must be a non-empty string")
@@ -98,6 +111,7 @@ class MethodAdapter:
         self._handlers: dict[str, Handler] = {}
         self._permissions: dict[str, frozenset[ActorKind]] = {}
         self._cache_responses: dict[str, bool] = {}
+        self._audit_request: dict[str, AuditRequest | None] = {}
         self._audit_result: dict[str, AuditResult | None] = {}
 
     def register(
@@ -107,6 +121,7 @@ class MethodAdapter:
         actors: set[ActorKind],
         handler: Handler,
         cache_response: bool = True,
+        audit_request: AuditRequest | None = None,
         audit_result: AuditResult | None = None,
     ) -> None:
         if method in self._handlers:
@@ -116,6 +131,7 @@ class MethodAdapter:
         self._handlers[method] = handler
         self._permissions[method] = frozenset(actors)
         self._cache_responses[method] = cache_response
+        self._audit_request[method] = audit_request
         self._audit_result[method] = audit_result
 
     def call(self, actor: ActorContext, raw_request: object) -> dict:
@@ -174,14 +190,18 @@ class MethodAdapter:
                 self._audit(actor, request, response, replayed=False)
                 return response
         except MethodError as exc:
-            request_id = raw_request.get("request_id") if isinstance(raw_request, dict) else None
+            request_id = (
+                raw_request.get("request_id") if isinstance(raw_request, dict) else None
+            )
             response = {
                 "version": 1,
                 "request_id": request_id,
                 "ok": False,
                 "error": {"code": exc.code, "message": str(exc)},
             }
-            self._audit(actor, request, response, replayed=False, raw_request=raw_request)
+            self._audit(
+                actor, request, response, replayed=False, raw_request=raw_request
+            )
             return response
 
     def _audit(
@@ -205,6 +225,36 @@ class MethodAdapter:
                 }
             else:
                 request_row = raw_request
+            method = (
+                request.method
+                if request is not None
+                else (
+                    raw_request.get("method")
+                    if isinstance(raw_request, dict)
+                    and isinstance(raw_request.get("method"), str)
+                    else None
+                )
+            )
+            redact_request = (
+                self._audit_request.get(method) if method is not None else None
+            )
+            if redact_request is not None:
+                try:
+                    request_row = redact_request(request_row)
+                except Exception:  # noqa: BLE001 — fail closed for sensitive data
+                    request_row = {
+                        "redacted": True,
+                        "method": method,
+                        "request_id": (
+                            request.request_id
+                            if request is not None
+                            else (
+                                raw_request.get("request_id")
+                                if isinstance(raw_request, dict)
+                                else None
+                            )
+                        ),
+                    }
             audit_response = response
             if request is not None and response.get("ok"):
                 redact = self._audit_result.get(request.method)

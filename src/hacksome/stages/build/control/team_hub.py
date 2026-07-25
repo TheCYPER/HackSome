@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import threading
 import time
@@ -11,23 +12,43 @@ from pathlib import Path
 from typing import Callable
 
 from hacksome.stages.build.control.inbox import FileInbox, make_ime
+from hacksome.stages.build.control.lead_brief import (
+    LeadBriefCheckpointRequest,
+    LeadBriefError,
+    LeadBriefStore,
+    canonical_goal_state,
+    parse_lead_reflection_memory_enabled,
+    redact_checkpoint_audit_request,
+    redact_lead_brief_audit_result,
+)
 from hacksome.stages.build.control.method_adapter import (
     ActorContext,
     ActorKind,
+    AuditRequest,
+    AuditResult,
     MethodAdapter,
     MethodError,
 )
-from hacksome.stages.build.control.runtime_store import atomic_write_json, file_lock, read_json
-from hacksome.stages.build.control.team_scheduler import NON_TERMINAL, TeamGoalScheduler, WorkerLaunch
-from hacksome.stages.build.control.team_store import TeamLayout
+from hacksome.stages.build.control.runtime_store import (
+    atomic_write_json,
+    file_lock,
+    read_json,
+)
 from hacksome.stages.build.control.team_http import TeamHTTPServer
+from hacksome.stages.build.control.team_scheduler import (
+    NON_TERMINAL,
+    TeamGoalScheduler,
+    WorkerLaunch,
+)
+from hacksome.stages.build.control.team_store import TeamLayout
 from hacksome.stages.build.control.verifier_manager import ReviewLaunch, VerifierManager
-
 
 LEAD_KEY = "lead"
 LEAD_CAPABILITIES = ("create_goal", "list_my_goals", "cancel_goal")
+LEAD_BRIEF_CAPABILITIES = ("read_lead_brief", "checkpoint_lead_brief")
 MESSAGE_TYPES = frozenset({"team_started", "goal_batch_drained"})
 MESSAGE_MAX_BYTES = 64 * 1024
+logger = logging.getLogger(__name__)
 
 
 class TeamHubError(ValueError):
@@ -61,12 +82,26 @@ def _payload_fields(
 class TeamHub:
     """One resident Lead plus sequential Worker and Verifier lifecycles."""
 
-    def __init__(self, root: str | os.PathLike, *, team_id: str = "hackathon-team"):
+    def __init__(
+        self,
+        root: str | os.PathLike,
+        *,
+        team_id: str = "hackathon-team",
+        lead_reflection_memory_enabled: bool | None = None,
+    ):
         self.layout = TeamLayout.initialize(root)
         self.team_id = team_id
+        if lead_reflection_memory_enabled is None:
+            lead_reflection_memory_enabled = parse_lead_reflection_memory_enabled(
+                os.environ.get("LEAD_REFLECTION_MEMORY_ENABLED")
+            )
+        if not isinstance(lead_reflection_memory_enabled, bool):
+            raise TeamHubError("lead_reflection_memory_enabled must be a boolean")
+        self.lead_reflection_memory_enabled = lead_reflection_memory_enabled
         self.inbox = FileInbox(self.layout.inbox, poll_tick=0.05)
         self.scheduler = TeamGoalScheduler(self.layout.ledger)
         self.reviews = VerifierManager(self.layout.reviews, max_instances=1)
+        self.lead_briefs = LeadBriefStore(self.layout.memory, team_id=team_id)
         self.adapter = MethodAdapter(self.layout)
         self._hub_lock = self.layout.control / ".hub.lock"
         self._register_methods()
@@ -77,6 +112,9 @@ class TeamHub:
         method: str,
         actors: set[ActorKind],
         handler: Callable[[ActorContext, dict, str], object],
+        *,
+        audit_request: AuditRequest | None = None,
+        audit_result: AuditResult | None = None,
     ) -> None:
         def guarded(actor: ActorContext, payload: dict, request_id: str):
             try:
@@ -84,19 +122,44 @@ class TeamHub:
                     return handler(actor, payload, request_id)
             except MethodError:
                 raise
+            except LeadBriefError as exc:
+                raise MethodError(exc.code, str(exc)) from exc
             except (ValueError, RuntimeError) as exc:
                 raise MethodError("invalid_state", str(exc)) from exc
 
-        self.adapter.register(method, actors=actors, handler=guarded)
+        self.adapter.register(
+            method,
+            actors=actors,
+            handler=guarded,
+            audit_request=audit_request,
+            audit_result=audit_result,
+        )
 
     def _register_methods(self) -> None:
-        self._register("wake_context", {"lead"}, self._wake_context)
+        self._register(
+            "wake_context",
+            {"lead"},
+            self._wake_context,
+            audit_result=redact_lead_brief_audit_result,
+        )
         self._register("peek_message", {"lead"}, self._peek_message)
         self._register("ack_message", {"lead"}, self._ack_message)
         self._register("wake_completed", {"lead"}, self._wake_completed)
         self._register("create_goal", {"lead"}, self._create_goal)
         self._register("list_my_goals", {"lead"}, self._list_my_goals)
         self._register("cancel_goal", {"lead"}, self._cancel_goal)
+        self._register(
+            "read_lead_brief",
+            {"lead"},
+            self._read_lead_brief,
+            audit_result=redact_lead_brief_audit_result,
+        )
+        self._register(
+            "checkpoint_lead_brief",
+            {"lead"},
+            self._checkpoint_lead_brief,
+            audit_request=redact_checkpoint_audit_request,
+        )
         self._register("submit_result", {"worker"}, self._submit_result)
         self._register("submit_verdict", {"verifier"}, self._submit_verdict)
         self._register("worker_started", {"manager"}, self._worker_started)
@@ -130,12 +193,71 @@ class TeamHub:
 
     # -- resident Lead -------------------------------------------------
 
-    def _wake_context(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _wake_context(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(payload)
         self._require_lead(actor)
-        return {"actor_id": LEAD_KEY, "capabilities": list(LEAD_CAPABILITIES)}
+        result: dict[str, object] = {
+            "actor_id": LEAD_KEY,
+            "capabilities": list(
+                LEAD_CAPABILITIES
+                + (
+                    LEAD_BRIEF_CAPABILITIES
+                    if self.lead_reflection_memory_enabled
+                    else ()
+                )
+            ),
+        }
+        if self.lead_reflection_memory_enabled:
+            current_goal_seq, goal_state_sha256 = self._lead_goal_state()
+            result["lead_brief"] = self.lead_briefs.read(
+                current_goal_seq=current_goal_seq,
+                goal_state_sha256=goal_state_sha256,
+                enabled=True,
+            )
+        return result
 
-    def _peek_message(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _read_lead_brief(
+        self,
+        actor: ActorContext,
+        payload: dict,
+        request_id: str,
+    ) -> dict:
+        _payload_fields(payload)
+        self._require_lead(actor)
+        if not self.lead_reflection_memory_enabled:
+            return self.lead_briefs.disabled_projection()
+        current_goal_seq, goal_state_sha256 = self._lead_goal_state()
+        return self.lead_briefs.read(
+            current_goal_seq=current_goal_seq,
+            goal_state_sha256=goal_state_sha256,
+            enabled=True,
+        )
+
+    def _checkpoint_lead_brief(
+        self,
+        actor: ActorContext,
+        payload: dict,
+        request_id: str,
+    ) -> dict:
+        self._require_lead(actor)
+        if not self.lead_reflection_memory_enabled:
+            raise LeadBriefError(
+                "feature_disabled",
+                "Lead reflection memory is disabled",
+            )
+        checkpoint = LeadBriefCheckpointRequest.from_payload(payload)
+        current_goal_seq, goal_state_sha256 = self._lead_goal_state()
+        return self.lead_briefs.checkpoint(
+            checkpoint,
+            current_goal_seq=current_goal_seq,
+            goal_state_sha256=goal_state_sha256,
+        )
+
+    def _peek_message(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(payload)
         self._require_lead(actor)
         return {"message": self.inbox.peek_one(LEAD_KEY)}
@@ -183,7 +305,9 @@ class TeamHub:
             "message_id": payload["message_id"],
         }
 
-    def _wake_completed(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _wake_completed(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(
             payload,
             required={"wake_id", "finished_at"},
@@ -192,16 +316,42 @@ class TeamHub:
         self._require_lead(actor)
         message_id = payload.get("message_id")
         acked = self._ack_bound_message(message_id) if message_id is not None else False
+        memory_completion: dict | None = None
+        if self.lead_reflection_memory_enabled:
+            current_goal_seq, goal_state_sha256 = self._lead_goal_state()
+            try:
+                memory_completion = self.lead_briefs.record_wake_completion(
+                    payload["wake_id"],
+                    current_goal_seq=current_goal_seq,
+                    goal_state_sha256=goal_state_sha256,
+                )
+            except LeadBriefError as exc:
+                logger.warning(
+                    "Lead brief wake completion failed team=%s wake=%s code=%s",
+                    self.team_id,
+                    payload["wake_id"],
+                    exc.code,
+                )
+                memory_completion = {
+                    "action": "error",
+                    "error_code": exc.code,
+                }
+        completion = {
+            "agent_id": LEAD_KEY,
+            "message_id": message_id,
+            "wake_id": payload["wake_id"],
+            "finished_at": payload["finished_at"],
+        }
+        if memory_completion is not None:
+            completion["lead_brief"] = memory_completion
         atomic_write_json(
             self.layout.control / "wake-completions" / f"{payload['wake_id']}.json",
-            {
-                "agent_id": LEAD_KEY,
-                "message_id": message_id,
-                "wake_id": payload["wake_id"],
-                "finished_at": payload["finished_at"],
-            },
+            completion,
         )
-        return {"recorded": True, "acked": acked}
+        result: dict[str, object] = {"recorded": True, "acked": acked}
+        if memory_completion is not None:
+            result["lead_brief"] = memory_completion
+        return result
 
     # -- Goal methods --------------------------------------------------
 
@@ -216,10 +366,14 @@ class TeamHub:
         self._schedule_workers()
         return self._goal_projection(self.scheduler.get(goal_id))
 
-    def _list_my_goals(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _list_my_goals(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(payload)
         self._require_lead(actor)
-        return {"goals": [self._goal_projection(row) for row in self.scheduler.list_goals()]}
+        return {
+            "goals": [self._goal_projection(row) for row in self.scheduler.list_goals()]
+        }
 
     def _cancel_goal(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
         _payload_fields(payload, required={"goal_id", "reason"})
@@ -239,7 +393,9 @@ class TeamHub:
         self._maybe_signal_batch_drained()
         return {"changed": changed, "goal": self._goal_projection(goal)}
 
-    def _submit_result(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _submit_result(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(payload)
         if not actor.goal_id:
             raise TeamHubError("Worker context has no Goal")
@@ -276,10 +432,16 @@ class TeamHub:
 
     # -- Worker manager callbacks -------------------------------------
 
-    def _worker_started(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _worker_started(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         self._require_manager(actor, "worker-manager")
-        _payload_fields(payload, required={"goal_id", "worker_id"}, optional={"started_at"})
-        self.scheduler.worker_started(payload["goal_id"], worker_id=payload["worker_id"])
+        _payload_fields(
+            payload, required={"goal_id", "worker_id"}, optional={"started_at"}
+        )
+        self.scheduler.worker_started(
+            payload["goal_id"], worker_id=payload["worker_id"]
+        )
         return self._goal_projection(self.scheduler.get(payload["goal_id"]))
 
     def _worker_start_failed(
@@ -296,7 +458,9 @@ class TeamHub:
         self._schedule_workers()
         return self._goal_projection(self.scheduler.get(payload["goal_id"]))
 
-    def _worker_resumed(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _worker_resumed(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         self._require_manager(actor, "worker-manager")
         _payload_fields(
             payload, required={"goal_id", "worker_id"}, optional={"session_token"}
@@ -341,7 +505,9 @@ class TeamHub:
                 self._write_worker_resume(goal)
         return self._goal_projection(goal)
 
-    def _worker_stopped(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _worker_stopped(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         self._require_manager(actor, "worker-manager")
         _payload_fields(payload, required={"goal_id", "worker_id"})
         self.scheduler.worker_stopped(
@@ -353,7 +519,9 @@ class TeamHub:
 
     # -- Verifier ------------------------------------------------------
 
-    def _submit_verdict(self, actor: ActorContext, payload: dict, request_id: str) -> dict:
+    def _submit_verdict(
+        self, actor: ActorContext, payload: dict, request_id: str
+    ) -> dict:
         _payload_fields(payload, required={"verdict", "reason"}, optional={"review_id"})
         if not actor.review_id:
             raise TeamHubError("Verifier context has no review")
@@ -514,7 +682,9 @@ class TeamHub:
 
     # -- Lead triggers -------------------------------------------------
 
-    def _message(self, message_type: str, text: str, data: dict, *, message_id: str) -> None:
+    def _message(
+        self, message_type: str, text: str, data: dict, *, message_id: str
+    ) -> None:
         if message_type not in MESSAGE_TYPES:
             raise TeamHubError(f"unknown Lead trigger: {message_type}")
         event = make_ime(
@@ -544,7 +714,10 @@ class TeamHub:
         sequence = max(int(goal["enqueue_seq"]) for goal in goals)
         marker = self.layout.control / "last-drained-batch.json"
         previous = read_json(marker, default={})
-        if isinstance(previous, dict) and int(previous.get("enqueue_seq", 0)) >= sequence:
+        if (
+            isinstance(previous, dict)
+            and int(previous.get("enqueue_seq", 0)) >= sequence
+        ):
             return
         self._message(
             "goal_batch_drained",
@@ -570,6 +743,11 @@ class TeamHub:
                 "workers": self.scheduler.inspect()["active_workers"],
                 "verifiers": self.reviews.inspect_pool(),
             }
+
+    def _lead_goal_state(self) -> tuple[int, str]:
+        return canonical_goal_state(
+            [self._goal_projection(goal) for goal in self.scheduler.list_goals()]
+        )
 
     @staticmethod
     def _goal_projection(goal: dict) -> dict:

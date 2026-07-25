@@ -23,6 +23,7 @@ CONTROL_DOMAINS = (
     "workers",
     "reviews",
     "control",
+    "memory",
     "sessions",
     "telemetry",
 )
@@ -128,6 +129,10 @@ class TeamLayout:
     @property
     def control(self) -> Path:
         return self.root / "control"
+
+    @property
+    def memory(self) -> Path:
+        return self.root / "memory"
 
     @property
     def sessions(self) -> Path:

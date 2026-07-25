@@ -1,5 +1,5 @@
-import subprocess
 import inspect
+import subprocess
 
 import pytest
 
@@ -107,7 +107,9 @@ def test_v7_prompt_surfaces_pending_objective_without_exposing_review_store():
     assert "/reviews" not in prompt
 
 
-def test_reliable_loop_retries_same_message_and_only_acks_success(tmp_path, monkeypatch):
+def test_reliable_loop_retries_same_message_and_only_acks_success(
+    tmp_path, monkeypatch
+):
     inbox = ReliableInbox([_event(1), _event(2)])
     prompts = []
     outcomes = [
@@ -152,7 +154,9 @@ def test_reliable_loop_retries_same_message_and_only_acks_success(tmp_path, monk
     assert "message 2" in prompts[2]
 
 
-def test_reliable_loop_drains_three_messages_before_waiting_for_heartbeat(tmp_path, monkeypatch):
+def test_reliable_loop_drains_three_messages_before_waiting_for_heartbeat(
+    tmp_path, monkeypatch
+):
     inbox = ReliableInbox([_event(1), _event(2), _event(3)])
     completed = []
 
@@ -251,6 +255,38 @@ def test_wake_gate_suppresses_model_until_it_allows_wake(tmp_path, monkeypatch):
 
     assert inbox.waits == 2
     assert wake_calls == ["heartbeat"]
+
+
+def test_custom_prompt_builder_receives_loaded_wake_context(tmp_path, monkeypatch):
+    context = {
+        "actor_id": "lead",
+        "capabilities": ["read_lead_brief"],
+        "lead_brief": {"enabled": True, "revision": 0},
+    }
+    captured = []
+
+    def prompt_builder(event, wake_id, trigger, now, loaded_context):
+        captured.append((event, wake_id, trigger, now, loaded_context))
+        return "LEAD WAKE"
+
+    def fake_wake(*_args, **_kwargs):
+        raise StopLoop
+
+    monkeypatch.setattr(agent_loop, "wake", fake_wake)
+
+    with pytest.raises(StopLoop):
+        agent_loop.agent_loop(
+            key="lead",
+            session_file=tmp_path / "session",
+            heartbeat=60,
+            inbox=ReliableInbox([]),
+            context_loader=lambda: context,
+            prompt_builder=prompt_builder,
+        )
+
+    assert captured[0][0] is None
+    assert captured[0][2] == "heartbeat"
+    assert captured[0][4] is context
 
 
 @pytest.mark.parametrize("override_text", (None, "OPERATOR OVERRIDE"))

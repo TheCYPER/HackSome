@@ -107,6 +107,7 @@ def test_role_prompts_are_self_contained_and_keep_acceptance_private():
         "wake-1",
         "heartbeat",
         "2026-07-23T00:00:00+00:00",
+        {},
     )
     assert "/project/reference/challenge.md" in lead
     assert "create_goal" in lead
@@ -406,6 +407,7 @@ def test_dynamic_worker_and_verifier_project_mount_permissions(tmp_path, monkeyp
     calls = []
     forbidden_targets = {
         "/control",
+        "/memory",
         "/telemetry",
         "/reviews",
         "/workers",

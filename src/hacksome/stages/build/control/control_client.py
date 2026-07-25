@@ -8,9 +8,12 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Mapping
+from pathlib import Path
+from typing import Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from hacksome.stages.build.control.lead_brief import LEAD_BRIEF_MAX_BYTES
 
 
 class ControlClientError(RuntimeError):
@@ -40,8 +43,7 @@ class BoundActor:
             kind=kind,
             actor_id=actor_id,
             department_id=(
-                env.get("DEPARTMENT_ID")
-                or (actor_id if kind == "department" else None)
+                env.get("DEPARTMENT_ID") or (actor_id if kind == "department" else None)
             ),
             goal_id=env.get("GOAL_ID"),
             review_id=env.get("REVIEW_ID"),
@@ -119,7 +121,13 @@ class HubClient:
         try:
             with urlopen(request, timeout=max(self.timeout, 120.0)) as response:
                 body = json.loads(response.read())
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
             raise ControlClientError("archive_transport_error", str(exc)) from exc
         if not isinstance(body, dict) or not body.get("ok"):
             error = body.get("error", {}) if isinstance(body, dict) else {}
@@ -168,7 +176,9 @@ class RemoteInbox:
 
     def _require_key(self, key: str) -> None:
         if key != self.client.actor.actor_id:
-            raise ControlClientError("actor_is_bound", "Inbox key is not the bound actor")
+            raise ControlClientError(
+                "actor_is_bound", "Inbox key is not the bound actor"
+            )
 
 
 def load_wake_context(client: HubClient | None = None) -> dict:
@@ -190,16 +200,54 @@ def notify_wake_completed(details: dict, client: HubClient | None = None) -> dic
     )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Call one Build Team Hub method")
     parser.add_argument("method")
     parser.add_argument("--json", default="{}", dest="payload_json")
     parser.add_argument("--request-id")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--markdown-file",
+        type=Path,
+        help=(
+            "Read bounded UTF-8 Markdown for checkpoint_lead_brief replace; "
+            "never embeds the body in shell argv"
+        ),
+    )
+    return parser
+
+
+def _read_markdown_file(path: Path) -> str:
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(LEAD_BRIEF_MAX_BYTES + 1)
+    except OSError as exc:
+        raise ValueError(f"could not read --markdown-file: {exc}") from exc
+    if len(raw) > LEAD_BRIEF_MAX_BYTES:
+        raise ValueError(f"--markdown-file exceeds {LEAD_BRIEF_MAX_BYTES} UTF-8 bytes")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("--markdown-file is not valid UTF-8") from exc
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     try:
         payload = json.loads(args.payload_json)
         if not isinstance(payload, dict):
             raise ValueError("--json must decode to an object")
+        if args.markdown_file is not None:
+            if args.method != "checkpoint_lead_brief":
+                raise ValueError(
+                    "--markdown-file is only valid for checkpoint_lead_brief"
+                )
+            if payload.get("action") != "replace":
+                raise ValueError("--markdown-file requires checkpoint action 'replace'")
+            if "markdown" in payload:
+                raise ValueError(
+                    "checkpoint Markdown must be supplied only by --markdown-file"
+                )
+            payload["markdown"] = _read_markdown_file(args.markdown_file)
         result = HubClient().call(args.method, payload, request_id=args.request_id)
     except (ValueError, ControlClientError) as exc:
         raise SystemExit(f"control method failed: {exc}") from exc

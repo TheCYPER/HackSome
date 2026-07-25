@@ -42,6 +42,7 @@ def test_lead_has_project_and_account_but_no_control_plane_mounts():
     assert "/company" not in targets
     forbidden = {
         "/control",
+        "/memory",
         "/telemetry",
         "/reviews",
         "/workers",
@@ -57,6 +58,10 @@ def test_lead_has_project_and_account_but_no_control_plane_mounts():
     assert "AGENT_CHARTER" not in lead["environment"]
     assert lead["environment"]["AGENT_LOOP_MODULE"] == "hacksome.stages.build.control.lead_loop"
     assert lead["environment"]["AGENT_HEARTBEAT_SECS"] == "${LEAD_HEARTBEAT_SECS:-60}"
+    assert (
+        lead["environment"]["LEAD_REFLECTION_MEMORY_ENABLED"]
+        == "${LEAD_REFLECTION_MEMORY_ENABLED:-0}"
+    )
     assert "entrypoint" not in lead
 
 
@@ -67,6 +72,10 @@ def test_hub_and_managers_use_team_state_with_single_concurrency():
     assert "MAIL_GLOBAL_ROOT" not in hub["environment"]
     assert "GOAL_TIMEOUT_SECS" not in hub["environment"]
     assert "hacksome.stages.build.control.team_hub" in " ".join(hub["entrypoint"])
+    assert (
+        hub["environment"]["LEAD_REFLECTION_MEMORY_ENABLED"]
+        == "${LEAD_REFLECTION_MEMORY_ENABLED:-0}"
+    )
 
     worker = SERVICES["worker-manager"]["environment"]
     verifier = SERVICES["verifier-manager"]["environment"]
@@ -95,6 +104,7 @@ def test_makefile_bootstraps_exact_references_and_has_no_company_services():
     assert "--idea-card-file" in makefile
     assert "project/reference/challenge.md" in makefile
     assert "project/reference/initial-idea-card.md" in makefile
+    assert "/memory" in makefile
     assert "label=hacksome.team=$(TEAM)" in makefile
     for removed in (
         "mail-up:",

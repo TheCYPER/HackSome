@@ -43,6 +43,8 @@ hacksome = [
   "stages/build/approval_ui/*",
   "stages/build/assets/agents/*.yaml",
   "stages/build/assets/agents/assets/*.md",
+  "stages/build/assets/agents/assets/skills/*/SKILL.md",
+  "stages/build/assets/agents/assets/skills/*/agents/*.yaml",
   "stages/build/assets/agents/ephemeral/*.yaml",
   "stages/build/assets/agents/mcp/*.json",
   "stages/build/assets/scripts/*.sh",

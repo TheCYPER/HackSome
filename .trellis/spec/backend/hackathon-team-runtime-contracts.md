@@ -13,13 +13,14 @@ One approved Idea Card creates one Team. The Team mounts only its own
 The only production AgentSpec manifests are
 `src/hacksome/stages/build/assets/agents/lead.yaml`,
 `src/hacksome/stages/build/assets/agents/ephemeral/team-worker.yaml`, and
-`src/hacksome/stages/build/assets/agents/ephemeral/team-verifier.yaml`. All
-three declare `skills: []`; the generic materialization framework remains, but
-the Build Stage bundles no business Skill catalog or independent mail Compose.
+`src/hacksome/stages/build/assets/agents/ephemeral/team-verifier.yaml`. The
+generic materialization framework remains: Worker and Verifier declare
+`skills: []`, while Lead alone declares the bundled `maintain-lead-brief`
+Skill for its controller-owned reflection checkpoint.
 
 The deterministic control plane owns Goal, Worker, review, command, session,
-and telemetry state. Model runtimes may change anything under `/project`, but
-they do not mutate control-plane files directly.
+memory, and telemetry state. Model runtimes may change anything under
+`/project`, but they do not mutate control-plane files directly.
 
 The active v1 loop is:
 
@@ -33,6 +34,159 @@ no active Goal → next Lead wake
 
 There is one Worker slot per Team. A Lead may create multiple Goals; the Hub
 queues them rather than treating the slot as a product-selection mechanism.
+
+### 1.1 Lead reflection checkpoint
+
+#### 1. Scope / Trigger
+
+`LEAD_REFLECTION_MEMORY_ENABLED=1` enables one bounded, controller-owned
+orientation snapshot for the long-running Lead. The default is `0`. The Lead
+receives the current projection before every permitted wake and must evaluate
+exactly one `replace` or `no_op` checkpoint before a successful wake ends.
+`goal_batch_drained`, a material project change, a new decision/risk/hypothesis,
+and a reusable error lesson are explicit triggers.
+
+Worker and fresh Verifier never receive the Skill, projection, capability, or
+memory mount. Lead still uses `session: resume`; session rotation remains a
+separate rollout.
+
+#### 2. Signatures
+
+```python
+LEAD_BRIEF_MAX_BYTES = 8192
+
+class LeadBriefStore:
+    def read(
+        self,
+        *,
+        current_goal_seq: int,
+        goal_state_sha256: str,
+        enabled: bool,
+    ) -> dict: ...
+
+    def checkpoint(
+        self,
+        request: LeadBriefCheckpointRequest,
+        *,
+        current_goal_seq: int,
+        goal_state_sha256: str,
+    ) -> dict: ...
+```
+
+Enabled `wake_context` adds `lead_brief` with schema version, revision, bounded
+Markdown or `None`, UTF-8 byte count/hash, observed/current Goal sequence,
+Goal-state fingerprint, stale flag, timestamp, and source wake. Disabled
+`wake_context` remains byte-compatible with the previous actor/capability
+projection.
+
+`checkpoint_lead_brief` accepts exactly one of:
+
+```json
+{"action":"replace","wake_id":"wake-...","base_revision":0,
+ "observed_goal_seq":1,"markdown":"...","evidence_refs":["project:README.md"]}
+```
+
+```json
+{"action":"no_op","wake_id":"wake-...","base_revision":1,
+ "observed_goal_seq":1,"reason":"no_material_change"}
+```
+
+#### 3. Contracts
+
+- Submitted Markdown is valid UTF-8, contains no NUL, is at most 8192 encoded
+  bytes, and contains exactly these non-empty level-two sections in order:
+  `Product Model`, `Verified State`, `Decisions`, `Invariants and Risks`,
+  `Open Hypotheses`, `Next Checks`, and `Lessons`.
+- The controller generates `Freshness`; the Agent cannot submit revision,
+  timestamp, fingerprint, Team id, role, or storage path.
+- `memory/lead-brief.md` is atomically replaced under
+  `memory/.lead-brief.lock`. Metadata-only per-wake receipts under
+  `memory/checkpoints/` enforce one checkpoint even when best-effort
+  `memory/events.jsonl` telemetry is unavailable. None of these paths is
+  mounted into an Agent or copied under `/project`.
+- `base_revision` is compare-and-swap. A stale Goal sequence and a second
+  checkpoint for the same wake fail deterministically. Method request receipts
+  preserve idempotent retry semantics.
+- The snapshot is untrusted derived data. The wake prompt marks it as
+  non-evidence and requires targeted live inspection when its Goal sequence or
+  state fingerprint is stale. It cannot override Goal acceptance or alone
+  justify a new Goal.
+- `MethodAdapter.audit_request` redacts submitted Markdown to bytes/hash.
+  `wake_context` and `read_lead_brief` audit results redact injected Markdown.
+  Memory events contain Team, wake, action, revision, bytes/hash, freshness,
+  and error code, never the body.
+- `wake_completed` records `replace`, `no_op`, or `missing`. Missing remains
+  observable but does not prevent Inbox acknowledgement.
+- A `no_op` has its own atomic per-wake receipt; event-journal failure cannot
+  make the same wake eligible for a second checkpoint after restart.
+- Disabling the flag removes the methods from Lead capability projection,
+  omits prompt injection/update requirements, and retains any stored snapshot.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| No snapshot | Stable enabled revision-0 projection with `markdown: null` |
+| Feature disabled | Baseline wake context; read reports disabled; write reports `feature_disabled` |
+| Wrong role or Lead id | Method boundary rejects before store mutation |
+| Unknown field, NUL, invalid section, invalid UTF-8, or oversize | Deterministic validation error; old snapshot remains |
+| Stale revision | `revision_conflict`; old snapshot remains |
+| Stale Goal sequence | `stale_goal_state`; Lead must reread and inspect |
+| Same wake checkpoints twice | `wake_already_checkpointed` |
+| Atomic write failure | `write_failed`; previous snapshot remains readable |
+| Corrupt snapshot/journal | Fail closed with `store_corrupt`; never replace with empty |
+| Event telemetry failure | Warn without changing the already-decided checkpoint result |
+
+#### 5. Good / Base / Bad Cases
+
+- Good: `replace` atomically writes the bounded snapshot and a metadata-only
+  wake receipt; a later process can reject the same wake even if event
+  telemetry was unavailable.
+- Base: disabled mode preserves an existing snapshot but exposes neither the
+  capability nor prompt requirement, so rollout and rollback do not rewrite
+  project state.
+- Bad: use `events.jsonl` as the source of truth for whether a wake
+  checkpointed. It is best-effort telemetry, so append failure would permit a
+  duplicate after restart.
+- Bad: copy the brief into `/project` or mount `memory/` into Lead. Either
+  turns derived orientation into product evidence and bypasses the Hub
+  validation/audit boundary.
+
+#### 6. Tests Required
+
+- `tests/stages/build/control/test_lead_brief.py`
+  - assert schema/size/section validation, compare-and-swap, stale Goal
+    rejection, atomic write preservation, and per-wake exactly-once receipts;
+  - force event append failure, reconstruct the store, and assert both
+    duplicate rejection and wake-completion recovery.
+- `tests/stages/build/control/test_method_adapter.py`
+  - assert request/result audit redaction and idempotent request receipts.
+- `tests/stages/build/control/test_agent_loop_v7.py`
+  - assert enabled injection, stale marking, checkpoint instruction, and
+    disabled byte-compatible wake context.
+- `tests/stages/build/agent_runtime/test_team_loadout.py`
+  - assert only Lead materializes `maintain-lead-brief`, including both
+    `SKILL.md` and `agents/openai.yaml`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+already_checkpointed = find_event(memory / "events.jsonl", wake_id)
+```
+
+This treats optional observability as durable correctness state.
+
+Correct:
+
+```python
+already_checkpointed = (memory / "checkpoints" / f"{wake_id}.json").exists()
+append_event_best_effort(...)
+```
+
+The atomic metadata receipt owns exactly-once recovery; the body stays only in
+the bounded snapshot, and event logging cannot change a decided checkpoint.
 
 ## 2. Shared system prompt assembly
 

@@ -6,7 +6,8 @@ credentials: subscription
 system_prompt_fragments:
   - assets/shared-tool-use.md
 system_prompt: assets/lead-charter.md
-skills: []
+skills:
+  - assets/skills/maintain-lead-brief
 mcp_config: mcp/ceo.json
 permission_mode: bypass
 session: resume

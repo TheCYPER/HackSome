@@ -1,6 +1,5 @@
 from hacksome.stages.build.control.method_adapter import ActorContext, MethodAdapter
-from hacksome.stages.build.control.runtime_store import CompanyLayout
-from hacksome.stages.build.control.runtime_store import read_jsonl
+from hacksome.stages.build.control.runtime_store import CompanyLayout, read_jsonl
 
 
 def _request(request_id="r1", method="mutate", payload=None):
@@ -19,7 +18,9 @@ def test_adapter_binds_actor_and_rejects_self_reported_from(tmp_path):
     adapter.register(
         "mutate",
         actors={"department"},
-        handler=lambda actor, payload, request_id: calls.append(actor.actor_id) or {"ok": 1},
+        handler=lambda actor, payload, request_id: (
+            calls.append(actor.actor_id) or {"ok": 1}
+        ),
     )
 
     actor = ActorContext("department", "researcher", department_id="researcher")
@@ -35,7 +36,9 @@ def test_adapter_enforces_role_permissions(tmp_path):
     adapter = MethodAdapter(layout)
     adapter.register("mutate", actors={"department"}, handler=lambda *_: {})
 
-    response = adapter.call(ActorContext("worker", "worker-a", goal_id="goal-a"), _request())
+    response = adapter.call(
+        ActorContext("worker", "worker-a", goal_id="goal-a"), _request()
+    )
 
     assert response["ok"] is False
     assert response["error"]["code"] == "forbidden"
@@ -68,7 +71,9 @@ def test_same_request_id_with_different_meaning_is_rejected(tmp_path):
     adapter.register(
         "mutate",
         actors={"ceo"},
-        handler=lambda actor, payload, request_id: calls.append(payload) or {"ok": True},
+        handler=lambda actor, payload, request_id: (
+            calls.append(payload) or {"ok": True}
+        ),
     )
     adapter.register("read", actors={"ceo"}, handler=lambda *_: {"value": 1})
     actor = ActorContext("ceo", "ceo")
@@ -135,17 +140,15 @@ def test_sensitive_live_read_is_not_cached_and_audit_is_redacted(tmp_path):
     assert first["result"]["messages"][0]["subject"] == "secret-1"
     assert second["result"]["messages"][0]["subject"] == "secret-2"
     assert calls == [1, 2]
-    assert not (
-        layout.control / "requests" / "worker-a" / "peek-1.json"
-    ).exists()
+    assert not (layout.control / "requests" / "worker-a" / "peek-1.json").exists()
     rows = read_jsonl(layout.telemetry / "index" / "methods.jsonl")
     assert [row["response"]["result"] for row in rows] == [
         {"redacted": True, "count": 1},
         {"redacted": True, "count": 1},
     ]
-    assert "secret" not in (
-        layout.telemetry / "index" / "methods.jsonl"
-    ).read_text(encoding="utf-8")
+    assert "secret" not in (layout.telemetry / "index" / "methods.jsonl").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_sensitive_audit_redactor_failure_still_fails_closed(tmp_path):
@@ -167,6 +170,70 @@ def test_sensitive_audit_redactor_failure_still_fails_closed(tmp_path):
     assert response["ok"] is True
     rows = read_jsonl(layout.telemetry / "index" / "methods.jsonl")
     assert rows[-1]["response"]["result"] == {"redacted": True}
-    assert "123456" not in (
-        layout.telemetry / "index" / "methods.jsonl"
-    ).read_text(encoding="utf-8")
+    assert "123456" not in (layout.telemetry / "index" / "methods.jsonl").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_sensitive_request_audit_is_redacted_on_success_error_and_parse_failure(
+    tmp_path,
+):
+    layout = CompanyLayout.initialize(tmp_path / "company")
+    adapter = MethodAdapter(layout)
+
+    def redact(value):
+        row = dict(value)
+        payload = dict(row.get("payload") or {})
+        if "secret" in payload:
+            payload["secret"] = {"redacted": True, "bytes": len(payload["secret"])}
+        row["payload"] = payload
+        return row
+
+    def mutate(_actor, payload, _request_id):
+        if payload.get("fail"):
+            from hacksome.stages.build.control.method_adapter import MethodError
+
+            raise MethodError("rejected", "request rejected")
+        return {"accepted": True}
+
+    adapter.register(
+        "sensitive_mutation",
+        actors={"ceo"},
+        handler=mutate,
+        audit_request=redact,
+    )
+    actor = ActorContext("ceo", "ceo")
+    adapter.call(
+        actor,
+        _request(
+            "request-ok",
+            "sensitive_mutation",
+            {"secret": "do-not-log"},
+        ),
+    )
+    adapter.call(
+        actor,
+        _request(
+            "request-error",
+            "sensitive_mutation",
+            {"secret": "also-private", "fail": True},
+        ),
+    )
+    adapter.call(
+        actor,
+        {
+            **_request(
+                "request-parse-error",
+                "sensitive_mutation",
+                {"secret": "malformed-private"},
+            ),
+            "unknown": True,
+        },
+    )
+
+    text = (layout.telemetry / "index" / "methods.jsonl").read_text(encoding="utf-8")
+    assert "do-not-log" not in text
+    assert "also-private" not in text
+    assert "malformed-private" not in text
+    rows = read_jsonl(layout.telemetry / "index" / "methods.jsonl")
+    assert all(row["request"]["payload"]["secret"]["redacted"] for row in rows)

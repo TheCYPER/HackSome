@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Verify role isolation, no control-plane mounts and compatibility"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify one schema owner and complete boundary coverage"}
+{"file": ".trellis/tasks/07-25-buildfactory-agent-reflection-memory/research/runtime-evidence.md", "reason": "Check implementation against measured failure mode and telemetry caveats"}

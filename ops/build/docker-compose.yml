@@ -62,6 +62,7 @@ services:
       TEAM_STATE_ROOT: /state
       HUB_PORT: "8910"
       HUB_TICK_SECS: ${HUB_TICK_SECS:-0.5}
+      LEAD_REFLECTION_MEMORY_ENABLED: ${LEAD_REFLECTION_MEMORY_ENABLED:-0}
     volumes:
       - ${HACKSOME_ROOT}/src/hacksome:/opt/hacksome/hacksome:ro
       - ${TEAM_STATE_ROOT:-${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}}:/state
@@ -91,6 +92,7 @@ services:
       AGENT_LOOP_MODULE: hacksome.stages.build.control.lead_loop
       AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-60}
       AGENT_CLAUDE_TIMEOUT: ${AGENT_CLAUDE_TIMEOUT:-3600}
+      LEAD_REFLECTION_MEMORY_ENABLED: ${LEAD_REFLECTION_MEMORY_ENABLED:-0}
       HUB_URL: http://hub:8910
       CLAUDE_CONFIG_DIR: /home/kasm-user/.claude
       CODEX_HOME: /home/kasm-user/.claude/codex
