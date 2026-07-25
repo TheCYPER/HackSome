@@ -19,6 +19,7 @@
 - **惊喜必须源自某种机制。** 神秘的描述、营销文案或无法解释的 AI 魔法都不够。
 - **先让人看懂，再允许它神秘。** 评审者必须先能用朴素语言说清“用户做什么、软件回应什么、为什么还想再试或转发”，之后才讨论诗意、诡异或余韵。需要策展说明、世界观补课或审美训练才能成立的 Concept 不进入 shortlist。
 - **先例提供交互语法，不提供可复制答案。** Concept 可以借鉴人们已经理解的产品/游戏/创作工具形态，但必须说明借用了哪种可识别的互动语法、核心机制做了什么实质变化，以及为何不是给旧产品换 AI 外皮。
+- **组合多样性来自产品循环，不来自换皮。** 四个 C3 综合 Session 分别承担 Explorer / Simulator、Realtime Partner、Social Game / Relay、Creator / Transformer 四种互斥产品语法；不同视觉、故事、传感器或分享格式不能把同一个输入—转换—揭示循环伪装成四种产品。
 - **软件必须承载核心因果。** 浏览器、手机、桌面、CLI、服务端或本地/云模型必须真正完成体验的关键转换；主持人、演员、卡片、椅子、舞台规则或投影布景不能代替软件完成核心机制。
 - **能跑 Demo，而不只是能讲 Demo。** 最小演示必须使用真实可得输入和依赖，由代码、模型、API 或协议产生现场可观察、可录屏或可亲手操作的输出；Figma、预录视频、人工选结果和 wizard-of-oz 不能冒充核心技术。
 - **技术名词不等于可落地。** 写出标准 Web API、WebSocket、模型或云服务名称，只能证明存在候选技术，不能证明权限、兼容性、时延、预热、部署和失败降级在比赛现场可控。若 Challenge 没有给出资源预算，路线按“最多 2 人、24 小时、一个简单 backend、一个主要浏览器/设备切片”的保守参考预算审查，而不是默认拥有完整产品团队。
@@ -177,7 +178,12 @@ UsefulRunContract        CreativeRunContract
 
 **行为：**
 
-- 多个相互独立的综合 Agent 可以跨领域组合创意原子。
+- 四个相互独立的综合 Agent 可以跨领域组合创意原子，但各自承担一个固定且互斥的产品语法责任：
+  - **Explorer / Simulator (`explorer_simulator`)：** 用户提出查询或改变显式变量，软件计算可检查的关系、路径、情景或反事实，用户继续比较并改变假设；没有可追问变量的抽象地图、情绪地形或一次性揭示不属于该语法。
+  - **Realtime Partner (`realtime_partner`)：** 用户提供连续或快速序列的真实输入，软件在本轮结束前低延迟回应，用户据此改变下一次动作；结束后才生成的地图、卡片、分数或收据不属于该语法。
+  - **Social Game / Relay (`social_game_relay`)：** 一位真人的动作改变软件持有的共享状态，另一位真人必须完成一个受规则约束、会继续改变状态的 move/turn/handoff；单人生成器加分享按钮或被动观看链接不属于该语法。
+  - **Creator / Transformer (`creator_transformer`)：** 用户用真实素材和至少两个有意义的选择反复制作、编辑、预览或 remix 一个可复用产物；自动记录行为后吐出不可编辑收据、总结卡或一键滤镜不属于该语法。
+- 互斥轴是“软件回应后，核心用户为了获得下一单位价值必须做什么”。次要功能可以来自其他语法，但每个 Concept 必须只有一个 primary product loop；如果删去两个语法中的任一个都会破坏核心，Agent 必须先简化。如果当前 Atoms 无法诚实支持被分配的语法，该 Session 返回零 Concept，不得用换视觉隐喻、地图、卡片、粒子或收据填满配额。
 - 第一批综合只能读取当前运行的 C0-C2；不得读取 Idea Memory、旧 Idea Card、过去淘汰原因或联网先例。
 - 每个 Concept 都要说明：
   - 预期反应；
@@ -368,7 +374,7 @@ Agent 应抽取这两个例子的共同质量形状——熟悉入口、真实�
 - **C0：** 硬性规则召回率、无依据推断率和约束漂移。
 - **C1：** 与 Percy 预期反应及反目标的一致性，以及 frozen Software Demo Policy 的版本/hash 完整性。
 - **C2：** software-native 机制实质不同的数量，而非标题多样性；旧 spatial/performance/cross-media lens 不得作为独立目标回流。
-- **C3：** 从铺垫到揭示的完整路径、software-first 合格率、冷启动 30 秒路径覆盖率、端到端技术路径完整率、关键子系统/最高风险假设/降级切片/预置成本覆盖率，以及具体 share artifact 覆盖率。
+- **C3：** 从铺垫到揭示的完整路径、四种 assigned product grammar 的覆盖与精确绑定、software-first 合格率、冷启动 30 秒路径覆盖率、端到端技术路径完整率、关键子系统/最高风险假设/降级切片/预置成本覆盖率、具体 share artifact 覆盖率，以及跨 grammar 的抽象地图/过程收据等核心机制重复率。
 - **C4：** C4H/C4F 的 `pass|repairable|invalid` 分布与原因码；定制硬件和纯装置 fixture 的 false-pass、合法普通设备 I/O fixture 的 false-reject、标准 Web API 但现场不稳定的 false-pass、可修复缺信息 fixture 是否只使用一次 repair，以及手工录屏传播摩擦是否被正确识别。
 - **C5：** 历史线索命中率、challenger 的非复制变换与 C4F 通过率、旧硬件模式再引入率、完整 C4 screen 后进入 C5W 的任务数及 token/wall-time 节省、有价值外部碰撞和引用有效性。
 - **C6：** C6B categorical 维度分布、shortlist 中 `immediate_share_trigger=pass` 的占比、复述与分享判断的独立一致性、跨候选核心机制重复率、候选名单多样性、评审负担、一句话复述准确度、`share_impulse=immediate`、具体分享对象、`demo_confidence=yes`、困惑率、人类分歧，以及依据反馈修订的忠实度。
@@ -421,6 +427,7 @@ Benchmark 的 `live` 模式经过正式 C6 团队评审后才计算人类指标�
 - [ ] 默认 Policy 只淘汰定制硬件、实体制作、专用设备和纯人工装置核心；普通电脑/手机及其内置 camera/mic/screen/touch 等 I/O 合法。
 - [ ] C2 在不受先例锚定且不强制要求商业痛点的情况下，使用六个 software-native lens 产出多个实质不同的创意领域。
 - [ ] C3 产出版本化 Concept，包含完整的 30 秒铺垫、受众行动、揭示、机制、余韵、Software Core and Runtime、Share Trigger and Artifact 及可执行 Minimum Hackathon Demo。
+- [ ] 默认四个 C3 Session 按稳定 slot 分别绑定 `explorer_simulator`、`realtime_partner`、`social_game_relay` 与 `creator_transformer`；每个 v6 Concept 在既有产品语法说明中回显自己的 exact ID，不匹配时输出无效，无法诚实满足该语法时允许该 Session 返回零项。旧 frozen v2–v5 C3 Prompt 不补注新 assignment，也不要求新 marker。
 - [ ] C0 未提供更明确资源时，C3/C4F 使用 2 人/24 小时、至多一个简单 backend 和一个主要浏览器/设备切片的保守参考预算；Concept 明示冷启动 30 秒路径、关键子系统、最危险技术假设、降级切片和预置状态成本。
 - [ ] 每个 base Concept 和 memory challenger 的 `primary_territory_ref` 都属于其 current Parent Atoms；C4/C6 revision 与 C6B curator 不能重写该值，merge 只能从 source primary refs 中选择。
 - [ ] 当前 run 的第一批 C2/C3 与初始 C4 判断冻结之前，Controller 不向其 Prompt、parent refs、registered context 或 stage input 注入过去 Idea、历史淘汰原因或外部先例；合同与测试不把 Codex `read-only` sandbox 误称为 chroot，且明确禁止这些 Session 主动扫描 run 历史。

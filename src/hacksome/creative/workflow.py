@@ -102,12 +102,51 @@ INTERNAL_C6_EMPTY_COMPLETE_STAGE = "creative-c6-empty-complete-internal"
 CREATIVE_HUMAN_REVIEW_STAGE = "creative-human-review"
 DEFAULT_RUN_TIMEOUT_SECONDS = 6 * 60 * 60
 
-SYNTHESIS_LENSES = (
+LEGACY_SYNTHESIS_LENSES = (
     "Combine atoms through a legible interaction loop",
     "Combine atoms around a sharp reversal and reveal",
     "Combine atoms around a software-native share, replay, or remix artifact",
     "Combine atoms through software-visible hidden state or a surprising technical mechanism",
 )
+
+C3_LEGACY_SYNTHESIS_TEMPLATE_VERSIONS = frozenset({"1", "2", "3", "4", "5"})
+C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION = "6"
+
+SYNTHESIS_LENSES = (
+    ("explorer_simulator", "Explorer / Simulator"),
+    ("realtime_partner", "Realtime Partner"),
+    ("social_game_relay", "Social Game / Relay"),
+    ("creator_transformer", "Creator / Transformer"),
+)
+
+
+def _synthesis_assignments_for_template_version(
+    template_version: str,
+) -> tuple[tuple[str, str | None], ...]:
+    if template_version == C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION:
+        return tuple(
+            (
+                _json_text(
+                    {
+                        "assigned_product_grammar_id": grammar_id,
+                        "assigned_product_grammar_label": grammar_label,
+                    }
+                ),
+                grammar_id,
+            )
+            for grammar_id, grammar_label in SYNTHESIS_LENSES
+        )
+    if template_version in C3_LEGACY_SYNTHESIS_TEMPLATE_VERSIONS:
+        return tuple(
+            (legacy_lens, None)
+            for legacy_lens in LEGACY_SYNTHESIS_LENSES
+        )
+    raise CreativeWorkflowError(
+        "unsupported C3 synthesis template semantics for version "
+        f"{template_version!r}; assign an explicit context contract before "
+        "advancing the C3 template"
+    )
+
 
 _PORTFOLIO_CURATOR_LENSES = (
     (
@@ -1821,8 +1860,18 @@ class CreativeIdeaWorkflow:
             return ()
         atom_index = _atom_index(self.hub, atom_refs)
         software_policy = _input_text(self.hub, "software_demo_policy")
+        c3_template_version = self.prompt_catalog[
+            C3_CONCEPT_SYNTHESIZE
+        ].version
+        synthesis_assignments = _synthesis_assignments_for_template_version(
+            c3_template_version
+        )
 
-        async def synthesize(slot: int, lens: str) -> tuple[int, dict[str, Any], str]:
+        async def synthesize(
+            slot: int,
+            lens: str,
+            expected_product_grammar_id: str | None,
+        ) -> tuple[int, dict[str, Any], str, str | None]:
             task_id = f"creative-c3-synthesis-{slot:02d}"
             output = await self._execute(
                 stage=C3_CONCEPT_SYNTHESIZE,
@@ -1848,13 +1897,16 @@ class CreativeIdeaWorkflow:
                     *atom_refs,
                 ),
             )
-            return slot, output, task_id
+            return slot, output, task_id, expected_product_grammar_id
 
         completed = await asyncio.gather(
             *(
-                synthesize(slot, lens)
-                for slot, lens in enumerate(
-                    SYNTHESIS_LENSES[
+                synthesize(slot, lens, expected_product_grammar_id)
+                for slot, (
+                    lens,
+                    expected_product_grammar_id,
+                ) in enumerate(
+                    synthesis_assignments[
                         : int(self.settings.concept_synthesizers)
                     ],
                     start=1,
@@ -1865,12 +1917,24 @@ class CreativeIdeaWorkflow:
         seen_markdown: set[str] = set()
         seen_hooks: set[str] = set()
         atom_set = set(atom_refs)
-        for synth_slot, output, task_id in sorted(completed):
+        for (
+            synth_slot,
+            output,
+            task_id,
+            expected_product_grammar_id,
+        ) in sorted(completed):
+            validation_context: CreativeValidationContext = {
+                "allowed_atom_refs": atom_set
+            }
+            if expected_product_grammar_id is not None:
+                validation_context["expected_product_grammar_id"] = (
+                    expected_product_grammar_id
+                )
             output = self._validate_completed_output(
                 task_id=task_id,
                 stage=C3_CONCEPT_SYNTHESIZE,
                 output=output,
-                context={"allowed_atom_refs": atom_set},
+                context=validation_context,
             )
             candidates = _object_list(output, "concepts")
             if len(candidates) > int(self.settings.max_concepts_per_synthesizer):

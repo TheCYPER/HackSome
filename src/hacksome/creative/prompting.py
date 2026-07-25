@@ -54,7 +54,7 @@ creative_prompt_catalog = PromptCatalog(
         _spec(C0_CHALLENGE_PARSE),
         _spec(C1_BRIEF_NORMALIZE),
         _spec(C2_TERRITORY_EXPLORE),
-        _spec(C3_CONCEPT_SYNTHESIZE, version="5"),
+        _spec(C3_CONCEPT_SYNTHESIZE, version="6"),
         _spec(C4_CHEAP_HOOK_REVIEW, version="3"),
         _spec(C4_SOFTWARE_DEMO_REVIEW, version="4"),
         _spec(C4_CHEAP_HOOK_REPAIR, version="3"),
@@ -66,7 +66,7 @@ creative_prompt_catalog = PromptCatalog(
         _spec(C6C_FEEDBACK_REVISE),
     ),
     compatible_template_versions={
-        C3_CONCEPT_SYNTHESIZE: ("2", "3", "4"),
+        C3_CONCEPT_SYNTHESIZE: ("2", "3", "4", "5"),
         C4_CHEAP_HOOK_REVIEW: ("2",),
         C4_SOFTWARE_DEMO_REVIEW: ("2", "3"),
         C4_CHEAP_HOOK_REPAIR: ("2",),

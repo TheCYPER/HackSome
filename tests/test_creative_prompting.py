@@ -46,7 +46,7 @@ class CreativePromptCatalogTests(unittest.TestCase):
         )
 
     def test_every_versioned_resource_exists_and_schema_is_valid(self) -> None:
-        version_five_stages = {
+        version_six_stages = {
             C3_CONCEPT_SYNTHESIZE,
         }
         version_four_stages = {
@@ -64,8 +64,8 @@ class CreativePromptCatalogTests(unittest.TestCase):
                 self.assertEqual(
                     spec.version,
                     (
-                        "5"
-                        if stage in version_five_stages
+                        "6"
+                        if stage in version_six_stages
                         else "4"
                         if stage in version_four_stages
                         else "3"
@@ -235,6 +235,69 @@ class CreativePromptCatalogTests(unittest.TestCase):
 
         self.assertEqual(loaded[C3_CONCEPT_SYNTHESIZE].version, "4")
 
+    def test_c3_product_grammar_guard_accepts_frozen_v5_resource(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy_template = root / "creative-concept-synthesize-v5.md"
+            legacy_marker = "# Frozen C3 v5 prompt without grammar assignment"
+            legacy_template.write_text(
+                legacy_marker
+                + "\n\nUse the supplied legacy synthesis lens exactly.\n",
+                encoding="utf-8",
+            )
+            old_catalog = PromptCatalog(
+                tuple(
+                    PromptSpec(
+                        stage=stage,
+                        template_id=spec.template_id,
+                        version=(
+                            "5"
+                            if stage == C3_CONCEPT_SYNTHESIZE
+                            else spec.version
+                        ),
+                        template_path=(
+                            legacy_template
+                            if stage == C3_CONCEPT_SYNTHESIZE
+                            else spec.template_path
+                        ),
+                        schema_path=spec.schema_path,
+                        web_search=spec.web_search,
+                    )
+                    for stage in creative_prompt_catalog
+                    for spec in (creative_prompt_catalog[stage],)
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            frozen = old_catalog.freeze(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+            )
+            loaded = creative_prompt_catalog.load_frozen(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+                manifest_sha256=frozen.manifest_sha256,
+            )
+
+            rendered = loaded.render(
+                C3_CONCEPT_SYNTHESIZE,
+                (("SYNTHESIS_LENS", "legacy lens bytes"),),
+            )
+
+            self.assertEqual(rendered.template_version, "5")
+            self.assertIn(legacy_marker, rendered.text)
+            self.assertNotIn(
+                "The controller assigns exactly one of these mutually "
+                "exclusive grammars:",
+                rendered.text,
+            )
+
     def test_early_prompts_forbid_history_scanning_and_c5m_is_untrusted(self) -> None:
         c3 = creative_prompt_catalog.render(
             C3_CONCEPT_SYNTHESIZE,
@@ -336,6 +399,14 @@ class CreativePromptCatalogTests(unittest.TestCase):
             "`primary_territory_ref` belongs to at least one of those Parent Atoms",
             "does not replace the Markdown\n`## Parent Atoms` section",
             "Return fewer Concepts when necessary",
+            "hard product-loop responsibility",
+            "`explorer_simulator` — Explorer / Simulator",
+            "`realtime_partner` — Realtime Partner",
+            "`social_game_relay` — Social Game / Relay",
+            "`creator_transformer` — Creator / Transformer",
+            "return zero Concepts instead of relabeling a decorative map",
+            "Recognizable product grammar: <assigned_product_grammar_id> —",
+            "Copy the exact stable ID from `SYNTHESIS_LENS`",
         ):
             with self.subTest(prompt="c3", marker=marker):
                 self.assertIn(marker, c3)
@@ -349,6 +420,65 @@ class CreativePromptCatalogTests(unittest.TestCase):
         ):
             with self.subTest(prompt="c6a", marker=marker):
                 self.assertIn(marker, normalized_evidence)
+
+    def test_c3_product_grammars_have_distinct_positive_and_negative_boundaries(
+        self,
+    ) -> None:
+        template = creative_prompt_catalog[
+            C3_CONCEPT_SYNTHESIZE
+        ].template_path.read_text(encoding="utf-8")
+        expected_boundaries = (
+            (
+                "`explorer_simulator` — Explorer / Simulator",
+                "asks a query or changes explicit parameters",
+                "ambient mood map",
+            ),
+            (
+                "`realtime_partner` — Realtime Partner",
+                "bounded-latency",
+                "later batch processing",
+            ),
+            (
+                "`social_game_relay` — Social Game / Relay",
+                "another named participant",
+                "solo generator with a",
+            ),
+            (
+                "`creator_transformer` — Creator / Transformer",
+                "at least two deliberate edits",
+                "automatic behavior receipt",
+            ),
+        )
+
+        contract_start = template.index(
+            "The controller assigns exactly one of these mutually exclusive grammars:"
+        )
+        contract_end = template.index(
+            "Use this removal test when a Concept appears mixed:"
+        )
+        contract = template[contract_start:contract_end]
+        for index, (marker, positive, negative) in enumerate(
+            expected_boundaries
+        ):
+            start = contract.index(marker)
+            end = (
+                contract.index(expected_boundaries[index + 1][0])
+                if index + 1 < len(expected_boundaries)
+                else len(contract)
+            )
+            grammar_block = contract[start:end]
+            with self.subTest(marker=marker):
+                self.assertIn(positive, grammar_block)
+                self.assertIn(negative, grammar_block)
+
+        self.assertEqual(
+            tuple(marker for marker, _, _ in expected_boundaries),
+            tuple(
+                line.split(".", 1)[0].removeprefix("- ")
+                for line in contract.splitlines()
+                if line.startswith("- `")
+            ),
+        )
 
     def test_curator_prompt_defines_two_red_teams_without_new_scoring(self) -> None:
         template = creative_prompt_catalog[

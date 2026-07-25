@@ -103,62 +103,82 @@ RunHub
 
 ## 4. 总体拓扑
 
-```text
-输入 Challenge + 可选 Creative Brief
-        │
-        ▼
-C0 Challenge & Constraints
-        │
-        ▼
-C1 Creative Brief + frozen Software Demo Policy
-        │
-        ▼
-C2 6 个独立 software-native Territory Explorer
-        │
-        ▼
-C3 4 个独立 Concept Synthesizer
-        │
-        ▼
-C4 每个 Concept：2 个独立 C4H + 1 个独立 C4F
-        │
-        ├── hardware/installation hard invalid ──┐
-        ├── invalid / repair 后失败 ─────────────┤
-        ├── repairable ─ 1 次修复 ────┤
-        │                             │
-        ▼                             │
-C5M 读取 run 创建时冻结的历史快照     │
-1 个 Recall + 最多 2 个 Remix          │
-        │                             │
-        ├── 0 个 challenger ─────────┤
-        └── challenger ─> 同合同 C4H'+C4F' ─────┤
-                                      │
-        合并初始与 challenger 的 pass 集
-        │
-        ▼
-C5W 每个通过 Concept 1 次联网 Novelty Scan
-        │
-        ▼
-C6a 证据驱动修订
-        │
-C6b 2 个独立 Portfolio Curator
-        │
-        ▼
-确定性 shortlist（最多 8 个）
-        │
-        ▼
-status=waiting
-本地团队评审页面
-        │
-Percy 关闭评审轮次
-        │
-        ▼
-hacksome resume
-        │
-C6c 每个保留/合并项最多 1 次反馈修订
-        │
-        ▼
-C7 控制器确定性报告 + Idea Cards + Handoff
-        └── creative-memory-record.json 供未来 run 使用
+```mermaid
+flowchart TD
+    INPUT["Challenge + 可选 Creative Brief"] --> C0["C0 Challenge & Constraints"]
+    C0 --> C1["C1 Creative Brief<br/>+ frozen Software Demo Policy"]
+    C1 --> C2["C2：6 个独立 software-native Territory Explorer<br/>产出 Territory + Creative Atoms"]
+
+    subgraph C3["C3：4 个互斥产品语法的 Concept Synthesizer"]
+        direction LR
+        G1["1 · explorer_simulator<br/>查询 / 变量 → 计算 → 比较"]
+        G2["2 · realtime_partner<br/>实时输入 → 低延迟回应 → 下一动作"]
+        G3["3 · social_game_relay<br/>真人 move → 共享状态 → 下一回合"]
+        G4["4 · creator_transformer<br/>真实素材 → 编辑 / remix → 可复用产物"]
+    end
+
+    C2 --> G1
+    C2 --> G2
+    C2 --> G3
+    C2 --> G4
+    G1 --> BASE["合并合法 base Concepts<br/>只机械去除 exact / Hook 重复"]
+    G2 --> BASE
+    G3 --> BASE
+    G4 --> BASE
+
+    BASE --> C4["C4：每个 exact revision<br/>2 × C4H Hook/Share + 1 × C4F Demo"]
+    C4 -->|repairable，最多一次| C4R["C4R 局部修复"]
+    C4R --> C4RE["fresh 2 × C4H + 1 × C4F 复审"]
+    C4 -->|pass 或 hard invalid，直接 settled| BASEGATE["初始 C4 all-settled<br/>收集 pass 集（可为空）"]
+    C4 -->|hard invalid| FATE["写 terminal disposition<br/>保留原因与 evidence"]
+    C4RE -->|pass 或 unresolved，复审 settled| BASEGATE
+    C4RE -->|仍未通过| FATE
+
+    BASEGATE --> C5M["C5M：读取 run 创建时冻结的 Idea Memory<br/>1 × Recall + 最多 2 × Remix"]
+    C5M -->|0 challenger 或 optional failure| MERGE["合并完整 C4 pass 集"]
+    C5M -->|challenger| C4M["challenger 使用同合同 C4H′ + C4F′"]
+    C4M -->|all-settled 后合并 pass sibling（可为空）| MERGE
+    C4M -->|淘汰| FATE
+
+    MERGE --> EMPTY4{"完整 C4 pass 集为空？"}
+    EMPTY4 -->|是| EMPTYB["空 C6 batch<br/>skip waiting"]
+    EMPTY4 -->|否| C5W["C5W：每个通过 Concept<br/>1 × 联网 Novelty Scan"]
+    C5W --> C6A["C6A：证据驱动修订"]
+    C6A --> C6B["C6B：2 个独立 Red Team<br/>Meaning/Value + Hackathon Floor"]
+    C6B --> SHORT["Controller 确定性 shortlist<br/>最多 8 个"]
+    SHORT --> EMPTYS{"shortlist 为空？"}
+    EMPTYS -->|是| EMPTYB
+    EMPTYS -->|否| WAIT["status=waiting<br/>本地单卡团队评审页"]
+    WAIT --> CLOSE["Percy 关闭评审轮次"]
+    CLOSE --> RESUME["hacksome resume"]
+    RESUME --> C6C["C6C：revise / merge 最多一次<br/>keep 不调用模型"]
+    C6C --> C7["C7：Controller 确定性发布<br/>Report + Idea Cards + JSON Handoff"]
+    EMPTYB --> C7
+    FATE -.-> C7
+    C7 --> MEMORY["creative-memory-record.json<br/>供未来 run 的 C5M 使用"]
+
+    subgraph HARNESS["共享 Harness（不决定 Creative 产品语义）"]
+        direction LR
+        HUB["RunHub / 原子状态 / JSONL ledger"]
+        EXEC["AgentTaskExecutor"]
+        CODEX["CodexRunner"]
+        FREEZE["PromptCatalog + run-frozen Prompt/Schema"]
+        VALIDATE["CreativeRunContract / hash / lineage validation"]
+    end
+
+    HUB --- EXEC
+    EXEC --- CODEX
+    EXEC --- FREEZE
+    HUB --- VALIDATE
+
+    classDef human fill:#fff2cc,stroke:#b7791f,color:#5f370e;
+    classDef agent fill:#e8f1ff,stroke:#3973ac,color:#17324d;
+    classDef controller fill:#e8f7ee,stroke:#2f855a,color:#173d2a;
+    classDef failure fill:#fdecec,stroke:#c53030,color:#742a2a;
+    class WAIT,CLOSE human;
+    class C0,C1,C2,G1,G2,G3,G4,C4,C4R,C4RE,C5M,C4M,C5W,C6A,C6B,C6C agent;
+    class INPUT,BASE,BASEGATE,MERGE,EMPTY4,SHORT,EMPTYS,EMPTYB,RESUME,C7,MEMORY,HUB,EXEC,CODEX,FREEZE,VALIDATE controller;
+    class FATE failure;
 ```
 
 初始 C4 后没有合格 Concept 不会立刻丢弃历史：若 frozen memory snapshot 与当前 Atom 可产生 challenger，C5M 仍有一次、最多两个的新分支机会。只有初始与 challenger 均无完整 C4H+C4F pass，或 C6B shortlist 为空时，控制器才发布 `concept_refs=[]`、`status=skipped_empty`、带精确 `skip_reason` 的空 C6 batch，不进入人工等待，直接产出零 Idea 报告。software-first v2 的前一种情况使用 `all_candidates_failed_concept_screen`；旧 v1 run 仍按冻结合同保留 `all_candidates_failed_hook`。空 batch 只是状态机的“没有待审对象”证明；所有 Concept、Hook/Feasibility Review、修复与淘汰原因仍进入 C7。
@@ -668,6 +688,25 @@ CreativeWorkflowSettings(
 
 旧的纯 spatial/embodied/performance 与 wildcard cross-media lens 不进入 v2 默认列表；这些表现形式只有在软件真实读取输入、执行转换并产生可验证输出时才可作为某个 software-native lens 的呈现方式。
 
+四个默认 C3 slot 不再使用可重叠的“更易懂 / 更反转 / 更可分享 / 更神秘”软
+lens，而按稳定顺序承担四种 primary product-loop responsibility：
+
+1. `explorer_simulator`：查询或显式变量 → 可检查的模型/路径/情景 →
+   比较并改变下一次查询；
+2. `realtime_partner`：连续或快速输入 → 本轮结束前的 bounded-latency 回应 →
+   用户据此改变下一动作；
+3. `social_game_relay`：一位真人的 move → Controller-owned shared state →
+   另一位真人受规则约束的下一回合；
+4. `creator_transformer`：真实素材 + 至少两个有意义的编辑选择 → 可预览、
+   可继续修改或导出的产物。
+
+分类轴是“软件回应后，为获得下一单位价值必须发生的 primary next action”，
+不是题材、视觉、输入传感器或分享格式。次要能力可以跨 grammar，但删除次要
+能力不能摧毁 primary loop；如果两个 grammar 都不可删除，C3 必须先缩小为一个。
+无可用 Atom 组合时该 slot 合法返回空集合，不得用抽象地图、过程收据、卡片、
+粒子或换皮叙事填满上限。`concept_synthesizers < 4` 的测试/低成本设置只执行
+前 N 个稳定 assignment；默认 4 才覆盖完整四类。
+
 当 C0 没有给出团队、时长和运行环境时，C3/C4/C6 Prompt 使用下列保守
 `Reference Implementation Budget`，但不新增 v2 JSON 字段：
 
@@ -715,6 +754,18 @@ Concept 漏掉最后的 `Parent Atoms` H2，Controller 正确 fail-closed。修�
 allowlist；Prompt 逐对写出七个 `dimension → reason_code`，测试从代码常量生成
 同一映射断言。Schema、validator 与失败 run 均不修改。
 
+第三次真实 smoke 证明 C6B 能正确识别“抽象地图”和“过程收据”两组近重复，
+但也证明 C3 v5 的四个 synthesis lens 只是互相重叠的审美强调。修复只把
+`creative-concept-synthesize` 前进到 v6，并把 v5 加入兼容 allowlist：
+
+- v6 Controller 按 slot 注入 exact grammar ID/label；
+- v6 Concept 在既有 `Recognizable product grammar:` 行中回显 exact assigned
+  ID，第二次 semantic validation 与该 task 的 expected ID 精确绑定；
+- v2–v5 frozen C3 继续收到旧 `SYNTHESIS_LENS` shape，不注入 assignment，也
+  不要求新 marker；
+- C3 JSON Schema、十二个 H2、route-level v2 policy、C2、C4、C6B 与
+  deterministic shortlist 均不改变。
+
 ## 9. C0-C7 阶段合同
 
 ### 9.1 统一输出 Envelope
@@ -731,7 +782,7 @@ Agent 只返回小型 JSON envelope；长文本放在 `markdown` 字段，稳定
 | C0 `creative-challenge-parse`           | 1                                 | 原始 Challenge                                                       | Challenge Brief + Constraint View               | 两份文档均合法才继续        |
 | C1 `creative-brief-normalize`           | 1                                 | Challenge、C0、Brief input/default、Software Demo Policy              | Creative Brief；Policy 由 Controller 另行发布       | 不暂停；合法即继续         |
 | C2 `creative-territory-explore`         | 6                                 | C0、C1、Software Demo Policy、单个 software-native lens                 | Territory + ≤3 Atoms                            | 保留所有合法输出          |
-| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、Software Demo Policy、Controller 生成且显式含 Atom→Territory ref 的全部 Atom index、单个 synthesis lens | 每 Session ≤3 Concepts + primary territory refs  | 合并并稳定去重           |
+| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、Software Demo Policy、Controller 生成且显式含 Atom→Territory ref 的全部 Atom index、单个 stable product grammar assignment | 每 Session ≤3 Concepts + primary territory refs；v6 绑定 exact grammar ID | 合并并稳定去重           |
 | C4H `creative-cheap-hook-review`        | 每 Concept 2                       | C0 Constraint、C1、Software Demo Policy、精确 Concept revision          | Hook/分享触发 categorical review                  | 与 C4F 聚合              |
 | C4F `creative-software-demo-review`     | 每 Concept 1                       | 与 sibling C4H 相同，但看不到其结果                                      | Feasibility categorical review                  | 与 C4H 聚合              |
 | C4R `creative-cheap-hook-repair`        | 最多每 Concept 1                     | 原 Concept + 两份 C4H + 一份 C4F + C0/C1/Policy                         | 新 Concept revision                              | 再做 fresh 2+1 review |
@@ -919,7 +970,27 @@ Prompt 内提供两个只用于校准质量形状的正例：任意人物的六�
 permission/user-gesture 要求、预期延迟、输入质量边界和失败路径。不能用 Figma、
 预录视频、人工选择或 mock API 代替核心机制。
 
-每个 Concept envelope 还必须返回 `primary_territory_ref`。四个 synthesizer 都能看到完整 Atom index，但各自收到不同、持久化的 synthesis lens。模型不能自行创建稳定 ID；semantic validator 要求 `primary_territory_ref` 对应至少一个 Parent Atom 的 Territory。它一经发布就属于 Concept identity metadata，后续 reviewer/curator 不能改写。
+每个 Concept envelope 还必须返回 `primary_territory_ref`。四个 synthesizer 都能看到完整 Atom index，但 v6 各自收到一个由 Controller 按 slot 指定、持久化的 product grammar assignment。模型不能自行创建稳定 ID；semantic validator 要求 `primary_territory_ref` 对应至少一个 Parent Atom 的 Territory。它一经发布就属于 Concept identity metadata，后续 reviewer/curator 不能改写。
+
+v6 的 `Recognizable product grammar:` 必须使用：
+
+```text
+Recognizable product grammar: <assigned_product_grammar_id> — <plain explanation>
+```
+
+exact ID 只能是 `explorer_simulator`、`realtime_partner`、
+`social_game_relay` 或 `creator_transformer` 中被当前 slot 分配的那一个。
+Controller 在 publish 前的 context-aware semantic validation 中提供 expected
+ID；marker 缺失、未知或与当前 slot 不一致都使 task output invalidated，而不是
+把候选路由为 reject。每类 acceptance / exclusion 规则属于 frozen v6 Prompt，
+Python assignment registry 只拥有 stable ID、label 和 slot，避免复制两套规则。
+
+这项新检查严格按 frozen C3 template version 开关。v2–v5 使用原
+`SYNTHESIS_LENS` block 和旧语义校验，不要求 marker，也不能在恢复时被补写
+`assigned_product_grammar_id`；v6 才使用 assignment block 与 expected-ID
+context。任何没有显式注册 context semantics 的未来 C3 template version
+fail closed，不能静默退回 legacy lens。这样已经完成或等待中的旧 run 不会被
+事后重解释成执行过四类责任。
 
 这四个任务的 parent refs、registered context 与最终 Prompt 必须只包含 C0-C2；即使 controller-owned Snapshot 已在 run 创建时冻结，也不能在 C3 前注入。`CreativeRunContract` 将任何提前出现的 memory block/ref 视为合同错误。
 
@@ -2312,6 +2383,10 @@ tests/test_cli.py
 - 稳定 ID 与并发完成顺序无关；
 - Software Demo Policy 在允许阶段使用同一 exact hash，C2 lens 不含纯
   spatial/performance/cross-media 目标；
+- C3 v6 当前 template 与 frozen v5 兼容加载；默认四个 task 按稳定 slot
+  一一收到 `explorer_simulator`、`realtime_partner`、
+  `social_game_relay`、`creator_transformer`，exact marker/expected ID
+  匹配才通过。frozen v2–v5 继续使用旧 lens block 且不要求 marker；
 - C3 缺 `Software Core and Runtime`、`Share Trigger and Artifact` 或可执行
   Demo 信息时 invalidated；
 - 每个 initial/repaired revision 恰好 2 个 C4H + 1 个 C4F fresh task，三者互

@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from hacksome.config import CodexConfig
@@ -22,6 +23,7 @@ from hacksome.creative.artifacts import (
     SOFTWARE_DEMO_REASON_BY_DIMENSION,
 )
 from hacksome.creative.contracts import (
+    C3_CONCEPT_SYNTHESIZE,
     C5W_NOVELTY_SCAN,
     CreativeWorkflowSettings,
     DEFAULT_TERRITORY_LENSES,
@@ -33,11 +35,15 @@ from hacksome.creative.memory import (
     MemoryRecord,
 )
 from hacksome.creative.workflow import (
+    C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION,
     CreativeIdeaWorkflow,
     CreativeWorkflowError,
+    LEGACY_SYNTHESIS_LENSES,
     SYNTHESIS_LENSES,
+    _synthesis_assignments_for_template_version,
 )
 from hacksome.models import CodexLogs, CodexResult, CodexRunStatus, CodexTask
+from hacksome.prompting import PromptCatalog, PromptSpec
 from hacksome.routes import inspect_run, validate_run
 from hacksome.state import atomic_write_json, sha256_json, sha256_text
 
@@ -54,6 +60,7 @@ def _concept_markdown(
     *,
     repaired: bool = False,
     parent_atom_ref: str | None = None,
+    product_grammar_id: str | None = None,
 ) -> str:
     atom_ref = parent_atom_ref or f"creative-atom-t{slot:02d}-01"
     values = {
@@ -81,6 +88,12 @@ def _concept_markdown(
         ),
         "Why It Is Unexpected Yet Legible": (
             "The same action returns with one understandable rule changed."
+            + (
+                "\n\nRecognizable product grammar: "
+                f"{product_grammar_id} — the assigned loop changes the next action."
+                if product_grammar_id is not None
+                else ""
+            )
         ),
         "Minimum Hackathon Demo": (
             "Run two browser tabs and a local WebSocket server on one laptop; "
@@ -366,8 +379,20 @@ class CreativeScriptedRunner:
         if task_id.startswith("creative-c3-synthesis-"):
             lens = _prompt_block(task.prompt, "SYNTHESIS_LENS")
             lineage = _atom_lineage_from_prompt(task.prompt)
+            product_grammar_id: str | None = None
+            try:
+                assignment = json.loads(lens)
+            except json.JSONDecodeError:
+                lens_index = LEGACY_SYNTHESIS_LENSES.index(lens)
+            else:
+                product_grammar_id = assignment[
+                    "assigned_product_grammar_id"
+                ]
+                lens_index = tuple(
+                    grammar_id for grammar_id, _ in SYNTHESIS_LENSES
+                ).index(product_grammar_id)
             atom_ref, territory_ref = lineage[
-                SYNTHESIS_LENSES.index(lens) % len(lineage)
+                lens_index % len(lineage)
             ]
             atom_match = re.fullmatch(
                 r"creative-atom-t(?P<slot>[0-9]{2})-[0-9]{2}",
@@ -382,6 +407,7 @@ class CreativeScriptedRunner:
                         "markdown": _concept_markdown(
                             slot,
                             parent_atom_ref=atom_ref,
+                            product_grammar_id=product_grammar_id,
                         ),
                         "primary_territory_ref": territory_ref,
                         "parent_atom_refs": [atom_ref],
@@ -478,6 +504,36 @@ class CreativeScriptedRunner:
         raise AssertionError(f"unexpected Creative task: {task_id}")
 
 
+class InvalidC3GrammarRunner(CreativeScriptedRunner):
+    def __init__(self, mode: str) -> None:
+        super().__init__()
+        self.mode = mode
+
+    def _output(self, task_id: str) -> dict[str, Any]:
+        output = super()._output(task_id)
+        if task_id != "creative-c3-synthesis-01":
+            return output
+        concept = output["concepts"][0]
+        markdown = concept["markdown"]
+        if self.mode == "missing":
+            markdown = re.sub(
+                r"(?m)^Recognizable product grammar:.*\n?",
+                "",
+                markdown,
+                count=1,
+            )
+        elif self.mode == "wrong":
+            markdown = markdown.replace(
+                "Recognizable product grammar: explorer_simulator",
+                "Recognizable product grammar: creator_transformer",
+                1,
+            )
+        else:
+            raise AssertionError(f"unknown invalid grammar mode: {self.mode}")
+        concept["markdown"] = markdown
+        return output
+
+
 def _settings() -> CreativeWorkflowSettings:
     return CreativeWorkflowSettings(
         territory_explorers=2,
@@ -490,6 +546,36 @@ def _settings() -> CreativeWorkflowSettings:
     )
 
 
+def _catalog_with_c3_version(
+    version: str,
+    *,
+    template_path: Path | None = None,
+) -> PromptCatalog:
+    return PromptCatalog(
+        tuple(
+            PromptSpec(
+                stage=stage,
+                template_id=spec.template_id,
+                version=(
+                    version
+                    if stage == C3_CONCEPT_SYNTHESIZE
+                    else spec.version
+                ),
+                template_path=(
+                    template_path
+                    if stage == C3_CONCEPT_SYNTHESIZE
+                    and template_path is not None
+                    else spec.template_path
+                ),
+                schema_path=spec.schema_path,
+                web_search=spec.web_search,
+            )
+            for stage in creative_prompt_catalog
+            for spec in (creative_prompt_catalog[stage],)
+        )
+    )
+
+
 class CreativeWorkflowContractTests(unittest.TestCase):
     def test_default_fanout_and_web_policy_are_bounded(self) -> None:
         settings = CreativeWorkflowSettings()
@@ -497,6 +583,23 @@ class CreativeWorkflowContractTests(unittest.TestCase):
         self.assertEqual(settings.territory_explorers, 6)
         self.assertEqual(len(DEFAULT_TERRITORY_LENSES), 6)
         self.assertEqual(settings.concept_synthesizers, 4)
+        self.assertEqual(
+            SYNTHESIS_LENSES,
+            (
+                ("explorer_simulator", "Explorer / Simulator"),
+                ("realtime_partner", "Realtime Partner"),
+                ("social_game_relay", "Social Game / Relay"),
+                ("creator_transformer", "Creator / Transformer"),
+            ),
+        )
+        self.assertEqual(
+            len({grammar_id for grammar_id, _ in SYNTHESIS_LENSES}),
+            4,
+        )
+        self.assertEqual(
+            len({label for _, label in SYNTHESIS_LENSES}),
+            4,
+        )
         self.assertEqual(settings.hook_reviewers_per_concept, 2)
         self.assertEqual(settings.memory_recallers, 1)
         self.assertEqual(settings.max_memory_challengers, 2)
@@ -679,6 +782,18 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(c3_tasks), 2)
             for task in c3_tasks:
+                slot = int(task.task_id.rsplit("-", 1)[1])
+                self.assertEqual(
+                    json.loads(_prompt_block(task.prompt, "SYNTHESIS_LENS")),
+                    {
+                        "assigned_product_grammar_id": (
+                            SYNTHESIS_LENSES[slot - 1][0]
+                        ),
+                        "assigned_product_grammar_label": (
+                            SYNTHESIS_LENSES[slot - 1][1]
+                        ),
+                    },
+                )
                 for territory_ref, atom_ref in zip(
                     outcome.territory_refs,
                     outcome.atom_refs,
@@ -759,6 +874,110 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(projection["concept_counts"]["base_generated"], 2)
             self.assertEqual(projection["concept_counts"]["hook_passed"], 2)
             self.assertEqual(projection["memory"]["status"], "disabled")
+
+    async def test_c3_v6_context_validation_invalidates_bad_grammar_marker(
+        self,
+    ) -> None:
+        for mode in ("missing", "wrong"):
+            with (
+                self.subTest(mode=mode),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                runner = InvalidC3GrammarRunner(mode)
+                workflow = CreativeIdeaWorkflow.create(
+                    "Bind every C3 output to its assigned product grammar.",
+                    directory,
+                    settings=_settings(),
+                    run_id=f"creative-invalid-c3-grammar-{mode}",
+                    runner=runner,
+                )
+
+                with self.assertRaisesRegex(
+                    CreativeWorkflowError,
+                    "product grammar",
+                ):
+                    await workflow.execute_c0_c5()
+
+                state = workflow.hub.load_state()
+                self.assertEqual(state["status"], "failed")
+                self.assertEqual(
+                    state["tasks"]["creative-c3-synthesis-01"]["status"],
+                    "failed",
+                )
+                result_path = state["tasks"][
+                    "creative-c3-synthesis-01"
+                ]["result_path"]
+                result = json.loads(
+                    (workflow.run_dir / result_path).read_text(encoding="utf-8")
+                )
+                self.assertIn("product grammar", result["validation_error"]["message"])
+                self.assertFalse(
+                    any(
+                        record["artifact_type"] == "creative_concept"
+                        for record in state["artifacts"].values()
+                    )
+                )
+
+    async def test_frozen_c3_v5_keeps_legacy_synthesis_lens_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_template = (
+                Path(directory) / "creative-concept-synthesize-v5.md"
+            )
+            legacy_marker = "# Frozen C3 v5 synthesis semantics"
+            legacy_template.write_text(
+                legacy_marker
+                + "\n\nUse the supplied legacy synthesis lens exactly.\n",
+                encoding="utf-8",
+            )
+            runner = CreativeScriptedRunner()
+            workflow = CreativeIdeaWorkflow.create(
+                "Make a legible interactive surprise.",
+                directory,
+                settings=_settings(),
+                runner=runner,
+                prompt_catalog=_catalog_with_c3_version(
+                    "5",
+                    template_path=legacy_template,
+                ),
+            )
+
+            outcome = await workflow.execute_c0_c5()
+
+            self.assertEqual(len(outcome.base_concept_refs), 2)
+            c3_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith("creative-c3-synthesis-")
+            ]
+            self.assertEqual(len(c3_tasks), 2)
+            for task in c3_tasks:
+                slot = int(task.task_id.rsplit("-", 1)[1])
+                self.assertEqual(
+                    _prompt_block(task.prompt, "SYNTHESIS_LENS"),
+                    LEGACY_SYNTHESIS_LENSES[slot - 1],
+                )
+                concept_output = runner._output(task.task_id)["concepts"][0]
+                self.assertNotIn(
+                    "Recognizable product grammar:",
+                    concept_output["markdown"],
+                )
+                self.assertIn(legacy_marker, task.prompt)
+                self.assertNotIn(
+                    "The controller assigns exactly one of these mutually "
+                    "exclusive grammars:",
+                    task.prompt,
+                )
+            self.assertEqual(validate_run(workflow.run_dir), [])
+
+    def test_unknown_c3_template_version_fails_closed_before_synthesis(
+        self,
+    ) -> None:
+        self.assertEqual(C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION, "6")
+        with self.assertRaisesRegex(
+            CreativeWorkflowError,
+            "unsupported C3 synthesis template semantics",
+        ):
+            _synthesis_assignments_for_template_version("7")
 
     async def test_validate_rejects_c2_controller_lineage_tampering(
         self,

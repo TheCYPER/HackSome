@@ -231,12 +231,20 @@ class CreativeValidationContext(TypedDict):
     source_markdown: NotRequired[str]
     source_hooks: NotRequired[Collection[str]]
     source_mechanism_reveals: NotRequired[Collection[tuple[str, str]]]
+    expected_product_grammar_id: NotRequired[str]
     contract_version: NotRequired[str]
 
 
 _ATOM_REF = re.compile(r"creative-atom-t[0-9]{2}-[0-9]{2}")
 _CONCEPT_REF = re.compile(
     r"creative-concept-(?:s[0-9]{2}-[0-9]{2}|m[0-9]{2})-r[0-9]{3}"
+)
+_PRODUCT_GRAMMAR_MARKER_PREFIX = re.compile(
+    r"(?m)^[ \t]*(?:[-*][ \t]+)?Recognizable product grammar:"
+)
+_PRODUCT_GRAMMAR_MARKER = re.compile(
+    r"(?m)^[ \t]*(?:[-*][ \t]+)?Recognizable product grammar:[ \t]*"
+    r"(?P<grammar_id>[a-z][a-z0-9_]*?)[ \t]+—[ \t]+(?P<description>\S.*)$"
 )
 
 
@@ -458,6 +466,7 @@ def _validate_c3(
             "Concept output exceeds configured max_concepts_per_synthesizer"
         )
     allowed_atoms = _optional_allowed(context, "allowed_atom_refs")
+    expected_product_grammar_id = context.get("expected_product_grammar_id")
     markdown_seen: set[str] = set()
     hook_seen: set[str] = set()
     for index, concept in enumerate(concepts):
@@ -482,6 +491,28 @@ def _validate_c3(
             raise CreativeArtifactError(
                 "Concept Parent Atoms section and parent_atom_refs must match exactly"
             )
+        if expected_product_grammar_id is not None:
+            grammar_section = section_body(
+                markdown,
+                "Why It Is Unexpected Yet Legible",
+            )
+            marker_prefixes = tuple(
+                _PRODUCT_GRAMMAR_MARKER_PREFIX.finditer(grammar_section)
+            )
+            grammar_markers = tuple(
+                _PRODUCT_GRAMMAR_MARKER.finditer(grammar_section)
+            )
+            if len(marker_prefixes) != 1 or len(grammar_markers) != 1:
+                raise CreativeArtifactError(
+                    "Concept must contain exactly one Recognizable product grammar "
+                    "marker for its assigned C3 product grammar"
+                )
+            actual_product_grammar_id = grammar_markers[0].group("grammar_id")
+            if actual_product_grammar_id != expected_product_grammar_id:
+                raise CreativeArtifactError(
+                    "Concept product grammar marker does not match the assigned "
+                    f"C3 product grammar {expected_product_grammar_id!r}"
+                )
         normalized = _normalize_text(markdown)
         hook = normalized_hook(markdown)
         if normalized in markdown_seen or hook in hook_seen:

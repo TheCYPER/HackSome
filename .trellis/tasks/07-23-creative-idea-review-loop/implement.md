@@ -243,6 +243,39 @@ Reviewer UI：
   回归、Node syntax、静态移动/reduced-motion 检查及 Desktop 首屏视觉已完成；
   当前浏览器环境阻止真实点击与 390px 交互，保持未勾选。
 
+### 0.5 C3 v6 互斥产品语法（2026-07-25）
+
+第三次真实 smoke 的零 shortlist 不是 C6B 误杀：两位 Red Team 正确识别出
+“放手/停顿 → 抽象地图”和“清除文字 → 节奏收据”两组近重复。根因是 C3 v5
+四个 lens 分别强调 legibility、reveal、share artifact 与 hidden state，但同一
+Concept 可以同时满足四项。此切片只收紧第一批 C3 的 portfolio partition：
+
+- [x] 默认四个 slot 按稳定顺序绑定 `explorer_simulator`、
+  `realtime_partner`、`social_game_relay`、`creator_transformer`；四类以
+  primary next action 分界，不以题材、视觉、传感器或分享格式分界。
+- [x] C3 Prompt 把 assignment 定义为 hard product-loop responsibility；
+  每个 Concept 只能有一个 primary grammar，无法诚实满足时返回零项，不得把
+  decorative map、receipt、card、recording 或 share link 改名填满配额。
+- [x] 四类分别要求查询/变量比较、低延迟 call-and-response、另一位真人改变
+  shared state、以及真实素材的多步 edit/remix；同时写出相邻 grammar 的明确
+  排除边界。
+- [x] v6 在既有 `Recognizable product grammar:` 行回显 exact assigned ID，
+  Controller 的 context-aware semantic validation 校验 marker 与 slot 一致；
+  不增加 JSON Schema 字段或 H2。
+- [x] C3 template 从 v5 前进到 v6，并把 v5 加入显式兼容 allowlist；
+  frozen v2–v5 继续收到旧 `SYNTHESIS_LENS` block 且不要求 marker。route-level
+  contract/prompt/stage/report policy 继续为 v2。
+- [x] 不修改 C2 Territory lens、C6B Schema/Prompt、reason code、
+  `_deterministic_shortlist` 或 C5M Remix；语义重复仍由 C6B 反证，而不是新增
+  embedding/LLM dedup。
+- [x] 聚焦 38 项与隔离 `CODEX_HOME` 下全量 282 项测试通过（8 项 loopback
+  sandbox skip）；ruff、mypy、compileall、Node syntax、diff-check 与
+  Trellis check 通过。默认用户环境下的首轮全量测试被非空
+  `~/.codex/AGENTS.md` 按预期拦截，未修改该全局文件。
+- [ ] 使用同一 `Hack the Rest` challenge、Brief、Policy、Memory-off 新建 v6
+  smoke，对比 v5 的 grammar coverage、C4 pass、C6B duplicate family 与
+  abstract-map/process-receipt 数量。成功标准不是 shortlist 必须非空。
+
 ## 1. Preflight 与基线
 
 - [ ] 检查当前分支为 `codex/creative-review-loop`，base 为最新 `origin/main`。

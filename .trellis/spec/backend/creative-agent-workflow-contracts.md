@@ -237,6 +237,25 @@ workflow 发布前的 `_validate_completed_output` 二次校验。任何一个�
   结构化 refs；它不能放宽 validator 或由 Controller 补写缺失正文。frozen
   C3 v4 继续按原字节加载。C6A v4 只能使用 C5W 已验证先例降低解释门槛，不能
   编造具体项目/URL 或把 Concept 改得更抽象。
+- C3 v6 把四个默认 synthesizer 从可重叠的软 lens 改为稳定且互斥的
+  product-loop responsibility，slot 顺序固定为：
+  `explorer_simulator`、`realtime_partner`、`social_game_relay`、
+  `creator_transformer`。分类轴是软件回应后的 primary next action：
+  query/variable comparison、bounded-latency call-and-response、另一位真人
+  改变 shared state、或用户对真实素材进行多步 edit/remix。视觉、题材、输入
+  传感器、分享按钮、地图或收据本身不能改变分类；无法诚实满足 assigned
+  grammar 时必须返回零 Concept。
+- v6 Controller 的 `SYNTHESIS_LENS` block 只提供 exact stable
+  `assigned_product_grammar_id` 与 label；详细 acceptance/exclusion 规则属于
+  frozen v6 Prompt。每个输出在 `Why It Is Unexpected Yet Legible` 中恰好写
+  一行 `Recognizable product grammar: <assigned-id> — <explanation>`。
+  context-aware semantic validation 将 marker 与当前 task 的 expected ID
+  fail closed 绑定；缺失、未知或错 slot 会 invalidated，不是 candidate reject。
+  frozen C3 v2–v5 继续收到旧 `SYNTHESIS_LENS` 文本，不注入新 assignment，也
+  不要求 marker；v5 加入显式 compatible template allowlist。任何尚未注册
+  context semantics 的未来 C3 template version 必须 fail closed，不能静默退回
+  legacy lens。C3 JSON Schema、十二个 H2、route-level v2 policy、C2 与 C6B
+  均不改变。
 - C2 fanout 的 slot 在调用 Agent 前已确定，但内部 Territory ID 不注入 C2
   Prompt，也不要求 Atom Markdown 回显。Controller 发布 Atom 时必须同时绑定
   Atom ID、`source_refs=(territory_ref,)`、`metadata.territory_ref`、
@@ -427,6 +446,7 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 | v2 Software Demo Policy 缺失/hash 漂移，或允许阶段使用不同 bytes | fatal + partial；不调用下一 Agent |
 | Atom ID、metadata、source refs 或 Territory artifact 不一致 | 离线 validation 失败；不得依赖 Markdown 子串修复或放行 |
 | C3 缺 software runtime、share trigger 或可执行 Demo section | task invalidated + partial；不是 candidate reject |
+| C3 v6 缺少 exact grammar marker，或 marker 与 assigned slot 不同 | task invalidated + partial；不得改写 marker、换 slot 或把它当零候选 |
 | C4F 明确定制硬件/实体制作/纯装置或不可得依赖 invalid | terminal `c4_software_demo_invalid` + 维度 reason/evidence；0 个后续 C5W/C6 task |
 | C4H/C4F 有可修复缺口 | 共用一次 C4R；对 repaired revision 重跑 fresh 2+1 |
 | repaired revision 任一 C4H/C4F 非 pass | `c4_unresolved_after_repair` 终态淘汰 |
@@ -458,6 +478,9 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 - Good：同一 C6A portfolio 的两个 C6B task 分别收到 Meaning/Value 与
   Hackathon Floor lens；两者仍输出完全相同的五维 shape，Controller 只按既有
   categorical decision 聚合。
+- Good：C3 v6 slot 2 收到 `realtime_partner`，输出的核心价值依赖本轮结束前
+  的软件回应，并使用 exact marker；slot 2 没有合适 Atom 时返回空集合，而不是
+  把批处理可视化改名为 realtime。
 - Good：C2 Atom 用自然语言说明“仪式化暂停”所属的创意空间；Controller 在
   C3 索引中另行给出 `creative-atom-t01-01 → creative-territory-01`。
 - Good：两位 reviewer 独立复述，Percy 只批准一个相关 fragment；C6C Prompt
@@ -480,6 +503,9 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
   human curation 合同。
 - Bad：两个 curator 只换 task ID 却收到相同审查角色，或 Meaning/Value
   reviewer 只输出“是否有意义”而跳过五维；测试必须失败。
+- Bad：四个 C3 task 都产出“输入遥测 → 抽象地图/收据 → 分享链接”，仅用不同
+  grammar label 包装；错 marker 必须由 v6 validator 拒绝，语义近似仍由 C6B
+  反证，Controller 不得因为四个 ID 都出现就强制 include。
 - Bad：完成状态缺 terminal disposition、report、Memory Record 或 exact
   finalization/result binding；离线 validation 必须失败。
 
@@ -490,8 +516,11 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 - C0–C6 Prompt allowlist、fresh sessions、web policy、稳定 fanout ID；
 - Software Demo Policy 在 C1/C2/C3/C4H/C4F/C5M Remix/C6A/C6B 使用同一
   exact bytes/hash；v2 C2 lens 不含纯 spatial/performance/cross-media 目标；
-- C3 v5 与 C6A/C6B v4 的 plain-language marker、正例禁复制、C5W 先例边界；
-  C3 v5 还需断言十二个 H2、末尾 `Parent Atoms`、ref 自检与 frozen v4 兼容；
+- C3 v6 与 C6A/C6B v4 的 plain-language marker、正例禁复制、C5W 先例边界；
+  C3 v6 还需断言四个 stable grammar assignment 按 slot 一一分配、hard-role
+  与 zero-output 规则、map/receipt 边界、exact marker/expected-ID
+  invalidation、十二个 H2、末尾 `Parent Atoms`、ref 自检与 frozen v5 兼容；
+  frozen v2–v5 继续使用旧 lens block 且不要求新 marker；
   C4F v4 必须从 `SOFTWARE_DEMO_REASON_BY_DIMENSION` 逐对断言 Prompt 显式
   映射，并兼容 frozen v3；两个
   `CURATOR_LENS` ID/正文互不相同、artifact metadata 记录 lens，五维 Schema
@@ -607,6 +636,30 @@ hub.publish_artifact(
     },
 )
 atom_index = render_atom_index(hub, atom_refs)
+```
+
+### 错误：只给 C3 四个可重叠的审美强调
+
+```python
+SYNTHESIS_LENSES = (
+    "make it legible",
+    "make it surprising",
+    "make it shareable",
+    "make hidden state visible",
+)
+```
+
+### 正确：稳定 slot 绑定互斥的 primary product loop
+
+```python
+SYNTHESIS_LENSES = (
+    ("explorer_simulator", "Explorer / Simulator"),
+    ("realtime_partner", "Realtime Partner"),
+    ("social_game_relay", "Social Game / Relay"),
+    ("creator_transformer", "Creator / Transformer"),
+)
+# v6 output marker is validated against the assigned ID.
+# Frozen v2-v5 continue using their exact legacy lens bytes.
 ```
 
 ### 错误：把“用了电脑”当作 software-first
