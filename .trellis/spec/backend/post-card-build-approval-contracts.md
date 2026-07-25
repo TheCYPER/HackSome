@@ -25,8 +25,16 @@ ApprovalService.close(payload: Mapping[str, Any]) -> dict[str, Any]
 ApprovalService.reconcile() -> dict[str, Any]
 ```
 
-CLI surface 是 `hacksome approve|build-status|build-reconcile|build-validate
-RUN_DIR`。Browser 只调用本文第 3 节列出的固定 HTTP 路由。
+CLI surface 是：
+
+```text
+hacksome approve RUN_DIR
+hacksome approve RUN_DIR --cards CARD_ID [CARD_ID ...] --yes
+                         [--request-id ID] [--no-reconcile] [--json]
+hacksome build-status|build-reconcile|build-validate RUN_DIR
+```
+
+Browser 只调用本文第 3 节列出的固定 HTTP 路由。
 
 ## 1. Route-neutral catalog
 
@@ -95,6 +103,23 @@ HTTP authorize 的成功边界是 mutation + outbox intent 已 durable；它不�
 timeout、invalid JSON、receipt mismatch 与 partial batch error 保留为逐 Card
 delivery 状态，由后台或显式 reconcile 重试。
 
+CLI `approve --cards` 必须从 frozen catalog 将 Card ID 解析为 exact Card SHA，
+按 catalog ordinal canonicalize 后调用同一个 `ApprovalService.authorize()`，不得
+直接调用 `team_operator authorize`。它还必须：
+
+- 在 open service 或写任何状态前要求显式 `--yes`；
+- 拒绝 duplicate/unknown Card ID，最终 1–10 上限继续由共享 request decoder
+  enforce；
+- 未提供 `--request-id` 时，以 catalog hash + canonical selections 生成稳定安全
+  request ID，使相同 CLI 命令自然进入 same/same replay；
+- 默认在 durable authorize 后执行一次 `reconcile()`；`--no-reconcile` 只保存
+  mutation/outbox，后续由 `build-reconcile` 恢复；
+- `--json` 返回 request ID、authorization receipt 与 joined snapshot；
+- 不得与 Browser-only `--host`、`--port`、`--no-open` 参数混用。
+
+`build-status` 的人类输出必须包含精确 Card ID，让 operator 不依赖打开 Browser
+或手工读取 ledger 就能构造 `--cards` 参数。
+
 测试入口：`tests/stages/build/approval/test_build_approval_store.py`、
 `tests/stages/build/approval/test_build_approval_integration.py`。
 
@@ -140,6 +165,8 @@ Browser API 永远不能提交 filesystem path、executable、Compose service、
 | authorize 为空、超过 10、Card 重复、stale hash 或已授权 | 整批拒绝；不可留下部分 mutation |
 | same request ID + same canonical payload | 返回原 batch，不重复 Team |
 | same request ID + different payload | idempotency conflict |
+| CLI `--cards` 缺少 `--yes` | 在 open Approval service 前失败；零写入 |
+| CLI duplicate/unknown Card ID 或 Browser-only 参数混用 | 固定 CLI error；零 authorization |
 | mutation/outbox/receipt 字段、hash、顺序或闭包被改 | offline validate/reconcile fail closed |
 | Build timeout、坏 JSON、输出超限或 receipt mismatch | HTTP 已持久化 authorization 不回滚；逐 Card delivery error 可重试 |
 | explicit close 后再 authorize | `approval_closed`；既有 queued/active Team 不变 |
@@ -149,9 +176,15 @@ Browser API 永远不能提交 filesystem path、executable、Compose service、
 
 - **Good**：batch 已落盘、HTTP 立即返回 202；后台在 response loss 后重放 outbox，
   Build 返回同一个 Team receipt。
+- **Good CLI**：`approve --cards A B --yes` 以 catalog 顺序授权，重复执行返回同一
+  batch；默认 reconcile 后显示 active/queued，或用 `--no-reconcile` 留待恢复。
 - **Base**：用户打开页面、刷新或提交空选择；没有 authorization，也不隐式 close。
+- **Base CLI**：缺少 `--yes` 时在创建 Approval control root 前退出，不冻结 catalog、
+  不写 mutation/outbox。
 - **Bad**：HTTP handler 同步等待 Compose，或只在 server 启动时校验 source；前者会
   把 durable success 误报为超时，后者允许打开页面后篡改 Card 再授权。
+- **Bad CLI**：为方便而直接执行 `team_operator authorize`；这会绕过 source
+  integrity、catalog binding、Approval ledger 和 durable outbox。
 
 ## Tests Required
 
@@ -163,6 +196,9 @@ Browser API 永远不能提交 filesystem path、executable、Compose service、
   partial batch；断言 authorization/Team identity 唯一。
 - HTTP/UI：fixed routes、cookie/Host/Origin/CSP/body limits、snapshot allowlist、
   text-only rendering、serialized polling、dialog cancel/confirm、多批与 close。
+- CLI：`--yes` 前零 service open/write、catalog canonical order、稳定 request ID
+  replay、JSON/no-reconcile、duplicate/unknown/batch-limit 与 web-only 参数冲突；
+  集成测试断言同一 service ledger 只有一个 mutation/outbox 集合。
 - 静态门禁：Ruff、mypy、compileall、Node syntax 与 `git diff --check`。
 
 ## Wrong vs Correct
@@ -176,6 +212,15 @@ receipt = build.authorize(service.commit(payload))
 # Build delivery 由单一后台/显式 reconciler at-least-once 执行。
 service.authorize(payload)  # durable intent, immediate response
 service.reconcile()         # idempotent delivery and strict receipt closure
+```
+
+```python
+# Wrong: CLI 绕过 Approval owner，直接把 handoff 送到 Build。
+team_operator.authorize(envelope)
+
+# Correct: CLI 只解析 frozen Card ID/SHA，所有授权事实仍由共享 service 持久化。
+authorization = service.authorize(payload)
+snapshot = service.reconcile()
 ```
 
 ## 禁止模式

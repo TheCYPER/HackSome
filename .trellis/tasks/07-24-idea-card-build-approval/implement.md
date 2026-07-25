@@ -144,6 +144,8 @@ Rollback Point 2：可以禁用 Approval CLI；control root 保留为前向兼�
 
 - [x] 在 `src/hacksome/cli.py` 增加 `approve`、`build-status`、
       `build-reconcile`，并对 path/host/port/build executable 做可信参数校验。
+- [x] `approve --cards ... --yes` 复用共享 ApprovalService，按 catalog 顺序绑定
+      Card SHA、生成稳定 request ID，并支持 immediate/no-reconcile 与 JSON 输出。
 - [x] Useful 与 Creative completed/non-empty 输出同一 Approval next command；
       zero-card 输出准确 empty guidance。
 - [x] `--no-open` 不调用 Browser；默认 URL 中 token 不进入 persistent state/log。
@@ -155,6 +157,8 @@ Rollback Point 2：可以禁用 Approval CLI；control root 保留为前向兼�
       mapping/server restart。
 - [x] 新增 `tests/stages/build/approval/test_build_approval_cli.py` 覆盖 route-neutral lifecycle 和
       `--no-open`。
+- [x] CLI 覆盖显式确认前零 open/write、catalog canonical order、稳定 request ID、
+      JSON/no-reconcile、duplicate/unknown Card fail closed。
 - [x] 静态测试断言无 `innerHTML`、远程 asset、任意 URL/path endpoint。
 - [ ] 真 Browser QA：single/multi/select-next-10/clear/cancel/confirm、
       batch A+B、refresh、stale/conflict、partial error、queue/active、close、
@@ -360,6 +364,17 @@ run mutation、无 duplicate Team。
 - Root `unittest discover` 329 tests、BuildFactory `pytest` 375 tests 全通过；
   Ruff、mypy（40 source files）、compileall、Node syntax、Compose config 与
   staged/unstaged `git diff --check` 全通过。
+
+### 7.7 纯 CLI Approval 增量验证（2026-07-25）
+
+- 新增 `hacksome approve RUN --cards ... --yes`，复用同一个
+  `ApprovalService.authorize()`、ledger/outbox 与 reconcile，不直接调用 Build
+  operator。
+- 集成测试以真实 ApprovalStore + in-memory Build adapter 验证：输入逆序 Card
+  仍按 catalog 顺序落盘，相同命令重放返回同一 request/batch，mutation 只有一份。
+- `unittest discover` 316 tests、Ruff、mypy（109 source files）、compileall、Node
+  syntax、Compose config 与 `git diff --check` 全通过；Compose 仅有未设置可选
+  `HACKSOME_ROOT` / `BUILD_OPS_ROOT` 的默认空值 warning。
 
 ## 8. Suggested commit sequence and PR handoff
 

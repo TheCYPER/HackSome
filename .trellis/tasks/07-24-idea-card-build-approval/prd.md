@@ -174,6 +174,9 @@ Approval 可以批量授权多张 Card；确认后，系统立即创建对应 Te
 - Creative C6/C7 生命周期保持不变；只有 C7 completed 且 offline-valid 后才能进入
   Build Approval，并打印同一 next command。
 - 提供 route-neutral 命令打开 Approval 页面，并支持 `--no-open` 以便自动化测试。
+- 同一 `approve` 命令支持显式 `--cards ... --yes` 的纯终端授权；它复用共享
+  Approval service/ledger，省略 `--yes` 时零写入，相同 selection 默认生成稳定
+  request ID，并可选择只落盘或立即执行一次 reconcile。
 - 提供离线 status/validate/reconcile 投影，能从 source Card 一直追到
   authorization、handoff、Team registry 与当前 pool state。
 - 对 incomplete、waiting、failed、tampered 或 unsupported run 启动 Approval 必须
@@ -222,6 +225,9 @@ Approval 可以批量授权多张 Card；确认后，系统立即创建对应 Te
 - [ ] 页面与 CLI 能逐 Card 展示 authorization、handoff、Team 和 pool 状态，并明确
       区分 desired 与 observed lifecycle；单 Team 的 Goal batch 完成不会被投影为
       Team completed 或自动释放 global slot。
+- [ ] `approve --cards ... --yes` 与 Browser authorize 使用同一 mutation/outbox
+      合同；缺少显式确认时不打开 service，重复/未知 Card 或不合法 batch 均不写
+      authorization/outbox。
 - [ ] source run 不因 Approval/Build 状态而改变原 route 的质量决策或 completed 产物。
 - [ ] 两条 route 的真实联合 E2E 均至少启动一个 Team，并有真实 Worker 结果和独立
       Verifier verdict。

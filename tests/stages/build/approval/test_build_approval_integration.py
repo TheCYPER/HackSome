@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import io
+import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
+from hacksome import cli
 from hacksome.stages.build.approval.build_adapter import (
+    InMemoryBuildControlAdapter,
     SubprocessBuildControlAdapter,
 )
 from hacksome.stages.build.approval.service import ApprovalService
@@ -15,6 +21,48 @@ from tests.stages.build.approval.test_build_approval_store import authorize_payl
 
 
 class BuildApprovalProcessIntegrationTests(unittest.TestCase):
+    def test_cli_authorization_uses_durable_service_and_replays(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = make_catalog(3)
+            store = ApprovalStore(root / "approval")
+            store.initialize(catalog)
+            service = ApprovalService(
+                run_dir=root / "source",
+                store=store,
+                catalog=catalog,
+                build_adapter=InMemoryBuildControlAdapter(max_active_teams=2),
+                source_integrity_error=None,
+            )
+            argv = [
+                "approve",
+                str(root / "source"),
+                "--cards",
+                catalog.cards[2].card_id,
+                catalog.cards[0].card_id,
+                "--yes",
+                "--json",
+            ]
+            outputs: list[dict] = []
+            with patch.object(cli, "_approval_service", return_value=service):
+                for _ in range(2):
+                    stdout = io.StringIO()
+                    with redirect_stdout(stdout):
+                        self.assertEqual(cli.main(argv), 0)
+                    outputs.append(json.loads(stdout.getvalue()))
+
+            self.assertEqual(
+                outputs[0]["authorization"],
+                outputs[1]["authorization"],
+            )
+            self.assertEqual(outputs[0]["request_id"], outputs[1]["request_id"])
+            self.assertEqual(
+                [card["status"] for card in outputs[0]["snapshot"]["cards"]],
+                ["active", "available", "active"],
+            )
+            self.assertEqual(len(store.load_mutations()), 1)
+            self.assertEqual(len(store.outboxes()), 2)
+
     def test_catalog_to_ledger_to_subprocess_registry_and_pool(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

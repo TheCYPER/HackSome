@@ -191,6 +191,22 @@ SameSite=Strict cookie。不要把 join URL、cookie 或本机 credential path �
 hacksome approve runs/<run-id> --no-open
 ```
 
+也可以不启动网页，直接在终端批准一批 Card：
+
+```bash
+hacksome build-status runs/<run-id>
+hacksome approve runs/<run-id> \
+  --cards idea-card-001 idea-card-003 \
+  --yes
+```
+
+`build-status` 的逐 Card 输出会显示这里需要的精确 Card ID。
+`--yes` 是必需的显式授权确认；未提供时不会写入 Approval。命令默认在 durable
+authorization 落盘后执行一次 Build reconcile。自动化可增加 `--json`，只想先保存
+授权、稍后再执行 `build-reconcile` 时可增加 `--no-reconcile`。`--request-id`
+可以显式指定幂等键；省略时 CLI 会根据 frozen Catalog 与所选 Card 生成稳定键，
+所以相同命令可以安全重试。
+
 一次 Approval batch 必须选择 1–10 张尚未授权的 Card。同一个 run 可以连续提交
 多批；每张 Card 最多授权一次，request ID 重放保持幂等。显式关闭 Approval 后
 不能再授权未选 Card，但关闭不会 pause 或停止已经授权的 Team。空 catalog 也能

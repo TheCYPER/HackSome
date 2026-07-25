@@ -589,6 +589,8 @@ Idea-side public commands：
 ```text
 hacksome approve RUN_DIR [--no-open] [--approval-root PATH]
                          [--build-root PATH] [--build-python PATH]
+hacksome approve RUN_DIR --cards CARD_ID [CARD_ID ...] --yes
+                         [--request-id ID] [--no-reconcile] [--json]
 hacksome build-status RUN_DIR [--json]
 hacksome build-reconcile RUN_DIR [--json]
 ```
@@ -599,6 +601,13 @@ hacksome build-reconcile RUN_DIR [--json]
   并 close。
 - waiting/failed/incomplete/tampered/unsupported run fail closed，零写入。
 - `--no-open` 支持测试/远程终端；默认打开带一次性 join token 的本地 URL。
+- `--cards` 进入一次性终端授权模式，不启动 HTTP server；`--yes` 是强制的显式
+  mutation gate。CLI 从 frozen catalog 解出 Card SHA 并调用同一个
+  `ApprovalService.authorize()`；默认随后执行一次 `reconcile()`，而
+  `--no-reconcile` 只保存 durable authorization/outbox。
+- 未提供 `--request-id` 时，CLI 根据 catalog hash 与按 catalog ordinal
+  canonicalize 后的 selection 生成稳定安全 ID；相同命令自然走 same/same replay。
+  Browser-only host/port/open 参数不得与 `--cards` 混用。
 
 Build-side operator commands：
 

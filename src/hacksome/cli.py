@@ -17,7 +17,7 @@ from hacksome.core.codex import CodexRunner
 from hacksome.core.config import CodexConfig
 from hacksome.core.hub import RunHub
 from hacksome.core.models import CodexDoctorResult
-from hacksome.core.state import StateError
+from hacksome.core.state import StateError, sha256_json
 from hacksome.contracts.post_card.catalog import (
     PostCardCatalogError,
     project_post_card_catalog,
@@ -270,7 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     approve = commands.add_parser(
         "approve",
-        help="serve the shared Build Dispatch Board for a completed run",
+        help="serve the Build Dispatch Board or authorize Cards from the CLI",
     )
     approve.add_argument("run_dir", type=Path)
     approve.add_argument("--approval-root", type=Path)
@@ -292,6 +292,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
     )
     approve.add_argument("--no-open", action="store_true")
+    approve.add_argument(
+        "--cards",
+        nargs="+",
+        metavar="CARD_ID",
+        help="authorize 1-10 Card IDs without starting the web board",
+    )
+    approve.add_argument(
+        "--request-id",
+        help="stable idempotency key for CLI authorization",
+    )
+    approve.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm that the selected Cards should start Build",
+    )
+    approve.add_argument(
+        "--no-reconcile",
+        action="store_true",
+        help="persist authorization without immediately reconciling Build",
+    )
+    approve.add_argument("--json", action="store_true")
 
     for name, help_text in (
         ("build-status", "inspect Build Approval and Team pool state"),
@@ -759,6 +780,22 @@ def _approval_service(
 
 
 def _approve_command(args: argparse.Namespace) -> int:
+    if args.cards is not None:
+        return _approve_cards_command(args)
+    cli_only = [
+        flag
+        for enabled, flag in (
+            (args.request_id is not None, "--request-id"),
+            (args.yes, "--yes"),
+            (args.no_reconcile, "--no-reconcile"),
+            (args.json, "--json"),
+        )
+        if enabled
+    ]
+    if cli_only:
+        raise ValueError(
+            f"{', '.join(cli_only)} requires --cards for CLI authorization"
+        )
     service = _approval_service(args, with_build=True)
     config = ApprovalServerConfig(
         approval_root=service.store.root,
@@ -774,6 +811,79 @@ def _approve_command(args: argparse.Namespace) -> int:
         server.serve_forever()
     finally:
         server.stop()
+    return 0
+
+
+def _approve_cards_command(args: argparse.Namespace) -> int:
+    if not args.yes:
+        raise ValueError(
+            "CLI authorization requires --yes; no Cards were authorized"
+        )
+    web_only = [
+        flag
+        for changed, flag in (
+            (args.host != "127.0.0.1", "--host"),
+            (args.port != 0, "--port"),
+            (args.no_open, "--no-open"),
+        )
+        if changed
+    ]
+    if web_only:
+        raise ValueError(f"{', '.join(web_only)} cannot be used with --cards")
+
+    service = _approval_service(args, with_build=True)
+    requested_ids = list(args.cards)
+    if len(requested_ids) != len(set(requested_ids)):
+        raise ValueError("--cards contains duplicate Card IDs")
+    cards_by_id = {card.card_id: card for card in service.catalog.cards}
+    unknown = [card_id for card_id in requested_ids if card_id not in cards_by_id]
+    if unknown:
+        raise ValueError("unknown Card ID(s): " + ", ".join(unknown))
+    requested_set = set(requested_ids)
+    selections = [
+        {
+            "card_id": card.card_id,
+            "card_sha256": card.card_sha256,
+        }
+        for card in service.catalog.cards
+        if card.card_id in requested_set
+    ]
+    request_id = args.request_id or (
+        "cli-"
+        + sha256_json(
+            {
+                "catalog_sha256": service.catalog.catalog_sha256,
+                "cards": selections,
+            }
+        )[:32]
+    )
+    authorization = service.authorize(
+        {
+            "schema_version": 1,
+            "request_id": request_id,
+            "catalog_sha256": service.catalog.catalog_sha256,
+            "cards": selections,
+        }
+    )
+    snapshot = service.snapshot() if args.no_reconcile else service.reconcile()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "request_id": request_id,
+                    "authorization": authorization,
+                    "snapshot": snapshot,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"Authorized batch: {authorization['batch_id']}")
+        print(f"Request ID: {request_id}")
+        _print_build_snapshot(snapshot)
     return 0
 
 
@@ -801,7 +911,8 @@ def _print_build_snapshot(payload: dict[str, Any]) -> None:
         )
         print(
             f"  {card['ordinal'] + 1:02d} "
-            f"{card['status']}: {card['title']}{suffix}{queue}"
+            f"{card['status']}: {card['title']} "
+            f"· card {card['card_id']}{suffix}{queue}"
         )
 
 
