@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "Preserve the existing Useful run, artifact, hash, validation, and Idea Card contracts while adding a read-only post-card adapter."}
+{"file": ".trellis/spec/backend/creative-agent-workflow-contracts.md", "reason": "Preserve Creative C6/C7 finalization, exact five-field handoff, immutable completed-run closure, and route-specific validation."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Apply one-owner decoding/projection and trace the source-run to Approval to Build data flow across process boundaries."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse established transport, hashing, locking, and atomic-write patterns without conflating Creative review with Build Approval."}
+{"file": ".trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Extend the real single-Team runtime without inventing Team completed/idle semantics or weakening Lead/Worker/fresh-Verifier isolation."}
+{"file": ".trellis/tasks/07-24-idea-card-build-approval/research/route-neutral-post-card-contract.md", "reason": "Use the audited Useful/Creative output authorities and exact shared catalog/handoff boundary."}
+{"file": ".trellis/tasks/07-24-idea-card-build-approval/research/approval-build-gap-audit.md", "reason": "Implement the audited Approval ledger, outbox, registry, pool, security, crash, and joined-E2E gaps rather than treating planning-only components as shipped."}

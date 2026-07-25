@@ -1,17 +1,18 @@
 # HackSome
 
 HackSome 是一个本地运行的黑客松工作流，生产代码统一位于 `src/hacksome/`。
-产品有三个明确阶段，两段交接都由 operator 手工执行：
+产品有三个明确阶段：Ideation→Build 由 operator 在共享 Approval 页面授权，
+Build→Pitch 仍由 operator 手工交接：
 
 ```text
-Ideation ── IdeaToBuildHandoff JSON ──[人工选卡并初始化]──> Build
+Ideation ── IdeaToBuildHandoff JSON ──[人工批准，系统建 Team]──> Build
 Build ── Project + Idea Card + Challenge ──[人工调用]──> Pitch
 ```
 
 | Stage | 实现与资源 | 测试 | 运行入口 |
 | --- | --- | --- | --- |
 | Ideation | `src/hacksome/stages/ideation/` | `tests/stages/ideation/` | `hacksome run ...` |
-| Build | `src/hacksome/stages/build/`、`ops/build/` | `tests/stages/build/` | `make -C ops/build init/up ...` |
+| Build | `src/hacksome/stages/build/`、`ops/build/` | `tests/stages/build/` | `hacksome approve RUN`；或手工 `make -C ops/build init/up ...` |
 | Pitch | `src/hacksome/stages/pitch/` | `tests/stages/pitch/` | `hacksome pitch ...` |
 
 共享运行机制在 `src/hacksome/core/`，两种显式交接格式在
@@ -170,6 +171,74 @@ hacksome resume runs/<run-id>
 持久化事实的 partial report；partial report 不会产生有效 Idea Card、
 Memory Record 或 Build handoff。
 
+## 共享 Build Approval
+
+Useful 与 Creative 的 completed run 都进入同一个 post-card 边界。先离线校验
+source run，再把最终 Card 顺序、精确 Markdown、hash、provenance 与五字段
+handoff 冻结到 run 外部的 Approval control root。source run 本身不会被修改。
+
+打开本机 Dispatch Board：
+
+```bash
+hacksome approve runs/<run-id>
+```
+
+页面默认只监听 loopback，首次 URL 使用一次性 join token 换取 HttpOnly、
+SameSite=Strict cookie。不要把 join URL、cookie 或本机 credential path 放进
+日志、截图或报告。若只想打印 URL 而不自动打开浏览器：
+
+```bash
+hacksome approve runs/<run-id> --no-open
+```
+
+也可以不启动网页，直接在终端批准一批 Card：
+
+```bash
+hacksome build-status runs/<run-id>
+hacksome approve runs/<run-id> \
+  --cards idea-card-001 idea-card-003 \
+  --yes
+```
+
+`build-status` 的逐 Card 输出会显示这里需要的精确 Card ID。
+`--yes` 是必需的显式授权确认；未提供时不会写入 Approval。命令默认在 durable
+authorization 落盘后执行一次 Build reconcile。自动化可增加 `--json`，只想先保存
+授权、稍后再执行 `build-reconcile` 时可增加 `--no-reconcile`。`--request-id`
+可以显式指定幂等键；省略时 CLI 会根据 frozen Catalog 与所选 Card 生成稳定键，
+所以相同命令可以安全重试。
+
+一次 Approval batch 必须选择 1–10 张尚未授权的 Card。同一个 run 可以连续提交
+多批；每张 Card 最多授权一次，request ID 重放保持幂等。显式关闭 Approval 后
+不能再授权未选 Card，但关闭不会 pause 或停止已经授权的 Team。空 catalog 也能
+打开页面并显式关闭。
+
+每张获批 Card 对应一个稳定、隔离的 Build Team。默认全局最多两个 Team 占用
+active slot，其余按授权顺序 FIFO 排队；Team 完成一轮 Goal 不会自动释放 slot，
+只有 Build operator 的显式 pause 才会释放。查看、重放交接或离线校验：
+
+```bash
+hacksome build-status runs/<run-id>
+hacksome build-status runs/<run-id> --json
+hacksome build-reconcile runs/<run-id>
+hacksome build-validate runs/<run-id>
+```
+
+Approval ledger、outbox 和 receipt 默认位于
+`<runs-dir>/.hacksome/approvals/<run-id>/`；Build registry 与 Team root 默认位于
+`ops/build/state/build-pool/`。两侧通过 fixed-argv、`shell=False` 的纯 JSON
+subprocess 边界通信。进程在 batch commit 或 Build response 后中断时，重复执行
+`build-reconcile` 会补齐 outbox/receipt，而不会创建第二个 Team。
+
+首次使用真实 Build runtime 前先确认 Docker/Compose、账户包和 Codex 登录：
+
+```bash
+make -C ops/build validate
+hacksome doctor
+```
+
+可用 `--build-root`、`--build-python` 和 `--max-active-teams` 覆盖可信的本机启动
+参数；Browser API 不接受路径、命令、Compose service 或环境变量。
+
 ## 查看、校验与 Benchmark
 
 ```bash
@@ -218,21 +287,14 @@ Creative 的最终 Build handoff 只包含：
 ```
 
 其中两个 Markdown 字段有意对齐 Build Stage 的 `TeamLayout.bootstrap()` 输入。
-当前没有自动消费 handoff 或启动容器：Build gate 必须先选择一张卡、复核
-`idea_card_sha256`，再由未来的顶层 adapter 初始化 Team。Team 身份也不能只用
-可能跨 run 重复的 `idea_card_id`，至少要绑定 `source_run_id + idea_card_id +
-idea_card_sha256`。
+共享 Approval adapter 会先复核 `idea_card_sha256`，再把 exact handoff 交给
+Build registry。Team 身份绑定 `source_run_id + idea_card_id +
+idea_card_sha256`，不会只使用可能跨 run 重复的 `idea_card_id`。
 
-选择卡片后，由 operator 显式初始化并启动 Build：
-
-```bash
-make -C ops/build init TEAM=my-team \
-  CHALLENGE_FILE=/absolute/path/challenge.md \
-  IDEA_CARD_FILE=/absolute/path/idea-card.md
-make -C ops/build up TEAM=my-team
-```
-
-Build 完成后，operator 再显式调用 Pitch；它不会扫描 Team state：
+Idea 工作流到 Card 为止，Approval 是独立的 Build 资源决策。Build 侧可以选零张
+或多张卡；未选择不等于 Creative 质量 reject。Build Agent 也可以修改、继续或
+放弃初始 Card。Build 完成后，operator 仍需显式调用 Pitch；Pitch 不会扫描 Team
+state：
 
 ```bash
 hacksome pitch \
@@ -242,8 +304,8 @@ hacksome pitch \
   --output-root /absolute/path/to/pitch-output
 ```
 
-Idea 工作流到 handoff 为止。Build 侧可以再选零张或多张卡；未选择不等于
-Creative 质量 reject。两处人工边界都是当前产品合同，不是已自动接通的流程。
+本仓库不把 Build 忠实度、GitHub 发布或 Pitch 偷塞进 Idea 阶段；Approval 与
+Build 已连接，Build 到 Pitch 的人工边界仍然保留。
 
 ## 测试
 

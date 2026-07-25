@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Build Dispatch Board · HackSome</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#ticket-list">Skip to Idea Cards</a>
+    <main class="workbench">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">HackSome · post-card control</p>
+          <h1>Build Dispatch Board</h1>
+        </div>
+        <dl class="run-plate">
+          <div><dt>Run</dt><dd id="run-id">loading</dd></div>
+          <div><dt>Route</dt><dd id="route-id">—</dd></div>
+          <div><dt>Catalog</dt><dd id="catalog-id">—</dd></div>
+          <div><dt>Approval</dt><dd id="approval-state">—</dd></div>
+        </dl>
+      </header>
+
+      <section class="dispatch-grid" aria-label="Build dispatch workspace">
+        <section class="ticket-column" aria-labelledby="tickets-heading">
+          <div class="column-heading">
+            <div>
+              <p class="station-label">Station 01</p>
+              <h2 id="tickets-heading">Dispatch tickets</h2>
+            </div>
+            <span id="available-count" class="count-stamp">0 ready</span>
+          </div>
+          <div class="batch-tools">
+            <button id="select-next" type="button" disabled>Select next 10</button>
+            <button id="clear-selection" type="button" disabled>Clear batch</button>
+          </div>
+          <div id="empty-state" class="empty-state" hidden>
+            <span class="empty-mark" aria-hidden="true">Ø</span>
+            <h3>No final Idea Cards</h3>
+            <p>This run completed with no Cards available for Build. You can explicitly close Approval.</p>
+          </div>
+          <ol id="ticket-list" class="ticket-list" aria-busy="true"></ol>
+        </section>
+
+        <section class="detail-column" aria-labelledby="detail-heading">
+          <div class="column-heading">
+            <div>
+              <p class="station-label">Station 02</p>
+              <h2 id="detail-heading">Card inspection</h2>
+            </div>
+            <span id="detail-hash" class="hash-chip">select a ticket</span>
+          </div>
+          <div id="detail-provenance" class="provenance-strip">Exact source text appears here.</div>
+          <pre id="card-detail" class="card-detail" tabindex="0">Choose a dispatch ticket to inspect the full Idea Card.</pre>
+        </section>
+
+        <aside class="launch-column" aria-labelledby="launch-heading">
+          <div class="column-heading rail-heading">
+            <div>
+              <p class="station-label">Station 03</p>
+              <h2 id="launch-heading">Launch rail</h2>
+            </div>
+          </div>
+          <p class="rail-note">Slots stay occupied until an operator pauses a Team.</p>
+          <div id="active-slots" class="active-slots"></div>
+          <div class="queue-header">
+            <span>FIFO queue</span><span id="queue-count">0</span>
+          </div>
+          <ol id="launch-queue" class="launch-queue"></ol>
+          <button id="retry-handoffs" class="retry-button" type="button" disabled>Retry pending handoffs</button>
+        </aside>
+      </section>
+
+      <footer class="batch-tray" aria-label="Current approval batch">
+        <div class="tray-tally">
+          <strong id="selected-count">0 selected</strong>
+          <span id="launch-estimate">0 start now · 0 queue</span>
+          <span id="batch-warning" class="batch-warning"></span>
+        </div>
+        <div class="tray-actions">
+          <button id="close-approval" class="close-button" type="button" disabled>Close Approval</button>
+          <button id="approve-batch" class="approve-button" type="button" disabled>Approve 0 and start Build</button>
+        </div>
+      </footer>
+    </main>
+
+    <dialog id="approve-dialog" aria-labelledby="approve-dialog-title">
+      <form method="dialog" class="confirm-sheet">
+        <p class="station-label">Authorization check</p>
+        <h2 id="approve-dialog-title">Start this Build batch?</h2>
+        <p id="approve-summary"></p>
+        <ul id="approve-list"></ul>
+        <div class="dialog-actions">
+          <button value="cancel">Return to selection</button>
+          <button id="confirm-approve" value="confirm" class="approve-button">Approve and start Build</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="close-dialog" aria-labelledby="close-dialog-title">
+      <form method="dialog" class="confirm-sheet">
+        <p class="station-label danger-label">Irreversible control</p>
+        <h2 id="close-dialog-title">Close this Approval?</h2>
+        <p>Unselected Cards remain valid Idea outputs, but no new Build batch can be authorized. Existing queued and active Teams continue unchanged.</p>
+        <div class="dialog-actions">
+          <button value="cancel">Keep Approval open</button>
+          <button id="confirm-close" value="confirm" class="close-button">Close permanently</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="live-region" class="sr-only" aria-live="polite"></div>
+  </body>
+</html>

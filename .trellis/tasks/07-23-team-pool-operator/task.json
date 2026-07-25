@@ -3,7 +3,7 @@
   "name": "team-pool-operator",
   "title": "Team bootstrap、全局 Pool 与 operator 控制",
   "description": "",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "weston",
   "assignee": "weston",
   "createdAt": "2026-07-23",
-  "completedAt": null,
+  "completedAt": "2026-07-24",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -21,6 +21,8 @@
   "children": [],
   "parent": "07-23-autonomous-build-teams",
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "Implementation was absorbed by 07-24-idea-card-build-approval; do not implement this planning task separately.",
+  "meta": {
+    "absorbed_by": "07-24-idea-card-build-approval"
+  }
 }

@@ -12,5 +12,7 @@ Ideation 把 challenge 变成零张或多张可追踪的 Idea Card。`useful/` �
 - 验证：`hacksome status RUN`、`hacksome validate RUN`；测试位于
   `tests/stages/ideation/`。
 
-Ideation 不选择 Build Team，也不启动容器。operator 必须校验 handoff、选择
-Idea Card，再手工执行 `make -C ops/build init ...`。
+Ideation 本身不选择 Build Team，也不启动容器。completed run 由共享
+`hacksome approve RUN` 边界校验并展示所有 Final Idea Card；operator 明确批准
+后，Approval outbox 才把 exact handoff 交给 Build registry。原有手工
+`make -C ops/build init ...` 入口仍可独立使用。

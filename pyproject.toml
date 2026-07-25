@@ -40,6 +40,7 @@ hacksome = [
   "stages/ideation/creative/review_ui/*",
   "stages/pitch/prompts/*.md",
   "stages/pitch/schemas/*.json",
+  "stages/build/approval_ui/*",
   "stages/build/assets/agents/*.yaml",
   "stages/build/assets/agents/assets/*.md",
   "stages/build/assets/agents/ephemeral/*.yaml",

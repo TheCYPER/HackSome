@@ -1,4 +1,4 @@
-"""Command-line interface for the local Idea-only workflow."""
+"""Command-line interface for the local HackSome stage workflow."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import ipaddress
 import json
+import os
 import sys
 import webbrowser
 from collections.abc import Sequence
@@ -14,6 +15,23 @@ from typing import Any
 
 from hacksome.core.codex import CodexRunner
 from hacksome.core.config import CodexConfig
+from hacksome.core.hub import RunHub
+from hacksome.core.models import CodexDoctorResult
+from hacksome.core.state import StateError, sha256_json
+from hacksome.contracts.post_card.catalog import (
+    PostCardCatalogError,
+    project_post_card_catalog,
+)
+from hacksome.stages.build.approval.build_adapter import (
+    SubprocessBuildControlAdapter,
+)
+from hacksome.stages.build.approval.contracts import ApprovalError
+from hacksome.stages.build.approval.server import (
+    ApprovalServerConfig,
+    ApprovalServerError,
+    BuildApprovalServer,
+)
+from hacksome.stages.build.approval.service import ApprovalService
 from hacksome.stages.ideation.creative.benchmark import (
     BenchmarkManifest,
     BlindCaseMap,
@@ -34,15 +52,12 @@ from hacksome.stages.ideation.creative.workflow import (
     CreativeRunOutcome,
     CreativeWorkflowError,
 )
-from hacksome.core.hub import RunHub
-from hacksome.core.models import CodexDoctorResult
 from hacksome.stages.pitch import (
     PITCH_MODEL,
     PITCH_REASONING_EFFORT,
     PitchWorkflow,
     PitchWorkflowError,
 )
-from hacksome.core.state import StateError
 from hacksome.stages.ideation.useful.workflow import (
     UsefulIdeaWorkflow,
     WorkflowError,
@@ -253,6 +268,77 @@ def build_parser() -> argparse.ArgumentParser:
     )
     resume.add_argument("run_dir", type=Path)
 
+    approve = commands.add_parser(
+        "approve",
+        help="serve the Build Dispatch Board or authorize Cards from the CLI",
+    )
+    approve.add_argument("run_dir", type=Path)
+    approve.add_argument("--approval-root", type=Path)
+    approve.add_argument(
+        "--build-root",
+        type=Path,
+        default=Path("ops/build/state/build-pool"),
+    )
+    approve.add_argument(
+        "--build-python",
+        type=Path,
+        default=Path(sys.executable),
+    )
+    approve.add_argument("--host", default="127.0.0.1")
+    approve.add_argument("--port", type=_port, default=0)
+    approve.add_argument(
+        "--max-active-teams",
+        type=_positive_int,
+        default=2,
+    )
+    approve.add_argument("--no-open", action="store_true")
+    approve.add_argument(
+        "--cards",
+        nargs="+",
+        metavar="CARD_ID",
+        help="authorize 1-10 Card IDs without starting the web board",
+    )
+    approve.add_argument(
+        "--request-id",
+        help="stable idempotency key for CLI authorization",
+    )
+    approve.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm that the selected Cards should start Build",
+    )
+    approve.add_argument(
+        "--no-reconcile",
+        action="store_true",
+        help="persist authorization without immediately reconciling Build",
+    )
+    approve.add_argument("--json", action="store_true")
+
+    for name, help_text in (
+        ("build-status", "inspect Build Approval and Team pool state"),
+        ("build-reconcile", "replay authorized handoffs and Team lifecycle"),
+        ("build-validate", "validate the frozen Approval ledger offline"),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("run_dir", type=Path)
+        command.add_argument("--approval-root", type=Path)
+        command.add_argument(
+            "--build-root",
+            type=Path,
+            default=Path("ops/build/state/build-pool"),
+        )
+        command.add_argument(
+            "--build-python",
+            type=Path,
+            default=Path(sys.executable),
+        )
+        command.add_argument(
+            "--max-active-teams",
+            type=_positive_int,
+            default=2,
+        )
+        command.add_argument("--json", action="store_true")
+
     benchmark = commands.add_parser(
         "benchmark",
         help="validate and plan an offline Creative benchmark",
@@ -375,6 +461,7 @@ def _run_useful_command(args: argparse.Namespace, challenge: str) -> int:
     print(f"Run directory: {workflow.run_dir}")
     index = asyncio.run(workflow.execute())
     print(f"Idea Cards: {index}")
+    _print_build_approval_next(workflow.run_dir)
     return 0
 
 
@@ -443,7 +530,26 @@ def _print_creative_outcome(outcome: CreativeRunOutcome) -> int:
         raise ValueError(f"unsupported Creative outcome status: {outcome.status!r}")
     if outcome.next_command is not None:
         print(f"Next: {outcome.next_command}")
+    elif outcome.status == "completed":
+        _print_build_approval_next(outcome.run_dir)
     return 1 if outcome.status == "finalizing" else 0
+
+
+def _print_build_approval_next(run_dir: Path) -> None:
+    try:
+        catalog = project_post_card_catalog(run_dir)
+    except (OSError, PostCardCatalogError, StateError):
+        # A workflow result can be supplied by a test double or older integration
+        # that has not persisted the route-neutral catalog inputs yet.  The hint
+        # must never turn an otherwise successful Idea run into a CLI failure.
+        return
+    if catalog.cards:
+        print(f"Next: hacksome approve {run_dir}")
+    else:
+        print(
+            "No final Idea Cards are available to Build. "
+            f"Open the explicit empty state with: hacksome approve {run_dir}"
+        )
 
 
 def _status_command(args: argparse.Namespace) -> int:
@@ -646,6 +752,208 @@ def _resume_command(args: argparse.Namespace) -> int:
     outcome = asyncio.run(workflow.resume())
     print(f"Run directory: {outcome.run_dir}")
     return _print_creative_outcome(outcome)
+
+
+def _build_adapter(args: argparse.Namespace) -> SubprocessBuildControlAdapter:
+    executable = args.build_python.expanduser().resolve()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise ValueError(
+            f"--build-python must be an executable file: {executable}"
+        )
+    return SubprocessBuildControlAdapter(
+        build_root=args.build_root,
+        build_python=executable,
+        max_active_teams=args.max_active_teams,
+    )
+
+
+def _approval_service(
+    args: argparse.Namespace,
+    *,
+    with_build: bool,
+) -> ApprovalService:
+    return ApprovalService.open(
+        args.run_dir,
+        approval_root=args.approval_root,
+        build_adapter=_build_adapter(args) if with_build else None,
+    )
+
+
+def _approve_command(args: argparse.Namespace) -> int:
+    if args.cards is not None:
+        return _approve_cards_command(args)
+    cli_only = [
+        flag
+        for enabled, flag in (
+            (args.request_id is not None, "--request-id"),
+            (args.yes, "--yes"),
+            (args.no_reconcile, "--no-reconcile"),
+            (args.json, "--json"),
+        )
+        if enabled
+    ]
+    if cli_only:
+        raise ValueError(
+            f"{', '.join(cli_only)} requires --cards for CLI authorization"
+        )
+    service = _approval_service(args, with_build=True)
+    config = ApprovalServerConfig(
+        approval_root=service.store.root,
+        host=args.host,
+        port=args.port,
+    )
+    server = BuildApprovalServer(service, config)
+    try:
+        print(f"Build Approval URL: {server.approval_url}")
+        print("Serving the Build Dispatch Board; press Ctrl-C to stop.")
+        if not args.no_open:
+            webbrowser.open(server.approval_url)
+        server.serve_forever()
+    finally:
+        server.stop()
+    return 0
+
+
+def _approve_cards_command(args: argparse.Namespace) -> int:
+    if not args.yes:
+        raise ValueError(
+            "CLI authorization requires --yes; no Cards were authorized"
+        )
+    web_only = [
+        flag
+        for changed, flag in (
+            (args.host != "127.0.0.1", "--host"),
+            (args.port != 0, "--port"),
+            (args.no_open, "--no-open"),
+        )
+        if changed
+    ]
+    if web_only:
+        raise ValueError(f"{', '.join(web_only)} cannot be used with --cards")
+
+    service = _approval_service(args, with_build=True)
+    requested_ids = list(args.cards)
+    if len(requested_ids) != len(set(requested_ids)):
+        raise ValueError("--cards contains duplicate Card IDs")
+    cards_by_id = {card.card_id: card for card in service.catalog.cards}
+    unknown = [card_id for card_id in requested_ids if card_id not in cards_by_id]
+    if unknown:
+        raise ValueError("unknown Card ID(s): " + ", ".join(unknown))
+    requested_set = set(requested_ids)
+    selections = [
+        {
+            "card_id": card.card_id,
+            "card_sha256": card.card_sha256,
+        }
+        for card in service.catalog.cards
+        if card.card_id in requested_set
+    ]
+    request_id = args.request_id or (
+        "cli-"
+        + sha256_json(
+            {
+                "catalog_sha256": service.catalog.catalog_sha256,
+                "cards": selections,
+            }
+        )[:32]
+    )
+    authorization = service.authorize(
+        {
+            "schema_version": 1,
+            "request_id": request_id,
+            "catalog_sha256": service.catalog.catalog_sha256,
+            "cards": selections,
+        }
+    )
+    snapshot = service.snapshot() if args.no_reconcile else service.reconcile()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "request_id": request_id,
+                    "authorization": authorization,
+                    "snapshot": snapshot,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"Authorized batch: {authorization['batch_id']}")
+        print(f"Request ID: {request_id}")
+        _print_build_snapshot(snapshot)
+    return 0
+
+
+def _print_build_snapshot(payload: dict[str, Any]) -> None:
+    print(f"Run: {payload['run_id']}")
+    print(
+        f"Route: {payload['route_id']}/"
+        f"{payload['route_contract_version']}"
+    )
+    print(f"Approval: {payload['approval_status']}")
+    print(f"Active cap: {payload['max_active_teams']}")
+    if payload.get("source_integrity_error"):
+        print(f"Source integrity: {payload['source_integrity_error']}")
+    cards = payload.get("cards", [])
+    if not cards:
+        print("Cards: none")
+        return
+    print("Cards:")
+    for card in cards:
+        suffix = f" · {card['team_id']}" if card.get("team_id") else ""
+        queue = (
+            f" · queue {card['queue_position']}"
+            if card.get("queue_position") is not None
+            else ""
+        )
+        print(
+            f"  {card['ordinal'] + 1:02d} "
+            f"{card['status']}: {card['title']} "
+            f"· card {card['card_id']}{suffix}{queue}"
+        )
+
+
+def _build_status_command(args: argparse.Namespace) -> int:
+    payload = _approval_service(args, with_build=True).snapshot()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        _print_build_snapshot(payload)
+    return 0
+
+
+def _build_reconcile_command(args: argparse.Namespace) -> int:
+    payload = _approval_service(args, with_build=True).reconcile()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        _print_build_snapshot(payload)
+    return 0
+
+
+def _build_validate_command(args: argparse.Namespace) -> int:
+    service = _approval_service(args, with_build=False)
+    errors = service.validate()
+    payload = {
+        "valid": not errors,
+        "approval_root": str(service.store.root),
+        "errors": errors,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    elif errors:
+        print(
+            f"Build Approval validation failed with {len(errors)} error(s):",
+            file=sys.stderr,
+        )
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+    else:
+        print("Build Approval is valid.")
+    return 1 if errors else 0
 
 
 def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
@@ -1027,6 +1335,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _review_command(args)
         if args.command == "resume":
             return _resume_command(args)
+        if args.command == "approve":
+            return _approve_command(args)
+        if args.command == "build-status":
+            return _build_status_command(args)
+        if args.command == "build-reconcile":
+            return _build_reconcile_command(args)
+        if args.command == "build-validate":
+            return _build_validate_command(args)
         if args.command == "benchmark":
             return _benchmark_command(args)
         if args.command == "doctor":
@@ -1042,6 +1358,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         PitchWorkflowError,
         CreativeWorkflowError,
         CreativeFeedbackError,
+        ApprovalError,
+        ApprovalServerError,
+        PostCardCatalogError,
         ReviewServerError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
