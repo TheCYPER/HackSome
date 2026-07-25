@@ -12,6 +12,25 @@
 - `run --route creative`、`review`、Creative `resume` 或 `benchmark`；
 - Idea Memory 的发现、冻结、Recall/Remix 或完成后回写；
 - Creative report、Idea Card、partial report 或 Build handoff。
+- `docs/creative-workflow-explorer/` 中面向人的 Creative 流程投影。
+
+### 面向人的流程投影同步约定
+
+`docs/creative-workflow-explorer/app.js` 是当前合同和指定真实 run 的只读人工维护
+投影，不是 runtime 的第二份事实来源。修改 stage、fanout、Prompt/Schema
+版本、Controller/Model/Web/Human 分工、产物路径、gate 或失败语义时，必须在
+同一变更中同步该页面和 `tests/docs/test_creative_workflow_explorer.py`。
+
+页面必须区分：
+
+- 架构合同与某一次真实 run 的证据；
+- Agent 返回内容与 Controller 接受、发布的内容；
+- 自动“30 秒理解”代理信号与真实无背景人类测试；
+- 有模型 Prompt 的节点与 C6 Human、C7 等无模型节点。
+
+页面中的 Prompt、Schema 和代码链接必须是存在的 repo-relative path；C1W
+fail-open 必须同时展示 optional branch 失效与主线继续，不能写成“信号已被后续
+Agent 忽略”。页面不读取 run、不提交评审，也不能改变 runtime 合同。
 
 Creative 从一道 challenge 开始，在 Idea 阶段结束。它不负责实现产品、创建
 Repo、部署或 Pitch。C6 是唯一 Human-in-the-loop gate；C0–C5 不得增加人工
@@ -639,6 +658,10 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 - v1/v2 waiting run 继续 inspect/review/resume，资源/receipt/zero reason
   不被 v3 重解释；回归必须实际触发至少一个 C6C Agent 输出的首次与二次语义
   校验；新 v3 run 不加载旧 template bytes 冒充当前版本。
+- `tests/docs/test_creative_workflow_explorer.py` 断言流程投影节点完整、所有
+  Prompt/Schema/代码路径存在、C6 Human/C7 不伪造 Prompt、指定真实 run 的
+  数量与 C1W invalidation 诊断没有漂移，并保留键盘、无脚本与 reduced-motion
+  契约。
 
 执行：
 

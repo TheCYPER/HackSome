@@ -2715,3 +2715,68 @@ Prompt/Schema/reason/receipt/report；不能用当前 package 默认值解释旧
   v1 waiting compatibility、C6 人工新字段和至少一次新真实 route smoke 都有
    可复核证据；旧 v1 的五个诗性装置 shortlist 只作为问题基线，不得冒充 v2
    benchmark 成果。
+
+## 21. Creative 流程解剖器
+
+### 21.1 边界
+
+流程解剖器是一份仓库内静态说明页面，位于
+`docs/creative-workflow-explorer/`。它不 import runtime、不读取用户 run、不
+启动 Agent，也不复用 C6 review API。页面内的数据是对当前 Creative v3 合同和
+一次已完成 B 站运行的人工维护投影；实现改动如果改变阶段、Prompt 或产物，应在
+同一个 PR 中同步更新该投影。
+
+页面使用三个本地资源：
+
+```text
+docs/creative-workflow-explorer/
+  index.html   语义结构、降级内容和无脚本说明
+  styles.css   视觉系统、响应式、焦点与 reduced-motion
+  app.js       stage 数据、架构/真实运行视图与交互状态
+```
+
+不引入 bundler、框架、CDN 或在线字体；通过任意静态 HTTP server 即可打开。
+
+### 21.2 信息模型
+
+每个可选节点拥有稳定 `stageId`，并显式记录：
+
+- `label/title/phase/actors`；
+- `goal/why/inputs/actions/outputs`；
+- `promptFiles/schemaFiles/codeFiles`；
+- `gate/failureSemantics/fanout`；
+- `actualRun`：这次 B 站运行的状态、数量和诊断；
+- `misconception`：最容易产生的错误理解。
+
+C6 仍是一个业务阶段，但页面拆成 C6A、C6B、Human Review 和 C6C 四个可选节点，
+因为它们的 actor、Prompt 和产物不同。C7 明示为 deterministic Controller
+finalization，没有新的模型 Prompt。
+
+### 21.3 交互与视觉
+
+页面主视觉是一条“可检查的数据电流”：阶段节点沿真实顺序连接，当前节点把所属
+Controller、Model、Web、Human lane 点亮。C1W 在真实运行视图中显示为琥珀色断路，
+同时主线继续到 C2，用视觉直接表达 optional/fail-open，而不是只写一段术语。
+
+- hover 临时更新完整详情面板，mouseleave 恢复已固定节点；click/Enter/Space
+  固定节点并更新详情；
+- Architecture / B 站运行切换只改变证据层，不改变 stage 定义；
+- 详情面板按“目标 → 输入 → 发生什么 → 产物 → Prompt/Schema → 关卡/失败”
+  的固定阅读顺序展示；
+- 路径使用真实相对 repo path，并支持复制；
+- 窄屏把流程轨变为可横向浏览的顶部 stepper，详情保持单栏；
+- 无 JavaScript 时仍展示页面标题、核心诊断和打开源码的说明。
+
+### 21.4 真实性说明
+
+页面不得把“30 秒能理解”写成已经验证的事实。它必须解释当前机器证据的局限：
+
+- C3 只被要求用一句话写清产品循环；
+- C4H 的 Red Team 读取完整结构化 Concept，而非只看 30 秒陌生人演示；
+- C6 回执才来自人，但覆盖量可能很小，且本次为明确标记的合成 E2E 评审；
+- 因此最终卡通过只能说明合同收敛完成，不能说明 Percy 或真实观众看懂。
+
+C1W 同样区分“Agent 返回候选信号”和“Controller 接受可供生成的 snapshot”。
+本次任务输出虽包含候选，但 semantic validator 因
+`high-confidence signal requires at least two sources` 将整批 invalidated，
+所以 C2/C3 实际收到空 palette。页面不能写成“热点搜索成功但模型没采用”。

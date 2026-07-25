@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Creative v3 C0–C7 的中文交互式执行轨、真实 B 站运行证据与源码索引。"
+    >
+    <title>Creative 流程解剖器 · HackSome</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body data-view-mode="architecture">
+    <a class="skip-link" href="#workflow-detail">跳到阶段详情</a>
+
+    <header class="page-header">
+      <div class="header-copy">
+        <p class="eyebrow">HACKSOME / CREATIVE V3 / EXECUTION TRACE</p>
+        <h1>把创意工作流拆开看。</h1>
+        <p class="lede">
+          这不是路线宣传页。它是一件给 Percy 使用的执行检查仪器：逐步确认谁在做、
+          读了什么、写出什么，以及失败后主线究竟停下还是继续。
+        </p>
+      </div>
+      <div class="read-only-stamp" aria-label="只读说明工具">
+        <span>READ ONLY</span>
+        不读取 run · 不提交评审
+      </div>
+    </header>
+
+    <main>
+      <section class="truth-strip" aria-labelledby="truth-title">
+        <div class="truth-heading">
+          <p class="section-index">00 / 真实性诊断</p>
+          <h2 id="truth-title">合同成功，不等于人类真的看懂。</h2>
+        </div>
+        <div class="truth-diagnostics">
+          <article class="diagnostic diagnostic-signal">
+            <p class="diagnostic-label">B 站运行 · C1W</p>
+            <h3>候选信号返回了，但整批被作废。</h3>
+            <p>
+              一个 high-confidence signal 只有一个来源，触发
+              <code>high-confidence signal requires at least two sources</code>。
+              Controller 将 task 标记为 invalidated，发布
+              <code>status=unavailable</code> 的空 snapshot；C2/C3 收到空
+              palette 后继续。不能把它写成“搜索成功但模型没采用”。
+            </p>
+          </article>
+          <article class="diagnostic diagnostic-human">
+            <p class="diagnostic-label">“30 秒能理解” · 代理信号</p>
+            <h3>当前证据可以 false-pass 人类理解。</h3>
+            <p>
+              C3 作者自己写一句话；C4H 读取完整结构化 Concept，而不是只看陌生人
+              30 秒演示；C6 虽来自回执，但样本可能很小，本次还是 synthetic E2E
+              receipt，并非 Percy。于是结构和机器审查都可能通过，真实无背景观众仍
+              无法复述。这是可理解性的 proxy，不是人类理解实验。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="instrument" aria-labelledby="instrument-title">
+        <div class="instrument-bar">
+          <div>
+            <p class="section-index">01 / 观察层</p>
+            <h2 id="instrument-title">选择合同，或叠加真实运行证据。</h2>
+          </div>
+          <fieldset class="view-switch" aria-describedby="view-help">
+            <legend class="visually-hidden">观察层</legend>
+            <input
+              id="view-architecture"
+              type="radio"
+              name="workflow-view"
+              value="architecture"
+              checked
+            >
+            <label for="view-architecture">架构合同</label>
+            <input
+              id="view-bilibili"
+              type="radio"
+              name="workflow-view"
+              value="bilibili"
+            >
+            <label for="view-bilibili">B 站真实运行</label>
+          </fieldset>
+          <p id="view-help" class="view-help">
+            切换只改变证据层，不改变阶段定义。
+          </p>
+        </div>
+
+        <ul class="actor-lanes" id="actor-lanes" aria-label="当前阶段参与者">
+          <li data-actor="controller">
+            <span aria-hidden="true"></span>
+            Controller
+          </li>
+          <li data-actor="model">
+            <span aria-hidden="true"></span>
+            Model
+          </li>
+          <li data-actor="web">
+            <span aria-hidden="true"></span>
+            Web
+          </li>
+          <li data-actor="human">
+            <span aria-hidden="true"></span>
+            Human
+          </li>
+        </ul>
+
+        <div class="explorer-shell">
+          <nav class="execution-rail" aria-label="Creative v3 执行阶段">
+            <div class="rail-heading">
+              <span>EXECUTION RAIL</span>
+              <span>12 NODES</span>
+            </div>
+            <div class="rail-track">
+              <span class="data-current" aria-hidden="true"></span>
+              <ol id="stage-rail" class="stage-list"></ol>
+            </div>
+            <p id="hover-preview" class="hover-preview" aria-live="polite">
+              悬停查看摘要；点击或按 Enter / Space 固定节点。
+            </p>
+          </nav>
+
+          <article
+            id="workflow-detail"
+            class="workflow-detail"
+            aria-labelledby="stage-title"
+            aria-live="polite"
+          >
+            <div class="detail-header">
+              <div>
+                <p id="stage-phase" class="stage-phase"></p>
+                <h2 id="stage-title" tabindex="-1">正在载入阶段数据</h2>
+              </div>
+              <div id="stage-status" class="stage-status"></div>
+            </div>
+
+            <section class="evidence-layer" aria-labelledby="evidence-title">
+              <p class="detail-label">当前观察层</p>
+              <h3 id="evidence-title"></h3>
+              <p id="evidence-summary"></p>
+              <p id="evidence-diagnostic" class="evidence-diagnostic"></p>
+            </section>
+
+            <div id="detail-content"></div>
+          </article>
+        </div>
+      </section>
+
+      <footer class="source-note">
+        <p>
+          数据是当前 Creative v3 合同与一次已完成 B 站运行的人工维护投影。
+          改动 stage、Prompt、Schema 或产物时，应在同一变更中同步更新本页。
+        </p>
+        <p id="copy-status" class="copy-status" aria-live="polite"></p>
+      </footer>
+
+      <noscript>
+        <section class="no-script" aria-labelledby="no-script-title">
+          <h2 id="no-script-title">JavaScript 未启用</h2>
+          <p>
+            标题与两项真实性诊断仍可阅读。完整阶段投影位于
+            <code>docs/creative-workflow-explorer/app.js</code>；请直接打开源码，
+            依次查看 C0、C1、C1W、C2、C3、C4、C5、C6A、C6B、C6 Human、
+            C6C、C7。
+          </p>
+        </section>
+      </noscript>
+    </main>
+  </body>
+</html>

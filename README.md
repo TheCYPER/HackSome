@@ -95,6 +95,16 @@ Realtime Partner、Social Game / Relay、Creator / Transformer；这是互斥的
 primary product loop，不是四种审美换皮。某个 slot 没有诚实可行的组合时可以
 返回零 Concept。
 
+逐阶段检查 actor、fanout、产物、失败语义与真实 B 站运行证据，可打开
+[`Creative 流程解剖器`](docs/creative-workflow-explorer/index.html)：
+
+```bash
+python3 -m http.server 8000 --directory .
+```
+
+然后访问 `http://127.0.0.1:8000/docs/creative-workflow-explorer/`。这是只读静态
+说明页，不读取 run，也不提交评审。
+
 启动：
 
 ```bash

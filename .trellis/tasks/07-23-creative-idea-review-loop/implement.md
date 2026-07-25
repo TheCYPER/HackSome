@@ -873,3 +873,24 @@ git diff --check
 - [ ] Memory Record 不含身份、未批准人类原文、Prompt/log/Session，且只从 completed validated Creative run 自动发现。
 - [ ] C7 不调用模型、可零输出，并生成可供未来 run 消费的确定性 memory record；多文件发布有 frozen manifest 和可重放崩溃边界。
 - [ ] Percy 已明确批准进入实施。
+
+## 9. Creative 流程解剖器（2026-07-25）
+
+- [x] 从 Creative v3 `workflow.py`、route PromptCatalog、artifact/report/review
+  实现中核对 C0–C7 的真实 stage、fanout、失败与恢复语义，形成研究映射。
+- [x] 新建 `docs/creative-workflow-explorer/index.html`、`styles.css`、`app.js`，
+  不引入构建工具或远程依赖。
+- [x] 页面覆盖 C0、C1、C1W、C2、C3、C4、C5、C6A、C6B、C6 Human、C6C、
+  C7，并列出对应 Prompt、Schema、主要代码和产物。
+- [x] 加入 Architecture / B 站真实运行双视图，以及“30 秒理解代理信号”和
+  “C1W invalidated → 空 palette”两个显著诊断。
+- [x] hover/click/键盘都能选择 stage；支持复制路径、窄屏、可见焦点与
+  `prefers-reduced-motion`。
+- [x] 在 README 的 Creative 说明附近加入页面入口与本地启动命令。
+- [x] 增加静态资源测试，至少验证 stage 完整性、Prompt/Schema 路径存在、
+  Controller-only 节点不会伪造 Prompt、HTML 关键可访问性标记和 JS 语法。
+- [ ] 使用本地 HTTP server 做桌面与窄屏浏览器 QA，检查 hover/click/键盘、
+  双视图、路径复制、console error 和 reduced-motion。当前静态 server 已启动，
+  但内置浏览器策略拒绝访问该 localhost；待 Percy 手工打开后完成视觉验收。
+- [x] 运行聚焦测试、`node --check`、`git diff --check`，再交由
+  `trellis-check` 做规范与实现复核。
