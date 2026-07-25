@@ -473,6 +473,10 @@ class ReliableInbox(Protocol):
     def ack_one(self, key: str) -> None: ...
 
 
+_PER_WAKE_NEW_SESSION_MODES = frozenset({"fresh", "refresh"})
+_SESSION_MODES = _PER_WAKE_NEW_SESSION_MODES | {"resume"}
+
+
 def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                charter_path: str | None = None, mcp_config: str | None = None,
                system_prompt: str | None = None,
@@ -492,16 +496,23 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
     context failure. Production passes ``RemoteInbox`` and lets the Hub own the
     acknowledgement transaction; tests may inject an equivalent facade.
     """
+    if session_mode not in _SESSION_MODES:
+        raise ValueError(f"unknown session mode: {session_mode!r}")
     resume = session_mode == "resume"
-    fresh = not resume
+    per_wake_new_session = session_mode in _PER_WAKE_NEW_SESSION_MODES
     session_id = load_session(session_file) if resume else None
     # Normal resident startup uses AgentSpec's fully assembled system prompt.
     # AGENT_CHARTER remains an explicit operator/debug override, but a stale
     # path or empty file must not erase the production prompt.
     override_prompt = _read_charter(charter_path)
     charter = override_prompt if override_prompt is not None else system_prompt
+    session_label = (
+        f"{session_mode}-per-wake"
+        if per_wake_new_session
+        else (session_id or "(new)")
+    )
     print(f"[agent_loop:{key}] start heartbeat={heartbeat}s "
-          f"session={'fresh-per-wake' if fresh else (session_id or '(new)')}",
+          f"session={session_label}",
           flush=True)
     while True:
         event = inbox.peek_one(key)
@@ -616,7 +627,7 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                         flush=True,
                     )
         sid = outcome.session_id
-        if fresh:
+        if per_wake_new_session:
             continue      # token dropped on purpose; telemetry already has it
         session_id = sid
         if session_id and load_session(session_file) != session_id:
@@ -644,9 +655,11 @@ def _role_config(key: str) -> tuple:
     mcp_config (07-03 mcp-loadout): the yaml's per-role baseline, resolved
     against the yaml's own directory (spec.resolve — absolute paths pass
     through); no yaml → None (main() then falls back to DEFAULT_MCP_CONFIG).
-    session_mode (issue #207): "fresh" | "resume"; missing yaml / missing key
-    / unknown value → "fresh" (resume is the opt-in exception, and the
-    never-brick degradation direction is lose-continuity, not brick).
+    session_mode (issue #207): "fresh" | "refresh" | "resume". ``refresh`` is
+    an explicit resident per-wake new-session policy with the same no-resume
+    execution semantics as ``fresh``. Missing yaml / missing key / unknown
+    value → "fresh" (resume is the opt-in exception, and the never-brick
+    degradation direction is lose-continuity, not brick).
     idle (07-08 proactive-idle): "stop" | "proactive"; missing yaml / missing
     key / unknown value → "stop" (proactive is the opt-in exception, and the
     degradation direction is stay-quiet, not brick).
@@ -667,7 +680,7 @@ def _role_config(key: str) -> tuple:
         spec = AgentSpec.load(path)
         mcp = spec.resolve(spec.mcp_config) if spec.mcp_config else None
         session_mode = spec.session
-        if session_mode not in ("fresh", "resume"):
+        if session_mode not in _SESSION_MODES:
             print(f"[agent_loop] WARN: session mode {session_mode!r} unknown — "
                   "waking fresh", flush=True)
             session_mode = "fresh"

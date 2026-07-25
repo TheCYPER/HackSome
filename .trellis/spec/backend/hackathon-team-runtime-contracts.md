@@ -47,8 +47,11 @@ exactly one `replace` or `no_op` checkpoint before a successful wake ends.
 and a reusable error lesson are explicit triggers.
 
 Worker and fresh Verifier never receive the Skill, projection, capability, or
-memory mount. Lead still uses `session: resume`; session rotation remains a
-separate rollout.
+memory mount. Lead declares `session: refresh`: every resident wake opens a
+new runtime session and restores orientation from the bounded brief, current
+Goal projection, and live inspection. Runtime keeps `fresh` as the compatible
+default and `resume` as an explicit opt-in used only where continuity is
+required; Worker same-Goal resume and Verifier fresh behavior are unchanged.
 
 #### 2. Signatures
 
@@ -119,6 +122,9 @@ projection.
   observable but does not prevent Inbox acknowledgement.
 - A `no_op` has its own atomic per-wake receipt; event-journal failure cannot
   make the same wake eligible for a second checkpoint after restart.
+- `session: refresh` is a supported Lead AgentSpec value. It has the per-wake
+  new-session behavior of `fresh`: it neither reads nor overwrites the prior
+  Lead session token. `resume` alone may load and persist that token.
 - Disabling the flag removes the methods from Lead capability projection,
   omits prompt injection/update requirements, and retains any stored snapshot.
 
@@ -136,6 +142,7 @@ projection.
 | Atomic write failure | `write_failed`; previous snapshot remains readable |
 | Corrupt snapshot/journal | Fail closed with `store_corrupt`; never replace with empty |
 | Event telemetry failure | Warn without changing the already-decided checkpoint result |
+| Lead session is `refresh` | Start with no resume token and preserve any old token file |
 
 #### 5. Good / Base / Bad Cases
 
@@ -162,8 +169,9 @@ projection.
 - `tests/stages/build/control/test_method_adapter.py`
   - assert request/result audit redaction and idempotent request receipts.
 - `tests/stages/build/control/test_agent_loop_v7.py`
-  - assert enabled injection, stale marking, checkpoint instruction, and
-    disabled byte-compatible wake context.
+  - assert enabled injection, stale marking, checkpoint instruction, disabled
+    byte-compatible wake context, and two `refresh` wakes that neither reuse
+    nor overwrite a historical token.
 - `tests/stages/build/agent_runtime/test_team_loadout.py`
   - assert only Lead materializes `maintain-lead-brief`, including both
     `SKILL.md` and `agents/openai.yaml`.
@@ -453,6 +461,10 @@ make -C ops/build init \
 make -C ops/build up TEAM=<team> ACCOUNT=<account>
 make -C ops/build validate
 
+# opt-in local-network image sources; no account/state path is changed
+make -C ops/build up-local TEAM=<team> ACCOUNT=<account>
+make -C ops/build validate-local
+
 python -m hacksome.stages.build.control.team_store ...
 python -m hacksome.stages.build.control.team_hub
 python -m hacksome.stages.build.control.worker_manager
@@ -483,6 +495,13 @@ docker build -f ops/build/docker/agent.Dockerfile \
 - Worker and Verifier entrypoints always initialize `TeamLayout`, mount
   `/project`, and use one slot. `TEAM_MODE`/`COMPANY` do not select another
   product mode.
+- `ops/build/docker-compose.local.yml` may override only image acquisition:
+  registry/base-image build args, the locally built CUA Agent image, and
+  `pull_policy`. It must not add credentials, workstation paths, state paths,
+  or role/mount/lifecycle overrides.
+- `ops/build/docker/Dockerfile.local` builds the optional mirrored CUA base;
+  `agent.Dockerfile` accepts optional `CUA_BASE_IMAGE`, Ubuntu mirror, and npm
+  registry args. Empty args preserve the canonical network behavior.
 
 ### 7.4 Validation & Error Matrix
 
@@ -496,6 +515,8 @@ docker build -f ops/build/docker/agent.Dockerfile \
 | Verifier receives writable `/project` | mount-boundary test fails |
 | account/state/credential payload becomes tracked | sensitive-path audit fails |
 | production `.py` appears under `ops/build/` | repository-boundary audit fails |
+| local overlay changes a state/account/mount/role field | static overlay contract test fails |
+| local image arguments contain a secret or workstation path | static safety audit fails |
 | namespace, Docker, mount, startup, AgentSpec, or account/state path migration deletes its compatibility path without a live smoke | migration is incomplete even when offline tests pass |
 | Docker registry metadata lookup fails before a build reaches project layers | record an infrastructure failure and retry; do not report the image as built |
 | live Worker or Verifier cannot start KasmVNC, `computer_server`, its model runtime, or a browser | migration fails and the compatibility path must remain |
@@ -515,6 +536,8 @@ docker build -f ops/build/docker/agent.Dockerfile \
   and runs offline tests without starting a Team or model. This is sufficient
   for an ordinary local logic change only when no cross-container path or image
   boundary changed.
+- Good: `make -C ops/build up-local` uses a local CUA image and mirror args
+  while resolving the same canonical source, account, and Team state as `up`.
 - Bad: copy `agent/` and `orchestration/` into `ops/build/` to make Compose
   imports work. That recreates a second Python product tree.
 - Bad: build `agent.Dockerfile` from `ops/build/docker/`; its canonical Python
@@ -523,6 +546,8 @@ docker build -f ops/build/docker/agent.Dockerfile \
   launched directly from the image as proof that the CUA desktop runtime,
   dynamic Agent containers, model credentials, and read-only Verifier mount
   work together.
+- Bad: put an account path, token, or a `/Users/...` override in the tracked
+  local overlay. Network transport is the only allowed difference.
 
 ### 7.6 Tests Required
 
@@ -531,7 +556,8 @@ docker build -f ops/build/docker/agent.Dockerfile \
   - assert Worker `/project` is writable and Verifier `/project` is read-only;
   - assert no control-plane mount reaches either Agent.
 - `tests/stages/build/control/test_compose_accounts.py`
-  - assert canonical module entrypoints, mounts, account paths, and env wiring.
+  - assert canonical module entrypoints, mounts, account paths, env wiring,
+    local-overlay-only image acquisition, and secret-free portable Dockerfiles.
 - `tests/stages/build/agent_runtime/test_mcp_assets.py`
   - assert active MCP assets resolve;
   - assert the Agent Dockerfile copies `cua_mcp.py` from `src/hacksome/`.

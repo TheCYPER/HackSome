@@ -8,6 +8,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[4] / "ops" / "build"
 COMPOSE = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
 SERVICES = COMPOSE["services"]
+LOCAL_COMPOSE = yaml.safe_load((ROOT / "docker-compose.local.yml").read_text())
+LOCAL_SERVICES = LOCAL_COMPOSE["services"]
 
 
 def _target(value: str) -> str:
@@ -113,3 +115,61 @@ def test_makefile_bootstraps_exact_references_and_has_no_company_services():
         "COMPANY ?=",
     ):
         assert removed not in makefile
+
+
+def test_local_network_overlay_only_changes_image_acquisition():
+    assert set(LOCAL_SERVICES) == set(SERVICES)
+    assert LOCAL_SERVICES["lead"] == {
+        "image": "${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}",
+        "pull_policy": "never",
+    }
+    for name in ("hub", "worker-manager", "verifier-manager"):
+        assert LOCAL_SERVICES[name]["build"]["args"]["BASE_REGISTRY"] == (
+            "${CONTROL_BASE_REGISTRY:-m.daocloud.io/docker.io/library}"
+        )
+    assert LOCAL_SERVICES["worker-manager"]["environment"]["CUA_AGENT_IMAGE"] == (
+        "${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}"
+    )
+    assert LOCAL_SERVICES["verifier-manager"]["environment"]["CUA_AGENT_IMAGE"] == (
+        "${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}"
+    )
+    overlay_text = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+    assert "/Users/" not in overlay_text
+    assert "accounts/" not in overlay_text
+    assert "state/" not in overlay_text
+
+
+def test_local_network_make_targets_use_canonical_contexts_and_build_args():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "up-local: shared check-init build-agent-local" in makefile
+    assert "build-local: build-agent-local" in makefile
+    assert "validate-local:" in makefile
+    assert "$(OPS_ROOT)/docker/Dockerfile.local" in makefile
+    assert "$(OPS_ROOT)/docker/agent.Dockerfile" in makefile
+    assert "$(REPO_ROOT)" in makefile
+    for build_arg in (
+        "BASE_REGISTRY",
+        "CONTROL_BASE_REGISTRY",
+        "CUA_BASE_IMAGE",
+        "CUA_AGENT_IMAGE",
+        "UBUNTU_APT_MIRROR",
+        "UBUNTU_PORTS_MIRROR",
+        "NPM_REGISTRY",
+    ):
+        assert build_arg in makefile
+
+
+def test_local_network_dockerfiles_are_portable_and_secret_free():
+    local_base = (ROOT / "docker" / "Dockerfile.local").read_text(encoding="utf-8")
+    agent = (ROOT / "docker" / "agent.Dockerfile").read_text(encoding="utf-8")
+    assert "ARG BASE_REGISTRY=registry-1.docker.io" in local_base
+    assert "FROM ${BASE_REGISTRY}/trycua/cua-ubuntu:latest" in local_base
+    assert "COPY --chmod=0755 cua_base_startup.sh" in local_base
+    assert "ARG CUA_BASE_IMAGE=foundagent/cua-ubuntu:latest" in agent
+    assert "FROM ${CUA_BASE_IMAGE}" in agent
+    for build_arg in ("UBUNTU_APT_MIRROR", "UBUNTU_PORTS_MIRROR", "NPM_REGISTRY"):
+        assert f"ARG {build_arg}=" in agent
+    combined = local_base + agent
+    assert "/Users/" not in combined
+    assert "password" not in combined.lower()
+    assert "token=" not in combined.lower()

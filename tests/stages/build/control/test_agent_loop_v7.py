@@ -289,6 +289,49 @@ def test_custom_prompt_builder_receives_loaded_wake_context(tmp_path, monkeypatc
     assert captured[0][4] is context
 
 
+def test_refresh_wakes_never_read_resume_or_overwrite_existing_session_file(
+    tmp_path, monkeypatch
+):
+    session_file = tmp_path / "session"
+    session_file.write_text("historical-lead-token", encoding="utf-8")
+    resume_tokens = []
+    completions = []
+
+    def fail_load(_path):
+        raise AssertionError("refresh mode must not read the session file")
+
+    def fail_save(_path, _token):
+        raise AssertionError("refresh mode must not overwrite the session file")
+
+    def fake_wake(session_id, _prompt, **_kwargs):
+        resume_tokens.append(session_id)
+        return WakeOutcome(f"new-token-{len(resume_tokens)}", True)
+
+    def on_completed(_details):
+        completions.append(True)
+        if len(completions) == 2:
+            raise StopLoop
+
+    monkeypatch.setattr(agent_loop, "load_session", fail_load)
+    monkeypatch.setattr(agent_loop, "save_session", fail_save)
+    monkeypatch.setattr(agent_loop, "wake", fake_wake)
+
+    with pytest.raises(StopLoop):
+        agent_loop.agent_loop(
+            key="lead",
+            session_file=session_file,
+            session_mode="refresh",
+            heartbeat=60,
+            inbox=ReliableInbox([_event(1), _event(2)]),
+            context_loader=lambda: {},
+            prompt_builder=lambda *_args: "LEAD WAKE",
+            wake_completed=on_completed,
+        )
+
+    assert resume_tokens == [None, None]
+    assert session_file.read_text(encoding="utf-8") == "historical-lead-token"
+
+
 @pytest.mark.parametrize("override_text", (None, "OPERATOR OVERRIDE"))
 def test_resident_loop_uses_agent_spec_prompt_unless_operator_overrides(
     tmp_path, monkeypatch, override_text
@@ -367,8 +410,9 @@ def test_role_config_returns_fully_assembled_lead_prompt(monkeypatch):
     spec_path = AGENTS_ROOT / "lead.yaml"
     monkeypatch.setenv("AGENT_SPEC", str(spec_path))
 
-    *_, prompt = agent_loop._role_config("lead")
+    *_, session_mode, _idle, _strategic, prompt = agent_loop._role_config("lead")
 
+    assert session_mode == "refresh"
     assert prompt.startswith("# Shared Tool-Use Environment")
     assert "# Hackathon Lead" in prompt
     assert prompt.index("# Shared Tool-Use Environment") < prompt.index(

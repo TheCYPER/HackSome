@@ -57,9 +57,9 @@ class AgentSpec:
     hooks: str | None = None               # path (relative to base_dir) → runtime hook merge
     mcp_config: str = "/opt/foundagent/mcp.json"      # in-container path (cua-local)
     permission_mode: str = "bypass"        # bypass → the runtime's skip-permissions flag
-    session: str = "fresh"                 # fresh (default) | resume — cross-wake session
-                                           # continuity (issue #207); resume is the opt-in
-                                           # exception (today: the CEO), consumed by agent_loop
+    session: str = "fresh"                 # fresh (default) | refresh | resume
+                                           # refresh explicitly rotates a resident actor on
+                                           # every wake; resume opts into cross-wake continuity
     idle: str = "stop"                     # stop (default) | proactive — empty-heartbeat stance
                                            # (07-08 proactive-idle); proactive is the opt-in
                                            # exception (today: the CEO), consumed by agent_loop

@@ -15,8 +15,8 @@ chain-of-thought。它应帮助 Lead 保留关键决策、已验证的项目理�
 
 - 最新 `origin/main` 中，Build Stage 的 Lead、Worker、Verifier AgentSpec 均为
   `skills: []`，但通用 Skill materialization 已经存在并有测试。
-- Lead 使用长期 `session: resume`；Worker 通常每个 Goal 新建，同一 Goal 的
-  Verifier FAIL 才 resume；Verifier 每次 review 都是 fresh。
+- 实现前的 Lead 使用长期 `session: resume`；Worker 通常每个 Goal 新建，
+  同一 Goal 的 Verifier FAIL 才 resume；Verifier 每次 review 都是 fresh。
 - Lead 每次 wake 被要求检查真实 `/project`，并被明确禁止在 `/project`
   创建 plan/status 类 ceremonial artifact。
 - Agent 只能看到 `/project`；Goal、Inbox、review、session、telemetry 等目录由
@@ -126,14 +126,19 @@ MVP memory 是人可以直接审查的 Markdown snapshot，固定包含：
 - 更新失败不能损坏上一份有效 snapshot，也不能被静默吞掉。
 - rollout 必须有关闭开关；关闭后 Lead 回到当前行为，现有 snapshot 保留但不
   注入、不更新。
-- usage 报告必须区分 Codex 原生累计 snapshot 与相邻 wake delta。
+- usage 报告必须把每个 refreshed Lead session 作为独立 wake 统计，不能跨
+  session 对 Codex snapshot 做差分。
 
-### R10. 初始版本不立即改变 session policy
+### R10. Lead 每次 wake 必须 refresh session
 
-- MVP 保持 Lead 的 `session: resume`，先验证 snapshot 的质量、边界和触发稳定性。
-- 设计必须允许后续用 snapshot + Goal delta 启动 fresh/rotated Lead session。
-- session rotation 和 Goal summary/delta API 的全面上线属于后续阶段，不在本
-  PRD 中同时改变，以便隔离 Reflection Skill 的效果和风险。
+- Lead AgentSpec 显式使用 `session: refresh`；`refresh` 表示 resident Lead
+  每次 wake 都创建新的 runtime session，不复用上一轮 session token。
+- `refresh` 与已有 `fresh` 的执行语义一致，但作为 resident YAML 的显式值，
+  便于审计这是有意的跨 wake rotation，而不是缺省配置。
+- 每次新 session 仍必须从 bounded Lead Brief、当前 Goal projection 和定向
+  live inspection 恢复上下文，不能依赖上一轮聊天历史。
+- 已存在的 Lead session 文件可以保留用于回滚/审计，但 refresh mode 不读取、
+  不续写该 token。Worker 的 same-Goal resume 与 Verifier fresh policy 不变。
 
 ## Acceptance Criteria
 
@@ -157,6 +162,8 @@ MVP memory 是人可以直接审查的 Markdown snapshot，固定包含：
 - [x] telemetry 能观察每次 wake 的 memory revision/action/bytes/staleness，
       且不会记录 snapshot 正文。
 - [x] feature flag 关闭时，现有 Lead/Worker/Verifier 行为和历史 Team 均保持兼容。
+- [ ] Lead YAML 声明 `session: refresh`，连续 wake 均以空 resume token 启动，
+      且旧 session 文件不会被读取或覆盖。
 - [ ] 至少在一个代表 Team 上完成不少于三轮 batch-drain 试验：没有重复 Goal、
       没有丢失已知安全/隐私不变量，并比较启用前后的 README/全树重复读取次数
       与逐 wake token delta。
@@ -169,7 +176,7 @@ MVP memory 是人可以直接审查的 Markdown snapshot，固定包含：
 - 在 MVP 中给 Worker、Verifier 或不同 Team 共享私人 reflection。
 - 自动从 snapshot 直接创建 Goal。
 - 无上限的 append-only 日记。
-- 在本 PRD 中启用自动 session rotation，或将 `list_my_goals` 改为
-  summary/delta-first API。
+- 阈值驱动、条件驱动或自动回退到 resume 的 session policy。
+- 将 `list_my_goals` 改为 summary/delta-first API。
 - 为 Worker 设计独立的 Goal-scoped continuity memory。
 - 提供用于浏览、diff 和恢复历史 reflection 的人类运营界面。

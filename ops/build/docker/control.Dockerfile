@@ -6,7 +6,8 @@
 # bind-mounted at runtime so host-side volume sources keep the same absolute
 # path when commands cross the Docker socket boundary.
 
-FROM docker:cli
+ARG BASE_REGISTRY=docker.io/library
+FROM ${BASE_REGISTRY}/docker:cli
 
 RUN apk add --no-cache python3 py3-yaml \
     && ln -sf /usr/bin/python3 /usr/local/bin/python

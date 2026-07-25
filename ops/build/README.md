@@ -59,9 +59,33 @@ action、byte/hash、freshness 和错误码等元数据，不含 Markdown 正文
 Rollout 检查应至少覆盖三个 `goal_batch_drained` wake：观察 `read`、`replace`、
 `no_op`、`stale`、`missing`、`error` 事件，确认没有重复 Goal、已知安全/隐私
 不变量仍在 brief 中，并比较重复 README/全树读取次数。Codex
-`turn.completed.usage` 是同一 resumed session 的累计 snapshot；逐 wake 用量
-必须用相邻完成 snapshot 做 delta，不能把累计值直接当成单轮用量。
+`turn.completed.usage` 现在来自独立的 refreshed Lead session；应把每个 wake
+的 snapshot 直接作为该轮用量，不能跨 session 相减。
 
 回滚时把 `LEAD_REFLECTION_MEMORY_ENABLED` 设回 `0` 并重启该 Team。Hub 会停止
 注入和更新、移除 brief capabilities，既有 `memory/lead-brief.md` 保留，方便
 之后恢复；不要删除或搬入 `/project`。
+
+## Local-network image builds
+
+网络环境无法稳定访问默认 Docker/Ubuntu/npm endpoints 时，可显式使用
+`docker-compose.local.yml`。它只改变镜像获取与构建来源，不改变 Team state、
+账户目录、角色 mount 或 lifecycle：
+
+```bash
+make -C ops/build up-local TEAM=my-team ACCOUNT=foundagent
+make -C ops/build validate-local
+make -C ops/build down-local TEAM=my-team ACCOUNT=foundagent
+```
+
+默认 local build 先从 `registry-1.docker.io` 构建
+`foundagent/cua-ubuntu:local`，再用可配置的 Ubuntu 与 npm mirror 构建
+`foundagent/cua-agent:local`；控制面基础镜像默认通过 DaoCloud 的 Docker Hub
+mirror 获取。所有值都可在命令行覆盖，例如
+`BASE_REGISTRY=registry-1.docker.io`、`CONTROL_BASE_REGISTRY=docker.io/library`
+或 `NPM_REGISTRY=https://registry.npmjs.org`。
+
+这个 overlay 不包含 proxy、credential、account/state 内容或本机绝对路径。
+`validate-local` 只渲染 Compose 并运行静态回归；它不能证明 registry、apt、npm
+或 Docker daemon 当前可达。首次部署仍需运行 `build-local`/`up-local`，并检查
+Lead、动态 Worker 和 Verifier 的 desktop、`computer_server` 与模型 runtime。

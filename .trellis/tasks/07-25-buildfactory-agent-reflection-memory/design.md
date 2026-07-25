@@ -18,8 +18,9 @@ TeamHub wake_context
 Skill 负责行为方法；Hub 和 Store 负责权限、验证、持久化、幂等与审计。Lead
 不会获得新的 filesystem mount，Worker 和 Verifier 不会看到该 snapshot。
 
-MVP 保持 Lead `session: resume`，以 feature flag 做单 Team rollout。该设计为
-后续 session rotation 提供可用的 durable seed，但本次不改变 session lifecycle。
+Lead 使用显式 `session: refresh`：每次 wake 都创建新的 runtime session，
+bounded brief 与当前 Hub projection 成为跨 wake 的 durable seed。Worker 的
+same-Goal resume 和 Verifier 的 fresh session 不变。
 
 ## 2. First-Principles Constraints
 
@@ -390,8 +391,9 @@ LEAD_REFLECTION_MEMORY_ENABLED=0|1
 - 完整 Goal intent、README、tool output；
 - credentials、cookies 或 environment dump。
 
-Codex native usage 保持原样归档；分析工具使用相邻同-session snapshot 计算
-delta。该 feature 只增加 memory metrics，不在 runtime 中猜测美元成本。
+Codex native usage 保持原样归档。由于 refreshed Lead wake 属于不同 session，
+每个 wake 的 usage snapshot 直接作为该 wake 的统计值，分析工具不得跨 session
+相减。该 feature 只增加 memory metrics，不在 runtime 中猜测美元成本。
 
 ## 10. Failure Matrix
 
@@ -417,6 +419,9 @@ delta。该 feature 只增加 memory metrics，不在 runtime 中猜测美元成
 
 - 现有 Team 没有 `memory/` 时由 `TeamLayout.initialize()` 安全创建。
 - 不修改已有 `/project`、Goal、Worker、review 或 session 文件。
+- `session: refresh` 是 resident YAML 的显式 per-wake fresh 模式；runtime
+  保留 `fresh` 兼容值和 `resume` opt-in。refresh mode 不读取或覆盖已存在的
+  Lead session token 文件。
 - `skills: []` 的一般 AgentSpec 行为仍受现有 loadout tests 保护。
 - MethodAdapter 的 request redactor 为 optional；未配置的方法 audit bytes
   保持当前行为。
@@ -427,7 +432,7 @@ delta。该 feature 只增加 memory metrics，不在 runtime 中猜测美元成
 
 ## 12. Deferred Architecture
 
-- 自动或阈值驱动的 Lead session rotation；
+- 阈值驱动、条件驱动或自动回退到 resume 的 Lead session policy；
 - summary/delta-first Goal API；
 - controller-generated project content fingerprint；
 - Worker 的 Goal-scoped memory；

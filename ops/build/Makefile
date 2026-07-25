@@ -1,6 +1,7 @@
 # Operator surface for one autonomous HackSome Build Team.
 
-.PHONY: init shared check-init up down build validate logs logs-lead logs-hub \
+.PHONY: init shared check-init up up-local down down-local build build-local \
+	build-agent-local validate validate-local logs logs-lead logs-hub \
 	logs-workers logs-verifiers sh sh-lead
 
 TEAM ?= hackathon-team
@@ -11,6 +12,19 @@ PY := $(shell test -x $(REPO_ROOT)/.venv/bin/python && echo $(REPO_ROOT)/.venv/b
 PYTHON := PYTHONPATH=$(REPO_ROOT)/src $(PY)
 COMPOSE := HACKSOME_ROOT=$(REPO_ROOT) BUILD_OPS_ROOT=$(OPS_ROOT) \
 	TEAM=$(TEAM) ACCOUNT=$(ACCOUNT) docker compose -f $(OPS_ROOT)/docker-compose.yml
+BASE_REGISTRY ?= registry-1.docker.io
+CONTROL_BASE_REGISTRY ?= m.daocloud.io/docker.io/library
+CUA_BASE_IMAGE ?= foundagent/cua-ubuntu:local
+CUA_AGENT_IMAGE ?= foundagent/cua-agent:local
+UBUNTU_APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/ubuntu
+UBUNTU_PORTS_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports
+NPM_REGISTRY ?= https://registry.npmmirror.com
+LOCAL_COMPOSE := HACKSOME_ROOT=$(REPO_ROOT) BUILD_OPS_ROOT=$(OPS_ROOT) \
+	TEAM=$(TEAM) ACCOUNT=$(ACCOUNT) \
+	BASE_REGISTRY=$(BASE_REGISTRY) CONTROL_BASE_REGISTRY=$(CONTROL_BASE_REGISTRY) \
+	CUA_AGENT_IMAGE=$(CUA_AGENT_IMAGE) \
+	docker compose -f $(OPS_ROOT)/docker-compose.yml \
+	-f $(OPS_ROOT)/docker-compose.local.yml
 
 # Usage:
 # make init TEAM=my-team CHALLENGE_FILE=/abs/challenge.md IDEA_CARD_FILE=/abs/idea.md
@@ -44,6 +58,9 @@ check-init:
 up: shared check-init
 	$(COMPOSE) up -d --build
 
+up-local: shared check-init build-agent-local
+	$(LOCAL_COMPOSE) up -d --build
+
 down:
 	$(COMPOSE) stop
 	@docker ps -q --filter "label=hacksome.team=$(TEAM)" | while read -r id; do \
@@ -54,13 +71,46 @@ down:
 	done
 	$(COMPOSE) down --remove-orphans
 
+down-local:
+	$(LOCAL_COMPOSE) stop
+	@docker ps -q --filter "label=hacksome.team=$(TEAM)" | while read -r id; do \
+		docker stop --time 10 "$$id"; \
+	done
+	@docker ps -aq --filter "label=hacksome.team=$(TEAM)" | while read -r id; do \
+		docker rm -f "$$id"; \
+	done
+	$(LOCAL_COMPOSE) down --remove-orphans
+
 build:
 	$(COMPOSE) build hub
+
+build-agent-local:
+	docker build \
+		--build-arg "BASE_REGISTRY=$(BASE_REGISTRY)" \
+		-f $(OPS_ROOT)/docker/Dockerfile.local \
+		-t "$(CUA_BASE_IMAGE)" \
+		$(OPS_ROOT)/docker
+	docker build \
+		--build-arg "CUA_BASE_IMAGE=$(CUA_BASE_IMAGE)" \
+		--build-arg "UBUNTU_APT_MIRROR=$(UBUNTU_APT_MIRROR)" \
+		--build-arg "UBUNTU_PORTS_MIRROR=$(UBUNTU_PORTS_MIRROR)" \
+		--build-arg "NPM_REGISTRY=$(NPM_REGISTRY)" \
+		-f $(OPS_ROOT)/docker/agent.Dockerfile \
+		-t "$(CUA_AGENT_IMAGE)" \
+		$(REPO_ROOT)
+
+build-local: build-agent-local
+	$(LOCAL_COMPOSE) build hub
 
 validate:
 	$(COMPOSE) config >/dev/null
 	$(PYTHON) -m compileall -q $(REPO_ROOT)/src/hacksome/stages/build
 	$(PYTHON) -m pytest $(REPO_ROOT)/tests/stages/build -q
+
+validate-local:
+	$(LOCAL_COMPOSE) config >/dev/null
+	$(PYTHON) -m pytest \
+		$(REPO_ROOT)/tests/stages/build/control/test_compose_accounts.py -q
 
 logs:
 	$(COMPOSE) logs -f

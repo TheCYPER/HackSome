@@ -10,6 +10,6 @@ skills:
   - assets/skills/maintain-lead-brief
 mcp_config: mcp/ceo.json
 permission_mode: bypass
-session: resume
+session: refresh
 idle: proactive
 strategic: false

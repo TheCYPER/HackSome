@@ -8,9 +8,35 @@
 # Build from the repository root so production Python remains under src/:
 #   docker build -f ops/build/docker/agent.Dockerfile \
 #     -t foundagent/cua-agent:latest .
-FROM foundagent/cua-ubuntu:latest
+ARG CUA_BASE_IMAGE=foundagent/cua-ubuntu:latest
+FROM ${CUA_BASE_IMAGE}
 
 USER root
+
+# Opt-in package mirrors for local-network builds. Empty defaults preserve the
+# canonical image behavior. Configure Ubuntu sources before any apt transaction.
+ARG UBUNTU_APT_MIRROR=
+ARG UBUNTU_PORTS_MIRROR=
+ARG NPM_REGISTRY=
+RUN for sources in \
+      /etc/apt/sources.list \
+      /etc/apt/sources.list.d/ubuntu.sources; do \
+      if [ -f "${sources}" ]; then \
+        if [ -n "${UBUNTU_APT_MIRROR}" ]; then \
+          mirror="${UBUNTU_APT_MIRROR%/}"; \
+          sed -i -E \
+            -e "s|https?://archive.ubuntu.com/ubuntu/?|${mirror}/|g" \
+            -e "s|https?://security.ubuntu.com/ubuntu/?|${mirror}/|g" \
+            "${sources}"; \
+        fi; \
+        if [ -n "${UBUNTU_PORTS_MIRROR}" ]; then \
+          ports_mirror="${UBUNTU_PORTS_MIRROR%/}"; \
+          sed -i -E \
+            -e "s|https?://ports.ubuntu.com/ubuntu-ports/?|${ports_mirror}/|g" \
+            "${sources}"; \
+        fi; \
+      fi; \
+    done
 
 # Node 20 — claude CLI dependency. Installed via nodesource because claude.ai/install.sh
 # is CDN-blocked from inside containers (returns 403 / TLS reset); npm registry is reachable.
@@ -39,7 +65,8 @@ RUN apt-get update \
 # Pinned since 07-07 codex-runtime (AC5) — the previous floating `latest` was a
 # pre-existing reproducibility defect.
 ARG CLAUDE_CODE_VERSION=2.1.202
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+RUN if [ -n "${NPM_REGISTRY}" ]; then npm config set registry "${NPM_REGISTRY}"; fi \
+ && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 # Codex CLI (07-07 codex-runtime): the second runtime a role can select via
 # agents/<role>.yaml `provider: codex`. Subscription auth rides the per-role

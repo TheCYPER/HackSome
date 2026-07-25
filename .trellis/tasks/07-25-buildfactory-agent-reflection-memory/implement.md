@@ -31,6 +31,10 @@
 - [x] 为 `control_client` 增加受限 `--markdown-file` 入口，禁止在不匹配的
       method/action 上使用。
 - [x] 测试 empty/current/stale/disabled prompt 以及 CLI UTF-8/文件错误。
+- [x] 将 Lead YAML 从 `session: resume` 改为显式 `session: refresh`，runtime
+      将 refresh 作为受支持的 per-wake fresh mode，不产生 unknown-mode warning。
+- [x] 更新 AgentSpec/agent-loop tests，断言连续 Lead wake 不传入旧 session
+      token、不读取或覆盖已有 session 文件；Worker/Verifier policy 不变。
 
 ## 4. Skill Loadout
 
@@ -48,6 +52,10 @@
 - [x] 保持所有 Agent mount boundary 不变。
 - [x] 更新 `ops/build/README.md`，说明 flag、state path、检查方法和 rollback。
 - [x] 默认先关闭；pilot 通过后再决定是否在同一 PR 中切为默认开启。
+- [x] 将已验证的 local-network Compose/Docker build overlay 迁移到 canonical
+      `ops/build/`，不得提交 account/state 或本机绝对路径。
+- [ ] 对仍在线的四个 Compose project 使用 canonical branch source 原地重建
+      static services，保留 Team state/account 和动态 Worker/Verifier。
 
 ## 6. Verification
 

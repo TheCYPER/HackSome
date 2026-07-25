@@ -74,3 +74,11 @@ reconstruction, no bounded semantic checkpoint and no changed-state projection.
 This task intentionally solves only the bounded checkpoint and Skill behavior.
 Session rotation and Goal summary/delta APIs remain follow-up work so that the
 first rollout can measure memory quality and failure modes independently.
+
+## Post-research product decision
+
+On 2026-07-25 the operator explicitly chose per-wake Lead session rotation.
+The implementation uses the auditable YAML value `session: refresh`, with the
+same no-resume execution semantics as the existing `fresh` mode. The bounded
+Lead Brief is therefore the durable cross-wake seed; historical observations
+above remain the baseline for comparing refreshed-session behavior.

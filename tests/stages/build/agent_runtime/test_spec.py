@@ -114,10 +114,10 @@ def test_defaults_minimal_spec():
 
 
 def test_session_field_loads_and_defaults_fresh(tmp_path):
-    """`session:` defaults fresh; only the long-running Lead opts into resume."""
+    """Lead explicitly rotates per wake; ephemeral roles retain fresh compatibility."""
     spec = AgentSpec.load(_write_fixture_yaml(tmp_path))    # no session key
     assert spec.session == "fresh"
-    assert AgentSpec.load(ROLE_SPECS["lead"]).session == "resume"
+    assert AgentSpec.load(ROLE_SPECS["lead"]).session == "refresh"
     assert AgentSpec.load(ROLE_SPECS["team-worker"]).session == "fresh"
     assert AgentSpec.load(ROLE_SPECS["team-verifier"]).session == "fresh"
 

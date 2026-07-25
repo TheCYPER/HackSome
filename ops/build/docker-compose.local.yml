@@ -1,0 +1,32 @@
+# Opt-in local-network image overlay.
+#
+# Use through the canonical Makefile so the mirrored CUA base and Agent image
+# are built before Compose:
+#   make -C ops/build up-local TEAM=my-team ACCOUNT=foundagent
+#
+# This overlay changes image acquisition only. Runtime roles, mounts, state,
+# capabilities, and lifecycle semantics still come from docker-compose.yml.
+
+services:
+  hub:
+    build:
+      args:
+        BASE_REGISTRY: ${CONTROL_BASE_REGISTRY:-m.daocloud.io/docker.io/library}
+
+  lead:
+    image: ${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}
+    pull_policy: never
+
+  worker-manager:
+    build:
+      args:
+        BASE_REGISTRY: ${CONTROL_BASE_REGISTRY:-m.daocloud.io/docker.io/library}
+    environment:
+      CUA_AGENT_IMAGE: ${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}
+
+  verifier-manager:
+    build:
+      args:
+        BASE_REGISTRY: ${CONTROL_BASE_REGISTRY:-m.daocloud.io/docker.io/library}
+    environment:
+      CUA_AGENT_IMAGE: ${CUA_AGENT_IMAGE:-foundagent/cua-agent:local}

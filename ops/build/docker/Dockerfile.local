@@ -1,0 +1,24 @@
+# Local-network variant of the Foundagent CUA base image.
+#
+# Build context must be ops/build/docker/:
+#   docker build -f ops/build/docker/Dockerfile.local \
+#     --build-arg BASE_REGISTRY=registry-1.docker.io \
+#     -t foundagent/cua-ubuntu:local ops/build/docker/
+#
+# BASE_REGISTRY is a registry host/path without a URL scheme. No proxy,
+# credential, account state, or workstation-specific path is baked in.
+ARG BASE_REGISTRY=registry-1.docker.io
+FROM ${BASE_REGISTRY}/trycua/cua-ubuntu:latest
+
+USER root
+
+# These optional PPAs are unnecessary for Build Stage, but can block every
+# later apt transaction when they are unreachable on a local network.
+RUN rm -f \
+      /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa-jammy.list \
+      /etc/apt/sources.list.d/kisak-ubuntu-turtle-jammy.list \
+      /etc/apt/sources.list.d/mozillateam-ubuntu-ppa-jammy.list
+
+COPY --chmod=0755 cua_base_startup.sh /dockerstartup/custom_startup.sh
+
+USER 1000
