@@ -85,7 +85,6 @@ function aad(envelope) {
     envelope.format,
     envelope.version,
     envelope.createdAt,
-    envelope.appBuild,
     envelope.kdf.name,
     envelope.kdf.hash,
     envelope.kdf.iterations,
@@ -125,12 +124,12 @@ async function rejectsCode(work, code, message) {
     state: baseState(),
     authority: authority(),
     passphrase,
-    appBuild: "2026.07.25-production-v7",
     now: timestamp,
   }, { crypto: webcrypto });
   const envelope = JSON.parse(encrypted);
   assert.equal(envelope.format, Recovery.FORMAT, "backup uses the dedicated recovery format");
-  assert.equal(envelope.version, 1, "backup envelope is versioned");
+  assert.equal(envelope.version, 2, "backup envelope is versioned");
+  assert(!Object.hasOwn(envelope, "appBuild"), "clear envelope contains no deployment build metadata");
   assert.deepEqual(
     { name: envelope.kdf.name, hash: envelope.kdf.hash, iterations: envelope.kdf.iterations },
     { name: "PBKDF2", hash: "SHA-256", iterations: 310_000 },
@@ -140,6 +139,8 @@ async function rejectsCode(work, code, message) {
   assert(!encrypted.includes("13800138000") && !encrypted.includes("林安"), "encrypted file does not expose household plaintext");
 
   const roundTrip = await Recovery.decryptEncryptedBackup(encrypted, passphrase, { crypto: webcrypto });
+  assert.equal(roundTrip.payload.payloadVersion, 2, "decrypted payload is independently versioned");
+  assert(!Object.hasOwn(roundTrip.payload, "sourceBuild"), "decrypted payload contains no deployment build metadata");
   assert.equal(roundTrip.payload.state.family.caregiverName, "林安", "correct password restores household content");
   assert.equal(roundTrip.payload.state.activeRest, null, "active rest is stripped");
   assert.equal(roundTrip.payload.state.activeRehearsal, null, "active rehearsal is stripped");
@@ -209,7 +210,6 @@ async function rejectsCode(work, code, message) {
       state: baseState({ mode: "demo" }),
       authority: authority(),
       passphrase,
-      appBuild: "test",
     }, { crypto: webcrypto }),
     "real_household_required",
     "demo households cannot enter real backup files",
@@ -234,6 +234,32 @@ async function rejectsCode(work, code, message) {
     "unknown transient or capability-bearing state is rejected",
   );
 
+  const nestedCredentialBackup = await Recovery.createEncryptedBackup({
+    state: baseState({
+      family: {
+        ...baseState().family,
+        inviteToken: "must-not-survive",
+        nestedRemote: { caregiverToken: "must-not-survive-either", note: "keep this note" },
+      },
+    }),
+    authority: authority(),
+    passphrase,
+    now: timestamp,
+  }, { crypto: webcrypto });
+  const nestedCredentialRoundTrip = await Recovery.decryptEncryptedBackup(nestedCredentialBackup, passphrase, { crypto: webcrypto });
+  assert.equal(nestedCredentialRoundTrip.payload.state.family.inviteToken, undefined, "backup recursively strips nested invitation tokens");
+  assert.equal(nestedCredentialRoundTrip.payload.state.family.nestedRemote.caregiverToken, undefined, "backup recursively strips nested caregiver capabilities");
+  assert.equal(nestedCredentialRoundTrip.payload.state.family.nestedRemote.note, "keep this note", "credential stripping preserves ordinary nested household content");
+
+  const forgedCredentialPayload = structuredClone(roundTrip.payload);
+  forgedCredentialPayload.state.family.inviteToken = "forged-but-authenticated";
+  const forgedCredentialEncrypted = await replaceEncryptedPayload(encrypted, forgedCredentialPayload);
+  await rejectsCode(
+    () => Recovery.decryptEncryptedBackup(forgedCredentialEncrypted, passphrase, { crypto: webcrypto }),
+    "transient_capability_present",
+    "authenticated payloads containing nested remote credentials are rejected",
+  );
+
   const unsupportedPayload = structuredClone(roundTrip.payload);
   unsupportedPayload.payloadVersion = 999;
   const unsupportedPayloadEncrypted = await replaceEncryptedPayload(encrypted, unsupportedPayload);
@@ -243,7 +269,7 @@ async function rejectsCode(work, code, message) {
     "unsupported decrypted payload versions are rejected",
   );
 
-  console.log("Recovery core passed: PBKDF2/AES-GCM round trip, transient stripping, wrong password, header/ciphertext tamper, algorithm/version, size, report, demo, malicious, and capability rejection");
+  console.log("Recovery core passed: metadata-minimal v2 PBKDF2/AES-GCM round trip, recursive credential stripping/rejection, wrong password, tamper, algorithm/version, size, report, demo, and malicious input");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

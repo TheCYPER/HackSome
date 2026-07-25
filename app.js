@@ -15,7 +15,7 @@ const SOURCE_IDS = Object.freeze({
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v7";
+const APP_BUILD = "2026.07.25-production-v8";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -1098,17 +1098,22 @@ function normalizeGaps(rawGaps) {
     const query = String(raw?.query || "").trim();
     if (!query) continue;
     const key = normalizedQuery(query);
+    const classification = SafetyPolicy.classifyFields([query, raw.lastProposedTitle, raw.lastProposedInstruction]);
     const normalized = {
       ...raw,
-      id: String(raw.id || `gap-${Date.now()}-${byKey.size}`),
+      id: String(raw.id || `gap-${Date.now()}-${byId.size}`),
       query,
       normalizedQuery: key,
-      status: raw.status === "resolved" ? "resolved" : "pending",
-      risk: SafetyPolicy.classifyFields([query, raw.lastProposedTitle, raw.lastProposedInstruction]).risk,
+      status: classification.highRisk ? "pending" : raw.status === "resolved" ? "resolved" : "pending",
+      risk: classification.risk,
       encounters: Math.max(1, Number(raw.encounters) || 1),
       createdAt: Number(raw.createdAt) || Date.now(),
       lastSeenAt: Number(raw.lastSeenAt) || Number(raw.createdAt) || Date.now(),
     };
+    if (classification.highRisk) {
+      delete normalized.resolvedAt;
+      delete normalized.resolvedBy;
+    }
     const existing = byId.get(normalized.id);
     if (!existing) {
       byId.set(normalized.id, normalized);
@@ -1243,6 +1248,7 @@ function outcomeContext(candidateState = state) {
     consentRevision: candidateState.recipientConsent?.revision,
     guides: usableGuides(candidateState).map((guide) => ({ id: guide.id, version: guide.version })),
     overrideStage: candidateState.recommendationOverride?.stage || null,
+    policyVersion: SafetyPolicy.VERSION,
   };
 }
 
@@ -1677,6 +1683,10 @@ function render() {
 }
 
 function backupReminderMarkup() {
+  const completedRealSessions = normalizeOutcomeSessions(state.sessions).filter((record) => record.demo !== true && record.status !== "active" && record.status !== "legacy");
+  if (!completedRealSessions.length) return "";
+  const snoozedUntil = new Date(state.meta?.backupReminderSnoozedUntil || "").getTime();
+  if (Number.isFinite(snoozedUntil) && snoozedUntil > Date.now()) return "";
   const lastBackupAt = state.meta?.lastBackupAt;
   const lastBackupTime = lastBackupAt ? new Date(lastBackupAt).getTime() : 0;
   const ageDays = lastBackupTime ? Math.floor((Date.now() - lastBackupTime) / 86_400_000) : null;
@@ -1684,7 +1694,7 @@ function backupReminderMarkup() {
   return `<section class="backup-reminder" aria-label="加密备份提醒">
     <span>${icon("i-lock")}</span>
     <div><b>${ageDays == null ? "还没有为这个真实家庭创建加密备份" : `加密备份已经 ${ageDays} 天未更新`}</b><small>备份只在本浏览器加密后下载；密码不会保存，忘记后无法恢复。</small></div>
-    <button class="btn btn-secondary btn-small" data-action="recovery-center">现在备份</button>
+    <div class="backup-reminder-actions"><button class="btn btn-secondary btn-small" data-action="recovery-center">现在备份</button><button class="text-button" data-action="snooze-backup-reminder">7 天后提醒</button></div>
   </section>`;
 }
 
@@ -2801,8 +2811,8 @@ function recoveryStatusMarkup() {
   const lastRecovery = state.meta?.lastRecovery;
   return `<div class="recovery-status">
     <div><small>最近加密备份</small><b>${lastBackupAt ? formatTimestamp(lastBackupAt) : "尚未创建"}</b></div>
-    <div><small>最近恢复</small><b>${lastRecovery?.restoredAt ? formatTimestamp(lastRecovery.restoredAt) : "没有恢复记录"}</b></div>
-    ${lastRecovery?.auditId ? `<div><small>恢复审计标记</small><code>${escapeHTML(lastRecovery.auditId)}</code></div>` : ""}
+    <div><small>最近恢复</small><b>${lastRecovery?.date ? formatTimestamp(lastRecovery.date) : "没有恢复记录"}</b></div>
+    ${lastRecovery?.result ? `<div><small>恢复审计</small><b>${lastRecovery.result === "restored" ? `成功 · 格式 v${Number(lastRecovery.version) || "?"}` : "未完成"}</b></div>` : ""}
   </div>`;
 }
 
@@ -2835,6 +2845,38 @@ function showRecoveryCenter() {
   </div><footer class="modal-footer"><button class="btn btn-primary" data-action="close-modal">完成</button></footer>`, "modal-wide recovery-modal");
 }
 
+function secretFieldMarkup({ id, name, label, autocomplete }) {
+  return `<div class="field"><label for="${id}">${label}</label><div class="secret-field"><input id="${id}" name="${name}" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="${autocomplete}"><button type="button" class="secret-toggle" data-action="toggle-secret" data-target="${id}" aria-controls="${id}" aria-pressed="false">显示</button></div></div>`;
+}
+
+function closeActiveRecordsForBackup(candidateState) {
+  const endedAt = nowISO();
+  const activeByRecord = new Map([
+    [candidateState.activeRehearsal?.sessionRecordId, candidateState.activeRehearsal],
+    [candidateState.activeRest?.sessionRecordId, candidateState.activeRest],
+  ].filter(([id]) => id));
+  candidateState.sessions = normalizeOutcomeSessions(candidateState.sessions).map((record) => {
+    if (record.status !== "active") return record;
+    const active = activeByRecord.get(record.id) || {};
+    const startedAt = new Date(record.startSnapshot?.startedAt || endedAt).getTime();
+    const pendingGaps = (active.pendingGapIds || []).map((id) => candidateState.gaps.find((gap) => String(gap.id) === String(id))).filter(Boolean);
+    return OutcomeModel.endSession(record, {
+      status: "interrupted",
+      endedAt,
+      actualElapsedSeconds: Number.isFinite(startedAt) ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0,
+      completedSteps: Array.isArray(active.tasks) ? active.tasks : [],
+      routineUpdatesQueued: Number(active.queued) || 0,
+      pendingGaps,
+      urgentAlertsRaised: Number(active.urgentAlertsRaised) || 0,
+      contactActionsOpened: record.facts?.contactActionsOpened || [],
+    });
+  });
+  candidateState.activeRest = null;
+  candidateState.activeRehearsal = null;
+  candidateState.appliedRemoteSessionIds = [];
+  return candidateState;
+}
+
 function showCreateBackup() {
   if (state.mode !== "real") {
     toast(state.mode === "demo" ? "演示家庭不会进入真实备份" : "请先建立真实家庭");
@@ -2842,8 +2884,8 @@ function showCreateBackup() {
   }
   openModal(`${modalHead("CREATE ENCRYPTED BACKUP", "设置一个只用于这份备份的密码")}<form id="backup-form"><div class="modal-body">
     <div class="form-grid">
-      <div class="field"><label for="backup-passphrase">备份密码（至少 ${Recovery.MIN_PASSPHRASE_LENGTH} 个字符）</label><input id="backup-passphrase" name="passphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="new-password"></div>
-      <div class="field"><label for="backup-passphrase-confirm">再次输入密码</label><input id="backup-passphrase-confirm" name="confirmPassphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="new-password"></div>
+      ${secretFieldMarkup({ id: "backup-passphrase", name: "passphrase", label: `备份密码（至少 ${Recovery.MIN_PASSPHRASE_LENGTH} 个字符）`, autocomplete: "new-password" })}
+      ${secretFieldMarkup({ id: "backup-passphrase-confirm", name: "confirmPassphrase", label: "再次输入密码", autocomplete: "new-password" })}
     </div>
     <label class="confirm-item"><input type="checkbox" name="understands" required><span><b>我明白密码不会保存在应用里</b><small>忘记密码就无法恢复；不要把密码和备份文件放在同一处。</small></span></label>
     <div class="source-proof">${icon("i-shield")}进行中的彩排、倒计时、双机房间、邀请能力和令牌不会进入文件。进行中的历史只会以保守的“中途结束”快照保存。</div>
@@ -2863,13 +2905,13 @@ function showCreateBackup() {
     setRecoveryFormStatus("正在本设备派生密钥并加密…");
     try {
       const authority = resolveAuthorityRecord(state.recipientConsent);
-      const backupState = applyAuthorityRecord(structuredClone(state), authority);
+      const backupState = closeActiveRecordsForBackup(applyAuthorityRecord(structuredClone(state), authority));
+      const backedUpAt = nowISO();
       const backup = await Recovery.createEncryptedBackup({
         state: backupState,
         authority,
         passphrase,
-        appBuild: APP_BUILD,
-        now: nowISO(),
+        now: backedUpAt,
       });
       const blob = new Blob([backup], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -2878,11 +2920,14 @@ function showCreateBackup() {
       link.download = `接班彩排-加密备份-${new Date().toISOString().slice(0, 10)}.relaybackup.json`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      state.meta = { ...(state.meta || {}), lastBackupAt: nowISO() };
-      saveState();
+      state = backupState;
+      state.meta = { ...(state.meta || {}), lastBackupAt: backedUpAt, backupReminderSnoozedUntil: null };
+      session = null;
+      restSession = null;
+      saveState({ ignorePersisted: true });
       closeModal();
       render();
-      toast("加密备份已在本设备生成；请把密码与文件分开保管");
+      toast("加密备份已生成；进行中的会话已保守记录为中途结束");
     } catch (error) {
       setRecoveryFormStatus(recoveryErrorText(error), true);
       submit.disabled = false;
@@ -2938,13 +2983,31 @@ function authorityForRecovery(importedAuthority) {
   return { authority: importedAuthority, consentGate: "backup-grant-restored-on-current-household" };
 }
 
+function revalidateRecoveredSessions(records, gaps) {
+  const gapsById = new Map((gaps || []).map((gap) => [String(gap.id), gap]));
+  return normalizeOutcomeSessions(records).map((record) => {
+    if (!record.facts) return record;
+    const pendingGaps = (record.facts.pendingGaps || []).map((fact) => {
+      const current = gapsById.get(String(fact.id));
+      return current
+        ? { id: String(current.id), risk: current.risk === "medical" ? "medical" : "ordinary", status: current.status === "resolved" ? "resolved" : "pending" }
+        : fact;
+    });
+    return { ...record, facts: { ...record.facts, pendingGaps } };
+  });
+}
+
+function latestRecoveredSessionDate(records) {
+  const timestamps = normalizeOutcomeSessions(records).map((record) => record.facts?.endedAt || record.startSnapshot?.startedAt).filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
+  return timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : null;
+}
+
 function prepareRecoveredHousehold(result) {
   const sourceState = result.payload.state;
   if (sourceState.schemaVersion > SCHEMA_VERSION) {
     throw new Recovery.RecoveryError("unsupported_state_version", "这个备份来自更新的数据版本，当前应用不能安全恢复");
   }
   const sourceUsableGuides = (sourceState.guides || []).filter((guide) => guide?.status === "usable").length;
-  const sourceSessions = (sourceState.sessions || []).length;
   let next = migrateState(structuredClone(sourceState));
   if (next.mode !== "real" || next.sessions.some((record) => record.demo === true)) {
     throw new Recovery.RecoveryError("demo_backup_rejected", "恢复内容包含演示数据，已拒绝覆盖真实家庭");
@@ -2954,26 +3017,24 @@ function prepareRecoveredHousehold(result) {
   next.appliedRemoteSessionIds = [];
   const selected = authorityForRecovery(result.payload.authority);
   next = applyAuthorityRecord(next, selected.authority);
-  next.sessions = normalizeOutcomeSessions(next.sessions);
   next.gaps = normalizeGaps(next.gaps);
+  next.sessions = revalidateRecoveredSessions(next.sessions, next.gaps);
   next.debriefs = normalizeDebriefs(next.debriefs);
+  next.recommendationOverride = null;
   syncCompatibilityProgress(next);
   const restoredAt = nowISO();
-  const auditId = crypto.randomUUID ? `recovery-${crypto.randomUUID()}` : `recovery-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const guidesRequiringReview = Math.max(0, sourceUsableGuides - usableGuides(next).length);
+  const currentActiveCount = normalizeOutcomeSessions(state.sessions).filter((record) => record.status === "active").length;
+  const currentCapabilityCount = [COMPANION_KEY, COMPANION_REVOCATION_KEY].filter((key) => localStorage.getItem(key)).length;
   next.meta = {
     ...(next.meta || {}),
     updatedAt: Date.now(),
-    lastBackupAt: null,
+    lastBackupAt: result.envelope.createdAt,
+    backupReminderSnoozedUntil: null,
     lastRecovery: {
-      auditId,
-      restoredAt,
-      envelopeCreatedAt: result.envelope.createdAt,
-      sourceBuild: result.payload.sourceBuild,
-      envelopeVersion: result.envelope.version,
-      consentGate: selected.consentGate,
-      sourceSessions,
-      restoredSessions: next.sessions.length,
-      guidesRequiringReview: Math.max(0, sourceUsableGuides - usableGuides(next).length),
+      version: result.envelope.version,
+      date: restoredAt,
+      result: "restored",
     },
   };
   Recovery.validateRecoveryState(next);
@@ -2991,11 +3052,17 @@ function prepareRecoveredHousehold(result) {
       recipientName: next.family.recipientName || "未填写被照护者",
       guides: next.guides.length,
       sessions: next.sessions.length,
-      auditId,
       consentGate: selected.consentGate,
-      sourceBuild: result.payload.sourceBuild,
+      format: result.envelope.format,
+      formatVersion: result.envelope.version,
       createdAt: result.envelope.createdAt,
-      guidesRequiringReview: next.meta.lastRecovery.guidesRequiringReview,
+      lastSessionAt: latestRecoveredSessionDate(next.sessions),
+      guidesRequiringReview,
+      currentActiveCount,
+      currentCapabilityCount,
+      currentHasBackup: Boolean(state.meta?.lastBackupAt),
+      canBackupCurrent: state.mode === "real",
+      recommendationDecision: householdRecommendation(next).decision,
     },
   };
 }
@@ -3012,15 +3079,16 @@ function restoreStorageSnapshot(snapshot) {
 }
 
 function commitRecoveredHousehold(prepared) {
-  const keys = [STORAGE_KEY, AUTHORITY_KEY, COMPANION_KEY];
+  const keys = [STORAGE_KEY, AUTHORITY_KEY, COMPANION_KEY, COMPANION_REVOCATION_KEY];
   const before = storageSnapshot(keys);
   try {
     localStorage.setItem(STORAGE_KEY, prepared.serializedState);
     localStorage.setItem(AUTHORITY_KEY, prepared.serializedAuthority);
     localStorage.removeItem(COMPANION_KEY);
+    localStorage.removeItem(COMPANION_REVOCATION_KEY);
     const committedState = JSON.parse(localStorage.getItem(STORAGE_KEY));
     const committedAuthority = JSON.parse(localStorage.getItem(AUTHORITY_KEY));
-    if (committedState?.meta?.lastRecovery?.auditId !== prepared.summary.auditId || committedAuthority?.revision !== prepared.authority.revision || committedAuthority?.status !== prepared.authority.status) {
+    if (committedState?.meta?.lastRecovery?.result !== "restored" || committedState?.meta?.lastRecovery?.version !== prepared.summary.formatVersion || committedAuthority?.revision !== prepared.authority.revision || committedAuthority?.status !== prepared.authority.status || localStorage.getItem(COMPANION_KEY) || localStorage.getItem(COMPANION_REVOCATION_KEY)) {
       throw new Error("recovery commit verification failed");
     }
   } catch (error) {
@@ -3056,14 +3124,22 @@ function showRecoveryConfirmation(prepared) {
       <div><small>主要照护者</small><b>${escapeHTML(prepared.summary.caregiverName)}</b></div>
       <div><small>被照护者</small><b>${escapeHTML(prepared.summary.recipientName)}</b></div>
       <div><small>指导 / 历史</small><b>${prepared.summary.guides} 条 / ${prepared.summary.sessions} 次</b></div>
-      <div><small>来源版本</small><b>${escapeHTML(prepared.summary.sourceBuild)}</b></div>
+      <div><small>来源格式</small><b>接班彩排加密恢复 · v${prepared.summary.formatVersion}</b></div>
+      <div><small>备份日期</small><b>${formatTimestamp(prepared.summary.createdAt)}</b></div>
+      <div><small>最近一次历史</small><b>${prepared.summary.lastSessionAt ? formatTimestamp(prepared.summary.lastSessionAt) : "没有历史记录"}</b></div>
     </div>
     <div class="source-proof">${icon("i-shield")}${escapeHTML(gateMessage)}</div>
     ${prepared.summary.guidesRequiringReview ? `<div class="safety-note">${icon("i-alert")}${prepared.summary.guidesRequiringReview} 条原本可用的指导在当前策略 / 授权下不再可用，已降为复核或撤销状态。</div>` : ""}
-    <div class="recovery-audit-preview"><small>成功后写入恢复审计标记</small><code>${escapeHTML(prepared.summary.auditId)}</code></div>
+    <div class="recovery-reset-summary"><b>覆盖时会保守重置</b><ul>
+      <li>当前设备 ${prepared.summary.currentActiveCount} 个活动会话不会继续；导入文件中的活动状态也不会恢复。</li>
+      <li>清除当前设备的双机、邀请与撤销凭证${prepared.summary.currentCapabilityCount ? `（检测到 ${prepared.summary.currentCapabilityCount} 份）` : ""}。</li>
+      <li>清除旧的手动档位覆盖，并以当前策略重新计算：${escapeHTML(prepared.summary.recommendationDecision)}。</li>
+    </ul></div>
+    <div class="recovery-audit-preview"><small>最小恢复审计</small><b>只保存格式版本、恢复日期与“成功”结果；不保存构建、同意门或记录计数。</b></div>
+    ${prepared.summary.canBackupCurrent ? `<div class="fresh-backup-offer">${icon("i-download")}<div><b>${prepared.summary.currentHasBackup ? "仍建议先创建一份当前家庭的新备份" : "当前家庭还没有新备份"}</b><small>选择下面的“先备份当前家庭”会退出本次恢复预览；备份完成后再重新选择要恢复的文件。</small></div></div>` : ""}
     <label class="confirm-item"><input type="checkbox" id="final-recovery-confirm"><span><b>我确认覆盖当前真实家庭</b><small>只有完整解密、迁移、策略复核和写入都成功才会替换；失败时保持原样。</small></span></label>
     <p id="recovery-form-status" class="recovery-form-status" role="status" aria-live="polite"></p>
-  </div><footer class="modal-footer"><button class="btn btn-secondary" data-action="close-modal">取消，保留当前家庭</button><button class="btn btn-danger" data-action="confirm-recovery">确认覆盖并恢复</button></footer>`, "modal-wide recovery-modal");
+  </div><footer class="modal-footer">${prepared.summary.canBackupCurrent ? `<button class="btn btn-secondary" data-action="begin-backup">先备份当前家庭</button>` : ""}<button class="btn btn-secondary" data-action="close-modal">取消，保留当前家庭</button><button class="btn btn-danger" data-action="confirm-recovery">确认覆盖并恢复</button></footer>`, "modal-wide recovery-modal");
   pendingRecovery = prepared;
 }
 
@@ -3075,7 +3151,7 @@ function showRestoreBackup() {
   pendingRecovery = null;
   openModal(`${modalHead("RESTORE ENCRYPTED BACKUP", "选择加密备份并在本设备解密")}<form id="restore-form"><div class="modal-body">
     <div class="field"><label for="recovery-file">加密备份文件（最大 2 MB）</label><input id="recovery-file" name="backupFile" type="file" accept=".json,.relaybackup.json,application/json" required><span class="field-help">只接受“接班彩排-加密备份…”文件；家庭复盘 JSON 会被明确拒绝。</span></div>
-    <div class="field"><label for="recovery-passphrase">原备份密码</label><input id="recovery-passphrase" name="passphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="current-password"></div>
+    ${secretFieldMarkup({ id: "recovery-passphrase", name: "passphrase", label: "原备份密码", autocomplete: "current-password" })}
     <label class="confirm-item"><input type="checkbox" name="overwriteUnderstood" required><span><b>我知道成功后会完整覆盖当前家庭</b><small>活动会话、双机房间与邀请能力不会恢复；旧同意还要通过当前设备的自主权门。</small></span></label>
     <div class="source-proof">${icon("i-lock")}文件先经过大小、格式、版本和字段限制，再验证 AES-GCM 完整性；全部通过后才会显示最终覆盖摘要。</div>
     <p id="recovery-form-status" class="recovery-form-status" role="status" aria-live="polite"></p>
@@ -3426,6 +3502,21 @@ document.addEventListener("click", async (event) => {
   else if (action === "close-modal") closeModal();
   else if (action === "profile") showProfile();
   else if (action === "recovery-center") showRecoveryCenter();
+  else if (action === "snooze-backup-reminder") {
+    state.meta = { ...(state.meta || {}), backupReminderSnoozedUntil: new Date(Date.now() + 7 * 86_400_000).toISOString() };
+    saveState();
+    render();
+    toast("已暂停提醒 7 天；家庭设置里仍可随时备份");
+  }
+  else if (action === "toggle-secret") {
+    const input = document.getElementById(trigger.dataset.target || "");
+    if (!input || !["password", "text"].includes(input.type)) return;
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    trigger.textContent = showing ? "显示" : "隐藏";
+    trigger.setAttribute("aria-pressed", String(!showing));
+    input.focus();
+  }
   else if (action === "begin-backup") showCreateBackup();
   else if (action === "begin-restore") showRestoreBackup();
   else if (action === "confirm-recovery") {
@@ -3869,7 +3960,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v7", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v8", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {

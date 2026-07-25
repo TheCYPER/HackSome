@@ -590,9 +590,9 @@ async function reset(page) {
   await page.reload({ waitUntil: "networkidle" });
   assert(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "normal reload is service-worker controlled");
   const cacheKeys = await page.evaluate(() => caches.keys());
-  assert(cacheKeys.includes("relay-rehearsal-production-20260725-v7") && cacheKeys.every((key) => key === "relay-rehearsal-production-20260725-v7"), "activation removes known stale app caches");
+  assert(cacheKeys.includes("relay-rehearsal-production-20260725-v8") && cacheKeys.every((key) => key === "relay-rehearsal-production-20260725-v8"), "activation removes known stale app caches");
   assert(await page.evaluate(() => caches.match("./safety-policy.js?v=20260725-policy-v1").then(Boolean)), "the active cache includes the exact policy asset referenced by its pages");
-  assert(await page.evaluate(() => caches.match("./recovery.js?v=20260725-recovery-v1").then(Boolean)), "the active cache includes the exact encrypted recovery module");
+  assert(await page.evaluate(() => caches.match("./recovery.js?v=20260725-recovery-v2").then(Boolean)), "the active cache includes the exact encrypted recovery module");
 
   // Responsive usability after state transitions.
   await page.setViewportSize({ width: 390, height: 844 });

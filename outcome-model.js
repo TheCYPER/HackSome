@@ -227,7 +227,8 @@
   function currentAuthorization(record, context) {
     const guides = Array.isArray(context?.guides) ? context.guides : [];
     const guideVersionsCurrent = !guides.length || (record?.startSnapshot?.guideScope || []).every((snapshot) => guides.some((guide) => String(guide.id) === String(snapshot.id) && Number(guide.version) === Number(snapshot.version)));
-    return Boolean(record?.startSnapshot && !record.redacted && Number(record.startSnapshot.consentRevision) === Number(context?.consentRevision) && guideVersionsCurrent && (!context?.safetyRevision || !record.startSnapshot.safetyRevision || record.startSnapshot.safetyRevision === context.safetyRevision));
+    const policyCurrent = !context?.policyVersion || record?.startSnapshot?.policyVersion === context.policyVersion;
+    return Boolean(record?.startSnapshot && !record.redacted && Number(record.startSnapshot.consentRevision) === Number(context?.consentRevision) && guideVersionsCurrent && policyCurrent && (!context?.safetyRevision || !record.startSnapshot.safetyRevision || record.startSnapshot.safetyRevision === context.safetyRevision));
   }
 
   function hasRequiredFacts(record) {

@@ -484,7 +484,7 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
 .modal-footer { position: sticky; bottom: 0; padding: 15px 24px 20px; border-top: 1px solid var(--line); background: rgba(255,253,248,.95); display: flex; justify-content: flex-end; gap: 9px; }
 .modal-footer .btn-primary, .modal-footer .btn-coral { min-width: 130px; }
 .form-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; }
-.field { display: grid; gap: 6px; }
+.field { min-width: 0; display: grid; gap: 6px; }
 .field-full { grid-column: 1/-1; }
 .field label { color: var(--ink-2); font-size: 10px; font-weight: 700; }
 .field input, .field textarea, .field select { width: 100%; border: 1px solid var(--line); border-radius: 12px; outline: none; color: var(--ink); background: #faf8f3; padding: 11px 12px; font-size: 11px; }
@@ -492,6 +492,9 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
 .field textarea { min-height: 86px; resize: vertical; line-height: 1.6; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--mint); box-shadow: 0 0 0 3px var(--mint-soft); }
 .field-help { color: var(--muted); font-size: 8px; line-height: 1.4; }
+.secret-field { min-width: 0; position: relative; }
+.secret-field input { padding-right: 56px; }
+.secret-toggle { position: absolute; right: 6px; top: 6px; height: 30px; padding: 0 9px; border: 0; border-radius: 8px; color: var(--sage); background: var(--mint-soft); font-size: 9px; font-weight: 800; cursor: pointer; }
 .source-proof { margin-top: 14px; padding: 12px; border-radius: 13px; background: var(--mint-soft); color: var(--sage); display: flex; gap: 9px; font-size: 9px; line-height: 1.5; }
 .source-proof svg { flex: 0 0 auto; width: 16px; height: 16px; }
 .danger-zone { margin: 15px 0; padding: 13px; border: 1px solid #efd1cc; border-radius: 14px; background: #fff8f6; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
@@ -513,7 +516,12 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
 .backup-reminder > span svg { width: 16px; height: 16px; }
 .backup-reminder b { display: block; font-size: 10px; }
 .backup-reminder small { display: block; margin-top: 2px; color: #796f55; font-size: 8px; line-height: 1.45; }
+.backup-reminder-actions { display: grid; justify-items: center; gap: 5px; }
+.backup-reminder-actions .text-button { color: #796f55; font-size: 8px; }
 
+.recovery-modal { overflow-x: hidden; }
+.recovery-modal *, .profile-recovery * { min-width: 0; }
+.recovery-modal .modal-body { overflow-x: hidden; }
 .recovery-center { display: grid; gap: 15px; }
 .recovery-crypto-proof { padding: 17px; border-radius: 16px; color: white; background: var(--ink); display: grid; grid-template-columns: auto 1fr; gap: 13px; }
 .recovery-crypto-proof > svg { width: 24px; height: 24px; color: #9fc7b2; }
@@ -531,10 +539,18 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
 .recovery-summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
 .recovery-summary-grid > div { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .recovery-summary-grid small { display: block; color: var(--muted); font-size: 8px; }
-.recovery-summary-grid b { display: block; margin-top: 3px; font-size: 11px; }
+.recovery-summary-grid b { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: 11px; }
 .recovery-audit-preview { margin: 12px 0; padding: 11px; border-radius: 11px; background: #f1eee7; }
-.recovery-audit-preview small, .recovery-audit-preview code { display: block; font-size: 8px; }
-.recovery-audit-preview code { margin-top: 4px; overflow-wrap: anywhere; color: var(--ink); }
+.recovery-audit-preview small, .recovery-audit-preview b { display: block; font-size: 8px; line-height: 1.5; }
+.recovery-audit-preview b { margin-top: 4px; overflow-wrap: anywhere; color: var(--ink); }
+.recovery-reset-summary { margin-top: 12px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.recovery-reset-summary b { font-size: 10px; }
+.recovery-reset-summary ul { margin: 7px 0 0; padding-left: 18px; color: var(--muted); font-size: 8px; line-height: 1.6; }
+.fresh-backup-offer { margin: 12px 0; padding: 12px; border: 1px solid #dac88e; border-radius: 12px; background: #fff8dc; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; }
+.fresh-backup-offer > svg { width: 16px; height: 16px; color: #8a6b1c; }
+.fresh-backup-offer b, .fresh-backup-offer small { display: block; overflow-wrap: anywhere; }
+.fresh-backup-offer b { font-size: 9px; }
+.fresh-backup-offer small { margin-top: 3px; color: #796f55; font-size: 8px; line-height: 1.5; }
 .danger-text { color: var(--red); font-size: 9px; }
 .setup-summary { padding: 17px; border-radius: 16px; background: #f2efe8; }
 .setup-summary h3 { margin-bottom: 12px; font-size: 12px; }
@@ -794,7 +810,8 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
   .recovery-mode-card { grid-column: auto; min-height: 220px; grid-template-columns: 1fr; gap: 10px; }
   .recovery-mode-card .mode-icon { margin-bottom: 8px; }
   .backup-reminder { grid-template-columns: auto 1fr; }
-  .backup-reminder .btn { grid-column: 1 / -1; width: 100%; }
+  .backup-reminder-actions { grid-column: 1 / -1; width: 100%; grid-template-columns: minmax(0,1fr) auto; align-items: center; justify-items: stretch; }
+  .backup-reminder-actions .btn { width: 100%; }
   .recovery-choice-grid, .recovery-summary-grid, .recovery-status { grid-template-columns: 1fr; }
   .mode-tag { top: 25px; right: 22px; }
   .onboarding-mode .notification-button { display: none; }
@@ -1122,7 +1139,9 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
   .topbar { padding-inline: 10px; }
   .topbar-actions .mode-control { max-width: 112px; }
   .hosted-static .topbar-actions .mode-control { display: none; }
+  body:not(.hosted-static) .review-brief-button { display: none; }
   .notification-button { display: none; }
+  .guide-strip { margin-inline: -10px; padding-inline: 10px; }
   .judge-demo-top { gap: 7px; }
   .judge-demo-top > .text-button { font-size: 0; }
   .judge-demo-top > .text-button svg { width: 18px; height: 18px; }

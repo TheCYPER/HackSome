@@ -6,8 +6,8 @@
   "use strict";
 
   const FORMAT = "relay-rehearsal-encrypted-backup";
-  const ENVELOPE_VERSION = 1;
-  const PAYLOAD_VERSION = 1;
+  const ENVELOPE_VERSION = 2;
+  const PAYLOAD_VERSION = 2;
   const KDF_ITERATIONS = 310_000;
   const MAX_ENVELOPE_BYTES = 2_000_000;
   const MAX_PAYLOAD_BYTES = 1_500_000;
@@ -18,6 +18,12 @@
   const MAX_STRING_LENGTH = 20_000;
   const MAX_ARRAY_LENGTH = 5_000;
   const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+  const TRANSIENT_CAPABILITY_KEYS = new Set([
+    "authorization", "auth", "bearer", "capability", "caregivertoken",
+    "credential", "invite", "invitation", "invitecode", "invitetoken",
+    "joincode", "pairingcode", "participantid", "roomid", "roomkey",
+    "secret", "substitutetoken",
+  ]);
   const STATE_KEYS = Object.freeze([
     "schemaVersion", "mode", "meta", "onboarding", "guideFilter",
     "stageOneCompleted", "rehearsalCompleted", "quietInbox",
@@ -58,7 +64,31 @@
     for (const key of required) if (!Object.prototype.hasOwnProperty.call(value, key)) fail("missing_field", `${label}缺少必要字段`);
   }
 
-  function validateValueTree(value) {
+  function normalizedFieldName(value) {
+    return String(value || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  }
+
+  function isTransientCapabilityKey(key) {
+    const normalized = normalizedFieldName(key);
+    return TRANSIENT_CAPABILITY_KEYS.has(normalized)
+      || normalized.endsWith("token")
+      || normalized.endsWith("secret")
+      || normalized.endsWith("credential")
+      || normalized.endsWith("capability");
+  }
+
+  function stripTransientCapabilities(value) {
+    if (Array.isArray(value)) return value.map(stripTransientCapabilities);
+    if (!isPlainObject(value)) return structuredClone(value);
+    const stripped = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (isTransientCapabilityKey(key)) continue;
+      stripped[key] = stripTransientCapabilities(item);
+    }
+    return stripped;
+  }
+
+  function validateValueTree(value, { rejectCapabilities = false } = {}) {
     let nodes = 0;
     const walk = (current, depth) => {
       nodes += 1;
@@ -81,6 +111,7 @@
       if (!isPlainObject(current)) fail("invalid_value", "备份包含不支持的数据类型");
       for (const [key, item] of Object.entries(current)) {
         if (DANGEROUS_KEYS.has(key)) fail("dangerous_key", "备份包含危险字段");
+        if (rejectCapabilities && isTransientCapabilityKey(key)) fail("transient_capability_present", "备份包含远端邀请或凭证字段");
         walk(item, depth + 1);
       }
     };
@@ -150,7 +181,6 @@
       envelope.format,
       envelope.version,
       envelope.createdAt,
-      envelope.appBuild,
       envelope.kdf.name,
       envelope.kdf.hash,
       envelope.kdf.iterations,
@@ -185,7 +215,7 @@
     }
     const clean = {};
     for (const key of STATE_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(sourceState, key)) clean[key] = structuredClone(sourceState[key]);
+      if (Object.prototype.hasOwnProperty.call(sourceState, key)) clean[key] = stripTransientCapabilities(sourceState[key]);
     }
     clean.mode = "real";
     clean.activeRest = null;
@@ -199,6 +229,7 @@
     clean.meta = isPlainObject(clean.meta) ? clean.meta : {};
     delete clean.meta.updatedAt;
     delete clean.meta.lastBackupAt;
+    delete clean.meta.backupReminderSnoozedUntil;
     delete clean.meta.lastRecovery;
     validateRecoveryState(clean);
     return clean;
@@ -230,7 +261,7 @@
 
   function validateRecoveryState(candidate) {
     assertExactKeys(candidate, STATE_KEYS, ["schemaVersion", "mode", "family", "recipientConsent"], "家庭状态");
-    validateValueTree(candidate);
+    validateValueTree(candidate, { rejectCapabilities: true });
     if (candidate.mode !== "real") fail("demo_backup_rejected", "演示家庭不能作为恢复来源");
     if (!Number.isInteger(Number(candidate.schemaVersion)) || Number(candidate.schemaVersion) < 1 || Number(candidate.schemaVersion) > 100) {
       fail("unsupported_state_version", "家庭数据版本不受支持");
@@ -247,13 +278,12 @@
   function validatePayload(candidate) {
     assertExactKeys(
       candidate,
-      ["payloadVersion", "exportedAt", "sourceBuild", "state", "authority"],
-      ["payloadVersion", "exportedAt", "sourceBuild", "state", "authority"],
+      ["payloadVersion", "exportedAt", "state", "authority"],
+      ["payloadVersion", "exportedAt", "state", "authority"],
       "恢复内容",
     );
     if (candidate.payloadVersion !== PAYLOAD_VERSION) fail("unsupported_payload_version", "恢复内容版本不受支持");
     if (!validTimestamp(candidate.exportedAt)) fail("invalid_timestamp", "恢复内容时间无效");
-    if (typeof candidate.sourceBuild !== "string" || !candidate.sourceBuild || candidate.sourceBuild.length > 80) fail("invalid_build", "来源版本无效");
     validateRecoveryState(candidate.state);
     const authority = normalizeAuthority(candidate.authority);
     const consent = candidate.state.recipientConsent;
@@ -273,14 +303,13 @@
     }
     assertExactKeys(
       candidate,
-      ["format", "version", "createdAt", "appBuild", "kdf", "cipher", "ciphertext"],
-      ["format", "version", "createdAt", "appBuild", "kdf", "cipher", "ciphertext"],
+      ["format", "version", "createdAt", "kdf", "cipher", "ciphertext"],
+      ["format", "version", "createdAt", "kdf", "cipher", "ciphertext"],
       "备份信封",
     );
     if (candidate.format !== FORMAT) fail("not_recovery_backup", "文件不是接班彩排加密恢复备份");
     if (candidate.version !== ENVELOPE_VERSION) fail("unsupported_envelope_version", "备份格式版本不受支持");
     if (!validTimestamp(candidate.createdAt)) fail("invalid_timestamp", "备份创建时间无效");
-    if (typeof candidate.appBuild !== "string" || !candidate.appBuild || candidate.appBuild.length > 80) fail("invalid_build", "备份应用版本无效");
     assertExactKeys(candidate.kdf, ["name", "hash", "iterations", "salt"], ["name", "hash", "iterations", "salt"], "密钥参数");
     if (candidate.kdf.name !== "PBKDF2" || candidate.kdf.hash !== "SHA-256" || candidate.kdf.iterations !== KDF_ITERATIONS) {
       fail("unsupported_kdf", "备份密钥算法不受支持");
@@ -306,9 +335,8 @@
     return validateEnvelope(parsed);
   }
 
-  async function createEncryptedBackup({ state, authority, passphrase, appBuild, now = new Date().toISOString() }, options = {}) {
+  async function createEncryptedBackup({ state, authority, passphrase, now = new Date().toISOString() }, options = {}) {
     if (!validTimestamp(now)) fail("invalid_timestamp", "备份创建时间无效");
-    if (typeof appBuild !== "string" || !appBuild || appBuild.length > 80) fail("invalid_build", "应用版本无效");
     const provider = cryptoApi(options);
     const cleanState = sanitizeBackupState(state);
     const cleanAuthority = normalizeAuthority(authority);
@@ -318,7 +346,6 @@
     const payload = validatePayload({
       payloadVersion: PAYLOAD_VERSION,
       exportedAt: now,
-      sourceBuild: appBuild,
       state: cleanState,
       authority: cleanAuthority,
     });
@@ -330,7 +357,6 @@
       format: FORMAT,
       version: ENVELOPE_VERSION,
       createdAt: now,
-      appBuild,
       kdf: { name: "PBKDF2", hash: "SHA-256", iterations: KDF_ITERATIONS, salt: toBase64(salt) },
       cipher: { name: "AES-GCM", iv: toBase64(iv) },
       ciphertext: "",
@@ -375,7 +401,6 @@
         format: envelope.format,
         version: envelope.version,
         createdAt: envelope.createdAt,
-        appBuild: envelope.appBuild,
       },
     };
   }
@@ -389,6 +414,8 @@
     MAX_PAYLOAD_BYTES,
     MIN_PASSPHRASE_LENGTH,
     RecoveryError,
+    isTransientCapabilityKey,
+    stripTransientCapabilities,
     sanitizeBackupState,
     validateRecoveryState,
     parseEnvelopeText,
