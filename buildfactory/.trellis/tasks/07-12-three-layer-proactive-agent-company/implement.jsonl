@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/three-layer-agent-company-contracts.md", "reason": "V7 三层组织、状态、并发、审核、消息、挂载与恢复的当前实现契约。"}
-{"file": ".trellis/spec/backend/company-state-contracts.md", "reason": "确认 Company State 是唯一业务共享文件面，内部编排状态不可作为 LLM 原始挂载。"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "确认 CEO 与 Department 的常驻唤醒、Prompt 和运行边界。"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "确认 peripheral 与完整运行日志的边界。"}
-{"file": ".trellis/tasks/07-12-three-layer-proactive-agent-company/research/v6-baseline.md", "reason": "记录 V6 分支冻结点与 V7 不迁移旧 Company 的基线。"}

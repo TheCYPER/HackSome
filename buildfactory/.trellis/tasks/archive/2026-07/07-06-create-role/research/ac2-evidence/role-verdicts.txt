@@ -1,7 +1,0 @@
-=== both verdicts in ===
---- role content-manager: FAIL
-ROLE-VERDICT role=content-manager verdict=FAIL :: Charter fails the name-swap test (all generic filler below the placeholder floor) and duplicates growth, which already owns copy/content/positioning; rationale is speculative naming ('would be useful for future work') with no real work growth can't already do — either fold into growth or give it a judgment posture growth demonstrably lacks.
-Next: NOT materialized; revise the bundle at /shared/roles/proposals/content-manager and re-run `python3 -m orchestration.role propose content-manager`, or drop it
---- role listing-operator: PASS
-ROLE-VERDICT role=listing-operator verdict=PASS :: Distinct account-operator identity (account standing as scarce resource, abort-vs-retry rule, evidence-not-effort) that builder's maker-posture lacks despite same tools; rationale is concrete and current — final-mile marketplace listing has no owner and is the blocking step of the live objective.
-Next: queued for the provisioner — it materializes the files, starts the container and notifies the CEO

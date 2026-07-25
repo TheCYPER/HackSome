@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/06-28-role-library/research/skill-reuse-survey.md", "reason": "vendor 策略 + coreyhaines31/marketingskills(copywriting/content-strategy) near drop-in 判断与许可证"}
-{"file": ".trellis/tasks/06-28-role-library/prd.md", "reason": "父任务通用 charter 结构 + 跨角色一致性规范，charter 重写要遵循"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "外设层 inbound 现状 + outbound(use-accounts 依赖)接口边界"}

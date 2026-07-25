@@ -1,2 +1,0 @@
-{"file": ".trellis/tasks/07-09-observatory-codex-pointers/prd.md", "reason": "Check against AC1 (both layouts + provider discriminator in A/B prompts, tests updated), AC2 (no runtime-specific 'claude session' wording left in charters), AC3 (real postmortem run deferred to parent task AC-P1)."}
-{"file": "observatory/runner.py", "reason": "Verify zero-context discipline intact: pointers only, no report-dir leak, A/B prompt structure and dedup state semantics unchanged."}

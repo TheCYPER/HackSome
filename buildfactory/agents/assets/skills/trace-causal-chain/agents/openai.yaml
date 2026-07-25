@@ -1,4 +1,0 @@
-interface:
-  display_name: "Trace Causal Chain"
-  short_description: "Trace facts and actions through to a commercial result"
-  default_prompt: "Use $trace-causal-chain to expose the assumptions and breaks between this plan and a sale."

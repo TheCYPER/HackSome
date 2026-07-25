@@ -1,4 +1,0 @@
-{"file": "accounts/README.md", "reason": "Source text: 'foundagent.net domain rail' section (子域自助 + 禁则) to port into the skill and then converge to a pointer. Operator-facing Google prep stays here."}
-{"file": "agents/assets/skills/provision-ga4/SKILL.md", "reason": "Style/format reference for fleet skills (frontmatter, tone, English, progressive disclosure) and the analytics follow-up the deploy skill should hand off to."}
-{"file": "agents/assets/skills/claim-mailbox/SKILL.md", "reason": "Second style reference: a thin fact+norm skill (registry etiquette pattern similar to DNS-as-registry)."}
-{"file": "state/firsttest/company/product/glp1-first-30-days/funnel-notes.md", "reason": "Firsttest evidence: the exact CNAME→cname.vercel-dns.com binding an agent derived on its own; the skill should encode this as the standard path."}

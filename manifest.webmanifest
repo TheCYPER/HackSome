@@ -1,0 +1,10 @@
+{
+  "name": "接班彩排",
+  "short_name": "接班彩排",
+  "description": "用渐进式彩排，把别人能帮忙练成我敢真正离开。",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f3ec",
+  "theme_color": "#f6f3ec",
+  "icons": [{ "src": "./assets/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

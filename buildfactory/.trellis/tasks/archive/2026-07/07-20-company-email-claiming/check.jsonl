@@ -1,4 +1,0 @@
-{"file":".trellis/spec/backend/peripheral-layer-contracts.md","reason":"检查 email ingress bypass、路由失败矩阵和 CEO 单播"}
-{"file":".trellis/spec/backend/three-layer-agent-company-contracts.md","reason":"检查角色白名单、敏感审计、loadout 与挂载隔离"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 MIME 到 Company store、Hub API、Agent Skill 的完整往返"}
-{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查重复常量、旧入口残留和同层语义漂移"}

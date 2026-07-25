@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/07-07-codex-runtime/research/codex-cli-capability-map.md", "reason": "Verify codex adapter argv/flags/JSONL parsing against the researched CLI contract (incl. gap workarounds: session token from thread.started, per-agent CODEX_HOME as strict-MCP equivalent)"}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Check stage-1 refactor preserved the spike-verified contracts: is_error (not subtype) parsing, credential mutual-exclusion, loadout manifest reconcile"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "Check resident wake path still honors charter injection, never-brick degradation, proxy scoping, objective injection after adapter rerouting"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "Overlay tri-state (skills/charter/hooks/mcp on/off/path) must keep working across both runtimes — mcp:off must mean OFF for codex too (no config.toml mcp_servers rendered)"}
-{"file": ".trellis/spec/backend/role-lifecycle-contracts.md", "reason": "Anchor anti-drift test + lint provider whitelist: verify compose x-agent-env change and provisioner render stay in sync"}

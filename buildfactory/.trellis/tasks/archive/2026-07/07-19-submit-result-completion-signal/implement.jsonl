@@ -1,4 +1,0 @@
-{"file":".trellis/spec/backend/three-layer-agent-company-contracts.md","reason":"约束 V7 Worker 完成声明、Goal review、Verifier 生命周期与账户边界。"}
-{"file":".trellis/spec/backend/company-state-contracts.md","reason":"约束 /company 的可选持久化语义和 Verifier 只读发现方式。"}
-{"file":".trellis/spec/backend/account-package-contracts.md","reason":"约束 Worker 与 Verifier 的完整账户包注入及 Verifier 行为只读边界。"}
-{"file":".trellis/spec/backend/agent-execution-contracts.md","reason":"约束临时 Agent 的 Skill、凭据与 runtime materialization。"}

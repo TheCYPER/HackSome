@@ -1,4 +1,0 @@
-interface:
-  display_name: "Integrate New Information"
-  short_description: "Map new evidence into existing strategic reasoning"
-  default_prompt: "Use $integrate-new-information to identify what this new result changes and what remains intact."

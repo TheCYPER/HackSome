@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/07-03-capability-provisioning/research/mcp-research-synthesis.md", "reason": "父任务四路调研综合：最终 MCP 名单、凭证清单、集成架构四条（${VAR} 展开 / --strict-mcp-config / tool search）——选型与集成模式的唯一依据"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "常驻 agent_loop 契约：key/charter/mcp 装配链、kasm 启动 hook、proxy 子树边界——本任务改的就是这条装配链"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "overlay mcp: on|off|<path> 三态语义与 AGENTS_DIR 相对路径规则——per-role 基线必须与之兼容（AC3 回归）"}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "容器化 headless claude 执行契约：凭证优先级、loadout 落点——argv 拼装与凭证注入的既有约定"}
-{"file": ".trellis/tasks/archive/2026-07/07-03-company-loadout-overlay/design.md", "reason": "overlay 任务的技术设计：mcp 三态如何进 agent_loop（_overlay_charter_mcp），per-role 基线要接在它前面"}

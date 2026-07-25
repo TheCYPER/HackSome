@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/07-04-domain-rail/research/google-programmatic-verification.md", "reason": "三问题核实结论 + API 组合/scope/坑 + 可照抄的脚本草稿——provision 脚本的唯一实现依据"}
-{"file": "accounts/README.md", "reason": "账号包契约文档：现有 Google SA / DataForSEO 章节是本任务要扩写的落点（子域约定 + GA4 前置清单）"}
-{"file": ".trellis/tasks/archive/2026-07/07-03-mcp-loadout/design.md", "reason": "gsc/ga4 MCP server 的配置与凭证契约（本任务只补 Google 侧资产，runtime 零改动）"}

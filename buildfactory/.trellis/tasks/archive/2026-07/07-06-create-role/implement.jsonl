@@ -1,8 +1,0 @@
-{"file": ".trellis/tasks/07-06-create-role/research/codebase-map.md", "reason": "集成点全图：角色四件套解剖、agent_loop/loadout 消费链、Hub 免注册路由、compose ro/sock 约束、minimal touch list（含 file:line）。⚠️快照于 07-06 上午，此后 main 合入 social-rail（browser_mcp wrapper 改了 docker-compose/agents/mcp/*.json/agent_loop），以现码为准"}
-{"file": ".trellis/tasks/07-06-create-role/research/quality-bar.md", "reason": "charter anatomy 七段、三道检验精确重述、review-objective 八要素、占位 charter 反例——写两个 skill 的素材（注意 Gate 阵在 v1 被有意简化）"}
-{"file": ".trellis/tasks/07-06-create-role/research/oss-precedents.md", "reason": "CAMEL task-specifier / CaptainAgent less-is-better 等可借鉴 pattern 与许可证约束"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "常驻 agent_loop 契约：wake/resume/charter 注入/skills 物化——新角色容器必须满足的运行契约"}
-{"file": ".trellis/spec/backend/agent-handbook-contracts.md", "reason": "Goal 协议与信息可见性矩阵（worker 蒙眼/verifier 见 accept）——verifier 扩职与 inbox 直投须不破坏该契约"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "loadout/overlay 校验契约——lint 与 loadout_check 的一致性"}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "落点约定：orchestration/ 与 agents/assets/ 的归属"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "fail-closed/退出码惯例，role.py 与 provisioner 遵循"}

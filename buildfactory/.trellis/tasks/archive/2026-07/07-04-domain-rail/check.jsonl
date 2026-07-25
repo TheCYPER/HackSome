@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/07-04-domain-rail/prd.md", "reason": "验收标准五条（GSC e2e / 属性验证+SA 读权限 / 子域 DNS e2e / README 约定 / GA4 结论落盘）"}
-{"file": ".trellis/tasks/07-04-domain-rail/design.md", "reason": "D1-D7 决策——检查实现偏离（幂等、apex TXT 只增不删、delegation 默认开、GA4 不执行）"}
-{"file": ".trellis/tasks/07-04-domain-rail/research/google-programmatic-verification.md", "reason": "API 参数/scope 的核对基线（sc-domain 前缀只用于 Search Console API 等坑）"}

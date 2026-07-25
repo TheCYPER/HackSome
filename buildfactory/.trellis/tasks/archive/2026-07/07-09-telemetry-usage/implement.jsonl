@@ -1,4 +1,0 @@
-{"file": "orchestration/agent_loop.py", "reason": "The only production file to change: _record_wake gains a `usage` field (RunResult.usage passthrough, native CLI shape) and wake() threads result.usage into it; timeout + runtime-None fallback paths pass usage=None. Keep RECORDING-ONLY and never-brick semantics."}
-{"file": "agent/runtimes/base.py", "reason": "RunResult contract: `usage: dict | None` already exists (token counts, each CLI's native shape) — do NOT change the contract, just consume it."}
-{"file": "agent/runtimes/codex.py", "reason": "Reference for what codex usage looks like (turn.completed.usage: input/cached_input/output/reasoning_output; cost_usd always None) — the motivating case."}
-{"file": "orchestration/tests/test_agent_loop.py", "reason": "Where the new unit tests go: success path records usage, timeout and fallback paths record usage=None. Follow existing test style for _record_wake/wake."}
