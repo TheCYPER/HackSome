@@ -4,8 +4,9 @@ HackSome 是一个本地运行、以 Codex Session 为执行单元的黑客松 I
 工作流。当前有两条彼此独立、共享同一套 Harness 的路线：
 
 - `useful`：寻找有真实需求与产品价值的 Idea；这是默认路线。
-- `creative`：寻找能在约 30 秒内让人惊奇、好玩、神秘并愿意转述的
-  Idea；它保留所有候选的演化与淘汰原因，并在唯一一次人工评审后结束。
+- `creative`：寻找能在约 30 秒内让人惊奇、好玩、神秘并愿意转述，同时可以
+  用普通电脑或手机跑出真实软件 Demo 的 Idea；它保留所有候选的演化与淘汰
+  原因，并在唯一一次人工评审后结束。
 
 这里的 Harness 指控制器周围那层可复用基础设施：Codex 进程与超时、并发、
 Prompt/Schema 冻结、Hub 持久化、哈希绑定、日志、状态检查和失败处理。两条
@@ -47,14 +48,20 @@ Build handoff 为止：
 
 ```text
 C0 赛题与硬约束
-→ C1 Creative Brief
-→ C2 Creative Territories
+→ C1 Creative Brief + frozen Software Demo Policy
+→ C2 Software-native Creative Territories
 → C3 Concept Synthesis
-→ C4 Cheap Hook Screen
+→ C4 Hook/Share Screen + Software Demo Feasibility
 → C5 Idea Memory + Novelty Scan
 → C6 自动 shortlist + 唯一一次人工策展
 → C7 确定性报告、Idea Card、Memory Record、Build handoff
 ```
+
+新 run 使用 Creative contract v2：普通电脑/手机和内置 camera、microphone、
+touch、screen、speaker 可以作为交互入口；定制硬件、实体制作、纯装置/
+人工表演核心、mock 或 wizard-of-oz 核心不能进入后续查重和人审。每个 Concept
+要先经过两份独立 Hook/传播审查和一份独立 Software Demo 可行性审查，三者
+只共享一次有界修复机会。
 
 启动：
 
@@ -86,8 +93,13 @@ Percy 在 curator 页面关闭轮次后，再执行：
 hacksome resume runs/<run-id>
 ```
 
-`review` 默认只监听 `127.0.0.1` 的随机端口，并分别打印团队评审链接和 Percy
-策展链接。可信局域网内共享时必须显式给出公开主机名：
+评审页面不是预先部署好的常驻网站。只有 run 到达
+`waiting / creative-human-review` 后，执行上面的 `hacksome review` 才会在
+本机临时启动服务，并在终端打印 `Review URL` 和 `Curator URL`；默认还会自动
+打开 Curator 页面，自动化或手动复制链接时可加 `--no-open`。
+
+`review` 默认只监听 `127.0.0.1` 的随机端口。可信局域网内共享时必须显式给出
+公开主机名：
 
 ```bash
 hacksome review runs/<run-id> \
@@ -97,8 +109,11 @@ hacksome review runs/<run-id> \
 ```
 
 该页面没有账户系统或 TLS，只适合本机或可信局域网，不能暴露到公网。普通
-评审者提交前看不到队友原文；提交后只能看只读 team wall。只有 curator
-链接能批准哪些反馈进入最后一次有界修订、合并候选或关闭轮次。
+评审者可以看到候选的软件核心、最小 Demo 与分享产物，但提交前看不到机器
+可行性 verdict 或队友原文；提交后只能看只读 team wall。只有 curator 链接
+能查看完整 C4F 证据、批准哪些反馈进入最后一次有界修订、合并候选或关闭
+轮次。v2 回执还会记录 `share_impulse`、具体分享对象和
+`demo_confidence`，这些只是 Idea 阶段代理信号，不代表真实传播率或构建成功。
 
 ### Idea Memory 是什么
 
@@ -117,10 +132,10 @@ hacksome review runs/<run-id> \
 
 ### 空 batch 与零 Idea
 
-没有 Hook-pass Concept 或自动 shortlist 为空时，控制器仍会发布一份带
-`skip_reason` 的空 C6 batch，但不会让人面对空白评审页。流程会直接进入 C7，
-生成零 Idea 报告。报告保留每个候选、revision、淘汰原因和证据；“零 Idea”
-不是“什么都没发生”。
+没有完整 C4 Hook + Software Demo screen pass Concept，或自动 shortlist
+为空时，控制器仍会发布一份带 `skip_reason` 的空 C6 batch，但不会启动空白
+评审页。流程会直接进入 C7，生成零 Idea 报告。报告保留每个候选、revision、
+Hook/Feasibility 淘汰原因和证据；“零 Idea”不是“什么都没发生”。
 
 ### C7 中断与恢复
 

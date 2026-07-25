@@ -6,13 +6,19 @@ import tempfile
 import unittest
 from typing import Any
 
-from hacksome.creative.artifacts import EVIDENCE_REVISION_HEADINGS
+from hacksome.creative.artifacts import (
+    EVIDENCE_REVISION_HEADINGS,
+    PORTFOLIO_DIMENSIONS,
+)
+from hacksome.creative.contracts import C6B_PORTFOLIO_CURATE
+from hacksome.creative.prompting import creative_prompt_catalog
 from hacksome.creative.workflow import (
     CreativeConcept,
     CreativeIdeaWorkflow,
     CreativeWorkflowError,
     _deterministic_shortlist,
 )
+from hacksome.prompting import PromptCatalog, PromptSpec
 from hacksome.creative.review import ReviewBatch, ReviewRound, ReviewStore
 from hacksome.routes import inspect_run, validate_run
 
@@ -99,6 +105,22 @@ class CreativeCurationRunner(CreativeScriptedRunner):
                     {
                         "concept_ref": reference,
                         "decision": self.curator_decisions[slot - 1],
+                        "dimensions": [
+                            {
+                                "dimension": dimension,
+                                "verdict": (
+                                    "pass"
+                                    if self.curator_decisions[slot - 1]
+                                    == "include"
+                                    else "uncertain"
+                                    if self.curator_decisions[slot - 1] == "hold"
+                                    else "fail"
+                                ),
+                                "reason": "Categorical fixture evidence.",
+                                "evidence": "The exact Concept supplies this evidence.",
+                            }
+                            for dimension in PORTFOLIO_DIMENSIONS
+                        ],
                         "rationale": "Categorical evidence supports this decision.",
                         "possible_duplicate_refs": [],
                     }
@@ -116,6 +138,27 @@ def _read_artifacts(workflow: CreativeIdeaWorkflow, artifact_type: str) -> list[
         for artifact_id, record in sorted(artifacts.items())
         if record["artifact_type"] == artifact_type
     ]
+
+
+def _catalog_with_frozen_v3_curator() -> PromptCatalog:
+    return PromptCatalog(
+        tuple(
+            PromptSpec(
+                stage=stage,
+                template_id=spec.template_id,
+                version=(
+                    "3"
+                    if stage == C6B_PORTFOLIO_CURATE
+                    else spec.version
+                ),
+                template_path=spec.template_path,
+                schema_path=spec.schema_path,
+                web_search=spec.web_search,
+            )
+            for stage in creative_prompt_catalog
+            for spec in (creative_prompt_catalog[stage],)
+        )
+    )
 
 
 class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
@@ -202,6 +245,57 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 2,
             )
             self.assertTrue(all(not task.web_search for task in c6_tasks))
+            curator_tasks = sorted(
+                (
+                    task
+                    for task in c6_tasks
+                    if task.task_id.startswith(
+                        "creative-c6b-portfolio-curator-"
+                    )
+                ),
+                key=lambda task: task.task_id,
+            )
+            lens_payloads = []
+            for task in curator_tasks:
+                match = re.search(
+                    r"<BEGIN_CURATOR_LENS_[0-9a-f]{12}>\n"
+                    r"(?P<payload>.*?)\n"
+                    r"<END_CURATOR_LENS_[0-9a-f]{12}>",
+                    task.prompt,
+                    flags=re.DOTALL,
+                )
+                self.assertIsNotNone(match)
+                assert match is not None
+                lens_payloads.append(json.loads(match.group("payload")))
+            self.assertEqual(
+                [
+                    payload["curator_lens_id"]
+                    for payload in lens_payloads
+                ],
+                [
+                    "meaning_value_red_team",
+                    "hackathon_floor_red_team",
+                ],
+            )
+            self.assertNotEqual(
+                lens_payloads[0]["primary_counterevidence_question"],
+                lens_payloads[1]["primary_counterevidence_question"],
+            )
+            curator_metadata = {
+                record["metadata"]["curator_slot"]: record["metadata"]
+                for record in state["artifacts"].values()
+                if record["artifact_type"] == "creative_portfolio_curation"
+            }
+            self.assertEqual(
+                {
+                    slot: metadata["curator_lens_id"]
+                    for slot, metadata in curator_metadata.items()
+                },
+                {
+                    1: "meaning_value_red_team",
+                    2: "hackathon_floor_red_team",
+                },
+            )
             self.assertEqual(validate_run(workflow.run_dir), [])
             self.assertEqual(
                 inspect_run(workflow.run_dir)["review"]["shortlist_count"],
@@ -229,6 +323,49 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 closed["resolution_sha256"],
                 resolution.resolution_sha256,
+            )
+            self.assertEqual(validate_run(workflow.run_dir), [])
+
+    async def test_frozen_v3_curator_keeps_legacy_prompt_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CreativeCurationRunner()
+            workflow = CreativeIdeaWorkflow.create(
+                "Make a legible interactive surprise.",
+                directory,
+                settings=_settings(),
+                runner=runner,
+                prompt_catalog=_catalog_with_frozen_v3_curator(),
+            )
+
+            await workflow.execute()
+
+            curator_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith(
+                    "creative-c6b-portfolio-curator-"
+                )
+            ]
+            self.assertEqual(len(curator_tasks), 2)
+            self.assertTrue(
+                all(
+                    "<BEGIN_CURATOR_LENS_" not in task.prompt
+                    for task in curator_tasks
+                )
+            )
+            state = workflow.hub.load_state()
+            curator_metadata = [
+                record["metadata"]
+                for record in state["artifacts"].values()
+                if record["artifact_type"]
+                == "creative_portfolio_curation"
+            ]
+            self.assertEqual(len(curator_metadata), 2)
+            self.assertTrue(
+                all(
+                    "curator_lens_id" not in metadata
+                    for metadata in curator_metadata
+                )
             )
             self.assertEqual(validate_run(workflow.run_dir), [])
 
@@ -272,7 +409,9 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "no_concepts_generated",
             )
 
-    async def test_all_hook_rejects_have_distinct_empty_reason(self) -> None:
+    async def test_all_concept_screen_rejects_have_distinct_empty_reason(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner = CreativeCurationRunner(reject_all_hooks=True)
             workflow = CreativeIdeaWorkflow.create(
@@ -293,7 +432,7 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 batch.skip_reason,
-                "all_candidates_failed_hook",
+                "all_candidates_failed_concept_screen",
             )
             self.assertIsNone(workflow.hub.load_state()["wait"])
             self.assertEqual(validate_run(workflow.run_dir), [])

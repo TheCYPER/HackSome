@@ -369,3 +369,69 @@ Reran the full AI Trader workflow with Generator v5 and Red Team v4. The validat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: BuildFactory shared tool-use prompt
+
+**Date**: 2026-07-24
+**Task**: BuildFactory shared tool-use prompt
+**Branch**: `main`
+
+### Summary
+
+Injected one shared GitHub/Vercel/Markdown tool-use fragment into Lead, Worker, and Verifier prompts; unified resident Lead prompt assembly; preserved role boundaries; added override fallback contracts and 362-test coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46a4f53` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: Autonomous Pitch Deck pipeline
+
+**Date**: 2026-07-24
+**Task**: Autonomous Pitch Deck pipeline
+**Branch**: `main`
+
+### Summary
+
+Implemented and live-verified the four-role sol/xhigh Pitch pipeline with full Project snapshots, bounded Director/Reviewer revision, Chromium-validated HTML, segmented script generation, and atomic auto-publication.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98fa07c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

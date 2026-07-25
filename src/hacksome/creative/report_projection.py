@@ -25,6 +25,10 @@ from hacksome.creative.contracts import (
     CREATIVE_PROMPT_POLICY_VERSION,
     CREATIVE_REPORT_POLICY_VERSION,
     CREATIVE_STAGE_POLICY_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
+    LEGACY_CREATIVE_REPORT_POLICY_VERSION,
+    LEGACY_CREATIVE_STAGE_POLICY_VERSION,
     OPTIONAL_MEMORY_STAGES,
     ConceptDisposition,
     DispositionOutcome,
@@ -37,7 +41,7 @@ from hacksome.creative.memory import (
     MemoryCapsuleRef,
     MemoryStageSummary,
 )
-from hacksome.creative.prompting import creative_prompt_catalog
+from hacksome.creative.prompting import creative_prompt_catalog_for_contract
 from hacksome.creative.report import (
     ConceptProjection,
     ConceptRevisionProjection,
@@ -115,6 +119,14 @@ _MACHINE_REASON_CODES = frozenset(
         StableReasonCode.MISSES_THIRTY_SECOND_MOMENT.value,
         StableReasonCode.NOT_ONE_SENTENCE_RETAINABLE.value,
         StableReasonCode.REQUIRES_HIDDEN_LABOR_OR_IMPOSSIBLE_CAPABILITY.value,
+        StableReasonCode.SHARE_TRIGGER_NOT_IMMEDIATE_OR_CONCRETE.value,
+        StableReasonCode.CORE_NOT_SOFTWARE_FIRST.value,
+        StableReasonCode.REQUIRES_CUSTOM_HARDWARE_OR_FABRICATION.value,
+        StableReasonCode.CORE_IS_MANUAL_PERFORMANCE_OR_INSTALLATION.value,
+        StableReasonCode.NO_RUNNABLE_END_TO_END_DEMO_PATH.value,
+        StableReasonCode.REQUIRES_UNAVAILABLE_DEPENDENCY_OR_PERMISSION.value,
+        StableReasonCode.NOT_BUILDABLE_WITHIN_HACKATHON_BUDGET.value,
+        StableReasonCode.DEMO_DOES_NOT_PROVE_CORE_MECHANISM.value,
     }
 )
 
@@ -222,6 +234,7 @@ class _ProjectionBuilder:
             review,
         )
 
+        route = _mapping(self.state.get("route"), "route metadata")
         projection = CreativeReportProjection(
             run_id=_string(self.state.get("run_id"), "run_id"),
             created_at=_string(self.state.get("created_at"), "created_at"),
@@ -239,10 +252,22 @@ class _ProjectionBuilder:
             final_ideas=final_ideas,
             zero_reason_code=zero_reason,
             empty_batch_skip_reason=skip_reason,
-            route_contract_version=CREATIVE_CONTRACT_VERSION,
-            prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
-            stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
-            report_policy_version=CREATIVE_REPORT_POLICY_VERSION,
+            route_contract_version=_string(
+                route.get("contract_version"),
+                "contract_version",
+            ),
+            prompt_policy_version=_string(
+                route.get("prompt_policy_version"),
+                "prompt_policy_version",
+            ),
+            stage_policy_version=_string(
+                route.get("stage_policy_version"),
+                "stage_policy_version",
+            ),
+            report_policy_version=_string(
+                route.get("report_policy_version"),
+                "report_policy_version",
+            ),
         )
         self._verify_terminal_closure(projection)
         return projection
@@ -253,13 +278,34 @@ class _ProjectionBuilder:
                 "C7 report projection requires a v2 RunHub state"
             )
         route = _mapping(self.state.get("route"), "route metadata")
-        expected_route = {
-            "id": "creative",
-            "contract_version": CREATIVE_CONTRACT_VERSION,
-            "prompt_policy_version": CREATIVE_PROMPT_POLICY_VERSION,
-            "stage_policy_version": CREATIVE_STAGE_POLICY_VERSION,
-            "report_policy_version": CREATIVE_REPORT_POLICY_VERSION,
+        contract_version = _string(
+            route.get("contract_version"),
+            "contract_version",
+        )
+        policy_by_contract = {
+            CREATIVE_CONTRACT_VERSION: (
+                CREATIVE_PROMPT_POLICY_VERSION,
+                CREATIVE_STAGE_POLICY_VERSION,
+                CREATIVE_REPORT_POLICY_VERSION,
+            ),
+            LEGACY_CREATIVE_CONTRACT_VERSION: (
+                LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
+                LEGACY_CREATIVE_STAGE_POLICY_VERSION,
+                LEGACY_CREATIVE_REPORT_POLICY_VERSION,
+            ),
         }
+        policies = policy_by_contract.get(contract_version)
+        expected_route = (
+            {
+                "id": "creative",
+                "contract_version": contract_version,
+                "prompt_policy_version": policies[0],
+                "stage_policy_version": policies[1],
+                "report_policy_version": policies[2],
+            }
+            if policies is not None
+            else {"id": "creative", "contract_version": None}
+        )
         for key, expected in expected_route.items():
             if route.get(key) != expected:
                 raise CreativeReportError(
@@ -330,7 +376,9 @@ class _ProjectionBuilder:
         )
         route = _mapping(self.state.get("route"), "route metadata")
         try:
-            creative_prompt_catalog.load_frozen(
+            creative_prompt_catalog_for_contract(
+                _string(route.get("contract_version"), "contract_version")
+            ).load_frozen(
                 self.run_dir,
                 route_id="creative",
                 contract_version=_string(
@@ -1005,23 +1053,30 @@ class _ProjectionBuilder:
             artifact = self.artifacts.get(reference)
             if (
                 artifact is None
-                or artifact.artifact_type != "creative_cheap_hook_review"
+                or artifact.artifact_type
+                not in {
+                    "creative_cheap_hook_review",
+                    "creative_software_demo_review",
+                }
             ):
                 continue
             raw = self._json_artifact(artifact)
             dimensions = raw.get("dimensions")
             if not isinstance(dimensions, list):
                 raise CreativeReportError(
-                    f"Hook Review {reference} has no dimensions"
+                    f"Concept screen Review {reference} has no dimensions"
                 )
             for item in dimensions:
-                row = _mapping(item, f"Hook Review {reference} dimension")
+                row = _mapping(
+                    item,
+                    f"Concept screen Review {reference} dimension",
+                )
                 reason_code = row.get("reason_code")
                 if reason_code not in wanted:
                     continue
                 evidence = _string(
                     row.get("evidence"),
-                    f"Hook Review {reference} evidence",
+                    f"Concept screen Review {reference} evidence",
                 )
                 projected = ReasonEvidenceProjection(
                     reason_code=str(reason_code),

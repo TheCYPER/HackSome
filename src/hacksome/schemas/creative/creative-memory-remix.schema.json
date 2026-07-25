@@ -50,7 +50,7 @@
                 "properties": {
                   "source_run_id": {"type": "string", "minLength": 1},
                   "source_route_id": {"const": "creative"},
-                  "source_contract_version": {"const": "1"},
+                  "source_contract_version": {"enum": ["1", "2"]},
                   "source_artifact_id": {"type": "string", "minLength": 1},
                   "source_artifact_sha256": {
                     "type": "string",

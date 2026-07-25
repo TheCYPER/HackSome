@@ -12,6 +12,7 @@
         "required": [
           "concept_ref",
           "decision",
+          "dimensions",
           "rationale",
           "possible_duplicate_refs"
         ],
@@ -23,6 +24,34 @@
           "decision": {
             "type": "string",
             "enum": ["include", "hold", "exclude"]
+          },
+          "dimensions": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dimension", "verdict", "reason", "evidence"],
+              "properties": {
+                "dimension": {
+                  "type": "string",
+                  "enum": [
+                    "software_demo_strength",
+                    "surprise_fun_or_intrigue",
+                    "one_sentence_clarity",
+                    "immediate_share_trigger",
+                    "novel_combination"
+                  ]
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": ["pass", "uncertain", "fail"]
+                },
+                "reason": {"type": "string", "minLength": 1},
+                "evidence": {"type": "string", "minLength": 1}
+              }
+            }
           },
           "rationale": {"type": "string", "minLength": 1},
           "possible_duplicate_refs": {

@@ -426,6 +426,7 @@ class _Fixture:
         store.initialize()
         review = store.submit_review(
             {
+                "schema_version": 2,
                 "review_id": "review-001",
                 "round_id": review_round.round_id,
                 "round_sha256": review_round.round_sha256,
@@ -440,7 +441,9 @@ class _Fixture:
                             f"{binding.concept_ref} turns one gesture "
                             "into a shared reveal."
                         ),
+                        "share_impulse": "maybe",
                         "share_target": "a friend who builds installations",
+                        "demo_confidence": "yes",
                         "reactions": {
                             "surprise": "yes",
                             "fun": "yes",
@@ -650,13 +653,13 @@ class CreativeReportProjectionTests(unittest.TestCase):
     def test_empty_batch_projects_all_three_pre_human_zero_paths(self) -> None:
         cases = (
             "no_concepts_generated",
-            "all_candidates_failed_hook",
+            "all_candidates_failed_concept_screen",
             "shortlist_empty",
         )
         for reason in cases:
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
                 fixture = _Fixture(Path(directory), run_id=f"run-{reason}")
-                if reason == "all_candidates_failed_hook":
+                if reason == "all_candidates_failed_concept_screen":
                     concept = fixture.concept(1, revision=1)
                     fixture.disposition(
                         concept,
@@ -791,7 +794,7 @@ class CreativeReportProjectionTests(unittest.TestCase):
                 terminal=True,
                 reason_codes=("c4_double_invalid",),
             )
-            fixture.skipped_batch("all_candidates_failed_hook")
+            fixture.skipped_batch("all_candidates_failed_concept_screen")
             record = fixture.hub.load_state()["artifacts"][concept]
             (fixture.hub.run_dir / record["path"]).write_text(
                 "tampered\n",
@@ -830,7 +833,7 @@ class CreativeReportProjectionTests(unittest.TestCase):
                 reason_codes=("c4_double_invalid",),
                 concept_sha256="f" * 64,
             )
-            fixture.skipped_batch("all_candidates_failed_hook")
+            fixture.skipped_batch("all_candidates_failed_concept_screen")
             with self.assertRaisesRegex(
                 CreativeReportError,
                 "stale Concept binding",

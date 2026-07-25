@@ -127,6 +127,20 @@ integration task 完成。
 - Worker 只看到完整 Goal intent；可选 `acceptance` 只进入 Verifier prompt。
   Worker 必须知道的产品要求必须写入 intent，private acceptance 只用于独立检查。
 
+#### R5.3.1 — 固定 Tool-use Prompt
+
+- Lead、Worker 和 Verifier 的最终 system prompt 都必须直接包含同一份 tool-use
+  指引，不要求 Agent 先发现或读取独立文档。
+- 指引必须明确说明 Agent 运行环境提供 Git、GitHub CLI (`gh`) 和 Vercel CLI
+  (`vercel`)；GitHub 用于 Git 托管与版本管理，Vercel 用于部署真实可访问的产品。
+- 对拥有写入与发布权限的角色，指引应鼓励在每个有意义、可独立验证的步骤完成后
+  commit 并 push，而不是把整个项目积压成一个大提交；Agent 可以在自己的 GitHub
+  账号下创建项目 Repo，并部署到其 Vercel 账号可用的域名。
+- Agent 可以把过程中形成、但代码和显式需求本身未完整表达的重要结论、推论和上下文
+  写成 Markdown，放在 `/project` 内自行选择或新建的目录中，供后续 Agent 延续判断。
+- 共享 tool-use 指引只描述能力和推荐工作方式，不扩大角色权限：Lead 仍只负责判断与
+  Goal 委派，Verifier 仍只读且不能 commit、push、创建 Repo、部署或修改外部系统。
+
 #### R5.4 — 顺序 Goal batch
 
 - 第一版每个 Team 使用顺序闭环。Lead 每次 wake 可以创建一个或多个 Goal，形成一个
@@ -178,6 +192,9 @@ integration task 完成。
       修复和发布；每次 review 使用 fresh session。
 - [ ] Lead、Worker 和 Verifier 无需读取 Skill，就能从各自 prompt 理解 `/project`、
       Goal 创建、结果提交和 verdict 提交等基础运行协议。
+- [x] Lead、Worker 和 Verifier 的最终 system prompt 都直接包含共享 tool-use 指引；
+      Worker 能据此使用 GitHub/Vercel 和持久 Markdown，Lead/Verifier 的既有权限边界
+      不被覆盖。
 - [ ] 第一版三个角色的物化结果均不包含任何 Skill；移除 Skill 不影响 Prompt、MCP、
       Goal、Worker 或 Verifier 的正常运行。
 - [ ] Worker 结果由独立 Verifier 检查；FAIL 恢复原 Worker，而不是交给人审批。

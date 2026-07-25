@@ -5,9 +5,10 @@
 > container/CLI runs), not assumed. Re-use these in the orchestration / memory
 > layers and when debugging a headless runtime in a container.
 >
-> Since 07-07 codex-runtime the runtime is switchable per AgentSpec
-> (`agents/ceo.yaml`, `agents/departments/*.yaml`, or
-> `agents/ephemeral/*.yaml` with `provider: claude-code | codex`): callers face ONLY
+> Since 07-07 codex-runtime the runtime is switchable per AgentSpec. The active
+> manifests are `agents/lead.yaml`, `agents/ephemeral/team-worker.yaml`, and
+> `agents/ephemeral/team-verifier.yaml` with `provider: claude-code | codex`;
+> callers face ONLY
 > the neutral contract in `agent/runtimes/base.py` (`RunRequest`/`RunResult`/
 > `Runtime`); each CLI's argv/parsing/home knowledge lives in exactly one
 > adapter file (`agent/runtimes/claude_code.py`, `agent/runtimes/codex.py`).
@@ -160,6 +161,8 @@ Codex (Scenario D), so both runtimes consume the same source directories.
 
 Skill catalog contract (both runtimes):
 
+- The current Team manifests all declare `skills: []`, and the repository does
+  not bundle a production business-Skill catalog.
 - A role YAML declares top-level host skill directories. Each declared tree
   has exactly one discoverable entrypoint: its root `SKILL.md`.
 - A vendored control layer nested below a host remains runtime-readable as
@@ -185,8 +188,8 @@ Skill catalog contract (both runtimes):
 
 ### 6. Tests Required
 - skill lands at `skills/<name>/SKILL.md`.
-- role counts, description budgets/semantic boundaries, unique entrypoints,
-  and vendored byte hashes (`agent/tests/test_skill_catalog.py`).
+- production Team manifests resolve and materialize zero Skills
+  (`agent/tests/test_team_loadout.py`).
 - hooks merge preserves existing keys + entries; second run does not duplicate.
 - system-prompt readable / passed as append-arg.
 - (`agent/tests/test_loadout.py`; dynamic proof in `ac6-e2e.md`: `[charter-ack]`,

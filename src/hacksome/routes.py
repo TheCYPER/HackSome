@@ -18,6 +18,7 @@ from hacksome.state import (
     canonical_json_bytes,
     read_jsonl,
     sha256_bytes,
+    sha256_text,
 )
 
 
@@ -52,6 +53,7 @@ _ZERO_REASON_CODES = frozenset(
     {
         "no_concepts_generated",
         "all_candidates_failed_hook",
+        "all_candidates_failed_concept_screen",
         "shortlist_empty",
         "all_human_rejected",
     }
@@ -103,6 +105,7 @@ class UsefulRunContract:
 
     route_id: str = "useful"
     contract_version: str = "1"
+    supported_contract_versions: frozenset[str] = frozenset({"1"})
     supported_schema_versions: frozenset[int] = frozenset(
         {LEGACY_RUN_SCHEMA_VERSION, RUN_SCHEMA_VERSION}
     )
@@ -195,7 +198,8 @@ class CreativeRunContract:
     """Offline projection and currently implemented Creative invariants."""
 
     route_id: str = "creative"
-    contract_version: str = "1"
+    contract_version: str = "2"
+    supported_contract_versions: frozenset[str] = frozenset({"1", "2"})
     supported_schema_versions: frozenset[int] = frozenset({RUN_SCHEMA_VERSION})
 
     def inspect(self, hub: RunHub, state: Mapping[str, Any]) -> dict[str, Any]:
@@ -421,11 +425,14 @@ class CreativeRunContract:
             C6C_FEEDBACK_REVISE,
             CreativeContractError,
             CreativeWorkflowSettings,
+            SOFTWARE_DEMO_POLICY,
+            SOFTWARE_DEMO_POLICY_VERSION,
             atom_id,
             final_idea_id,
             territory_for_atom,
             territory_id,
         )
+        from hacksome.creative.artifacts import PORTFOLIO_DIMENSIONS
         from hacksome.creative.memory import (
             MemoryCapsuleRef,
             MemoryRemixSlot,
@@ -434,7 +441,7 @@ class CreativeRunContract:
             MemoryValidationError,
         )
         from hacksome.creative.prompting import (
-            creative_prompt_catalog,
+            creative_prompt_catalog_for_contract,
         )
         from hacksome.creative.review import (
             ReviewBatch,
@@ -446,9 +453,25 @@ class CreativeRunContract:
         errors: list[str] = []
         route = state.get("route")
         manifest = state.get("resource_manifest")
+        contract_version = (
+            str(route.get("contract_version", ""))
+            if isinstance(route, dict)
+            else ""
+        )
+        try:
+            route_prompt_catalog = creative_prompt_catalog_for_contract(
+                contract_version
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            route_prompt_catalog = None
         if isinstance(route, dict) and isinstance(manifest, dict):
             try:
-                creative_prompt_catalog.load_frozen(
+                if route_prompt_catalog is None:
+                    raise PromptResourceError(
+                        "Creative contract has no supported prompt catalog"
+                    )
+                route_prompt_catalog.load_frozen(
                     hub.run_dir,
                     route_id="creative",
                     contract_version=str(route.get("contract_version", "")),
@@ -478,6 +501,54 @@ class CreativeRunContract:
                 except PersistedConfigError as exc:
                     errors.append(str(exc))
 
+        software_policy_block: str | None = None
+        if contract_version == "2":
+            inputs = state.get("inputs")
+            policy_record = (
+                inputs.get("software_demo_policy")
+                if isinstance(inputs, dict)
+                else None
+            )
+            if not isinstance(policy_record, dict):
+                errors.append(
+                    "Creative v2 run requires a frozen Software Demo Policy"
+                )
+            else:
+                expected_policy_path = "input/software-demo-policy.json"
+                if policy_record.get("path") != expected_policy_path:
+                    errors.append("Creative Software Demo Policy path mismatch")
+                if (
+                    policy_record.get("policy_version")
+                    != SOFTWARE_DEMO_POLICY_VERSION
+                ):
+                    errors.append("Creative Software Demo Policy version mismatch")
+                if (
+                    policy_record.get("sha256")
+                    != sha256_text(SOFTWARE_DEMO_POLICY)
+                ):
+                    errors.append("Creative Software Demo Policy hash mismatch")
+                if policy_record.get("source") != "controller":
+                    errors.append("Creative Software Demo Policy source mismatch")
+                try:
+                    policy_text = (
+                        hub.run_dir / "input" / "software-demo-policy.json"
+                    ).read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    errors.append(
+                        f"Creative Software Demo Policy cannot be read: {exc}"
+                    )
+                else:
+                    if policy_text != SOFTWARE_DEMO_POLICY:
+                        errors.append(
+                            "Creative Software Demo Policy bytes changed"
+                        )
+            policy_digest = sha256_text(SOFTWARE_DEMO_POLICY)[:12]
+            software_policy_block = (
+                f"<BEGIN_SOFTWARE_DEMO_POLICY_{policy_digest}>\n"
+                f"{SOFTWARE_DEMO_POLICY}\n"
+                f"<END_SOFTWARE_DEMO_POLICY_{policy_digest}>"
+            )
+
         try:
             events = read_jsonl(hub.events_path)
         except (OSError, StateError) as exc:
@@ -502,10 +573,14 @@ class CreativeRunContract:
             if not isinstance(raw, dict):
                 continue
             stage = raw.get("stage")
-            if not isinstance(stage, str) or stage not in creative_prompt_catalog:
+            if (
+                route_prompt_catalog is None
+                or not isinstance(stage, str)
+                or stage not in route_prompt_catalog
+            ):
                 errors.append(f"Creative task {task_id} has unsupported stage")
                 continue
-            spec = creative_prompt_catalog[stage]
+            spec = route_prompt_catalog[stage]
             if raw.get("web_search") is not spec.web_search:
                 errors.append(f"Creative task {task_id} web policy mismatch")
             if bool(raw.get("web_search")) != (
@@ -514,6 +589,78 @@ class CreativeRunContract:
                 errors.append(
                     f"Creative task {task_id} violates novelty-only web policy"
                 )
+            if contract_version == "2":
+                policy_stages = {
+                    "creative-brief-normalize",
+                    "creative-territory-explore",
+                    "creative-concept-synthesize",
+                    "creative-cheap-hook-review",
+                    "creative-software-demo-review",
+                    "creative-cheap-hook-repair",
+                    "creative-memory-remix",
+                    "creative-evidence-revise",
+                    "creative-portfolio-curate",
+                }
+                parent_refs = raw.get("parent_refs")
+                if not isinstance(parent_refs, list):
+                    errors.append(
+                        f"Creative task {task_id} has invalid parent_refs"
+                    )
+                    parent_refs = []
+                policy_parent_count = parent_refs.count(
+                    "input:software_demo_policy"
+                )
+                expects_policy = stage in policy_stages
+                if expects_policy and policy_parent_count != 1:
+                    errors.append(
+                        f"Creative task {task_id} requires exactly one "
+                        "Software Demo Policy parent"
+                    )
+                if not expects_policy and policy_parent_count:
+                    errors.append(
+                        f"Creative task {task_id} received Software Demo Policy "
+                        "outside the stage allowlist"
+                    )
+                prompt = ""
+                prompt_path = raw.get("prompt_path")
+                if isinstance(prompt_path, str):
+                    try:
+                        prompt = hub.run_dir.joinpath(
+                            *Path(prompt_path).parts
+                        ).read_text(encoding="utf-8")
+                    except (OSError, UnicodeError) as exc:
+                        errors.append(
+                            f"Creative task {task_id} Prompt cannot be read: {exc}"
+                        )
+                else:
+                    errors.append(
+                        f"Creative task {task_id} has no persisted Prompt"
+                    )
+                marker_count = prompt.count(
+                    "<BEGIN_SOFTWARE_DEMO_POLICY_"
+                )
+                end_marker_count = prompt.count(
+                    "<END_SOFTWARE_DEMO_POLICY_"
+                )
+                exact_count = (
+                    prompt.count(software_policy_block)
+                    if software_policy_block is not None
+                    else 0
+                )
+                if expects_policy and (
+                    exact_count != 1
+                    or marker_count != 1
+                    or end_marker_count != 1
+                ):
+                    errors.append(
+                        f"Creative task {task_id} does not contain exactly one "
+                        "frozen Software Demo Policy block"
+                    )
+                if not expects_policy and (marker_count or end_marker_count):
+                    errors.append(
+                        f"Creative task {task_id} Prompt contains Software Demo "
+                        "Policy outside the stage allowlist"
+                    )
             failure_policy = raw.get("failure_policy", "fatal")
             if failure_policy == "optional_branch" and stage not in {
                 "creative-memory-recall",
@@ -541,6 +688,7 @@ class CreativeRunContract:
                 "creative-territory-explore",
                 "creative-concept-synthesize",
                 "creative-cheap-hook-review",
+                "creative-software-demo-review",
             }:
                 parent_refs = raw.get("parent_refs", [])
                 if isinstance(parent_refs, list) and any(
@@ -1026,6 +1174,240 @@ class CreativeRunContract:
         if any(count > 1 for count in terminal_counts.values()):
             errors.append("Creative Concept revision has multiple terminal dispositions")
 
+        hook_review_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_cheap_hook_review"
+        }
+        feasibility_review_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_software_demo_review"
+        }
+        if contract_version == "2":
+            all_review_refs = set(hook_review_records) | set(
+                feasibility_review_records
+            )
+
+            def validate_review_task(
+                *,
+                artifact_id: str,
+                record: Mapping[str, Any],
+                concept_ref: str,
+                expected_stage: str,
+            ) -> str | None:
+                source_refs = record.get("source_refs")
+                if source_refs != [concept_ref]:
+                    errors.append(
+                        f"Concept Screen review {artifact_id} has invalid "
+                        "Concept source"
+                    )
+                task_id = record.get("task_id")
+                task_record = (
+                    tasks.get(task_id) if isinstance(task_id, str) else None
+                )
+                if (
+                    not isinstance(task_record, dict)
+                    or task_record.get("stage") != expected_stage
+                    or task_record.get("status") != "succeeded"
+                    or task_record.get("web_search") is not False
+                ):
+                    errors.append(
+                        f"Concept Screen review {artifact_id} has no fresh "
+                        "successful non-networked task"
+                    )
+                    return None
+                parent_refs = task_record.get("parent_refs")
+                if not isinstance(parent_refs, list):
+                    errors.append(
+                        f"Concept Screen task {task_id} has invalid parent refs"
+                    )
+                    return str(task_id)
+                expected_artifact_parent_types = {
+                    "creative_constraint_view",
+                    "creative_brief",
+                }
+                actual_artifact_parent_types = {
+                    artifacts[reference].get("artifact_type")
+                    for reference in parent_refs
+                    if isinstance(reference, str)
+                    and isinstance(artifacts.get(reference), dict)
+                    and reference != concept_ref
+                }
+                if (
+                    len(parent_refs) != 4
+                    or parent_refs.count(concept_ref) != 1
+                    or parent_refs.count("input:software_demo_policy") != 1
+                    or actual_artifact_parent_types
+                    != expected_artifact_parent_types
+                    or any(
+                        reference in all_review_refs
+                        for reference in parent_refs
+                    )
+                ):
+                    errors.append(
+                        f"Concept Screen task {task_id} has non-isolated inputs"
+                    )
+                return str(task_id)
+
+            for artifact_id, record in hook_review_records.items():
+                source_refs = record.get("source_refs")
+                concept_ref = (
+                    source_refs[0]
+                    if isinstance(source_refs, list)
+                    and len(source_refs) == 1
+                    and isinstance(source_refs[0], str)
+                    else ""
+                )
+                if concept_ref not in concepts:
+                    errors.append(
+                        f"Hook review {artifact_id} has invalid Concept source"
+                    )
+                    continue
+                validate_review_task(
+                    artifact_id=artifact_id,
+                    record=record,
+                    concept_ref=concept_ref,
+                    expected_stage="creative-cheap-hook-review",
+                )
+
+            for artifact_id, record in feasibility_review_records.items():
+                source_refs = record.get("source_refs")
+                concept_ref = (
+                    source_refs[0]
+                    if isinstance(source_refs, list)
+                    and len(source_refs) == 1
+                    and isinstance(source_refs[0], str)
+                    else ""
+                )
+                if concept_ref not in concepts:
+                    errors.append(
+                        f"Software Demo review {artifact_id} has invalid "
+                        "Concept source"
+                    )
+                    continue
+                metadata = record.get("metadata")
+                if (
+                    not isinstance(metadata, dict)
+                    or metadata.get("concept_revision_ref") != concept_ref
+                    or metadata.get("policy_version")
+                    != SOFTWARE_DEMO_POLICY_VERSION
+                ):
+                    errors.append(
+                        f"Software Demo review {artifact_id} has stale metadata"
+                    )
+                validate_review_task(
+                    artifact_id=artifact_id,
+                    record=record,
+                    concept_ref=concept_ref,
+                    expected_stage="creative-software-demo-review",
+                )
+
+            for concept_ref, routing in sorted(c4_routing.items()):
+                if len(routing) != 1:
+                    continue
+                evidence_refs = routing[0].get("evidence_refs")
+                if not isinstance(evidence_refs, list):
+                    errors.append(
+                        f"C4 routing {concept_ref} has no evidence_refs"
+                    )
+                    continue
+                source_hook_refs = [
+                    ref
+                    for ref, record in hook_review_records.items()
+                    if record.get("source_refs") == [concept_ref]
+                ]
+                source_feasibility_refs = [
+                    ref
+                    for ref, record in feasibility_review_records.items()
+                    if record.get("source_refs") == [concept_ref]
+                ]
+                if (
+                    len(source_hook_refs) != 2
+                    or len(set(source_hook_refs)) != 2
+                ):
+                    errors.append(
+                        f"C4 routing {concept_ref} requires two Hook reviews"
+                    )
+                if len(source_feasibility_refs) != 1:
+                    errors.append(
+                        f"C4 routing {concept_ref} requires one Software Demo review"
+                    )
+                if (
+                    len(evidence_refs) != 3
+                    or set(evidence_refs)
+                    != set(source_hook_refs) | set(source_feasibility_refs)
+                ):
+                    errors.append(
+                        f"C4 routing {concept_ref} does not bind its exact fresh "
+                        "2+1 review batch"
+                    )
+                revision_metadata = concepts[concept_ref].get("metadata")
+                revision = (
+                    revision_metadata.get("revision")
+                    if isinstance(revision_metadata, dict)
+                    else None
+                )
+                expected_cycle = 1 if revision == 1 else 2 if revision == 2 else None
+                hook_slots: set[int] = set()
+                review_task_ids: list[str] = []
+                for hook_ref in source_hook_refs:
+                    hook_record = hook_review_records[hook_ref]
+                    metadata = hook_record.get("metadata")
+                    if not isinstance(metadata, dict):
+                        errors.append(
+                            f"Hook review {hook_ref} has no metadata"
+                        )
+                        continue
+                    cycle = metadata.get("cycle")
+                    slot = metadata.get("reviewer_slot")
+                    if (
+                        metadata.get("concept_revision_ref") != concept_ref
+                        or cycle != expected_cycle
+                        or type(slot) is not int
+                    ):
+                        errors.append(
+                            f"Hook review {hook_ref} has stale cycle/slot metadata"
+                        )
+                    else:
+                        hook_slots.add(slot)
+                    task_id = hook_record.get("task_id")
+                    if isinstance(task_id, str):
+                        review_task_ids.append(task_id)
+                if hook_slots != {1, 2}:
+                    errors.append(
+                        f"C4 routing {concept_ref} requires reviewer slots 1 and 2"
+                    )
+                for feasibility_ref in source_feasibility_refs:
+                    feasibility_record = feasibility_review_records[
+                        feasibility_ref
+                    ]
+                    metadata = feasibility_record.get("metadata")
+                    if (
+                        not isinstance(metadata, dict)
+                        or metadata.get("cycle") != expected_cycle
+                    ):
+                        errors.append(
+                            f"Software Demo review {feasibility_ref} has stale cycle"
+                        )
+                    task_id = feasibility_record.get("task_id")
+                    if isinstance(task_id, str):
+                        review_task_ids.append(task_id)
+                task_refs = routing[0].get("task_refs")
+                if (
+                    len(review_task_ids) != 3
+                    or len(set(review_task_ids)) != 3
+                    or not isinstance(task_refs, list)
+                    or len(task_refs) != 3
+                    or set(task_refs) != set(review_task_ids)
+                ):
+                    errors.append(
+                        f"C4 routing {concept_ref} does not bind three distinct "
+                        "fresh review tasks"
+                    )
+
         novelty_records = {
             str(artifact_id): record
             for artifact_id, record in artifacts.items()
@@ -1104,6 +1486,17 @@ class CreativeRunContract:
                 errors.append(
                     f"C6A Concept {artifact_id} has no bound source Novelty Scan"
                 )
+            if contract_version == "2":
+                c6a_feasibility_ref = metadata.get(
+                    "software_demo_review_ref"
+                )
+                if (
+                    not isinstance(c6a_feasibility_ref, str)
+                    or c6a_feasibility_ref not in feasibility_review_records
+                ):
+                    errors.append(
+                        f"C6A Concept {artifact_id} has no bound Software Demo review"
+                    )
             source_dispositions = [
                 row
                 for row in dispositions_by_concept.get(str(source_ref), [])
@@ -1183,6 +1576,39 @@ class CreativeRunContract:
                     errors.append(
                         f"Portfolio curation {artifact_id} has invalid decision"
                     )
+                if contract_version == "2":
+                    dimensions = row.get("dimensions")
+                    if not isinstance(dimensions, list):
+                        errors.append(
+                            f"Portfolio curation {artifact_id} has no dimensions"
+                        )
+                    else:
+                        names = tuple(
+                            dimension.get("dimension")
+                            for dimension in dimensions
+                            if isinstance(dimension, dict)
+                        )
+                        verdicts = tuple(
+                            dimension.get("verdict")
+                            for dimension in dimensions
+                            if isinstance(dimension, dict)
+                        )
+                        expected_decision = (
+                            "exclude"
+                            if "fail" in verdicts
+                            else "hold"
+                            if "uncertain" in verdicts
+                            else "include"
+                        )
+                        if (
+                            names != PORTFOLIO_DIMENSIONS
+                            or len(verdicts) != len(PORTFOLIO_DIMENSIONS)
+                            or decision != expected_decision
+                        ):
+                            errors.append(
+                                f"Portfolio curation {artifact_id} violates "
+                                "categorical decision contract"
+                            )
                 if "primary_territory_ref" in row or "score" in row:
                     errors.append(
                         f"Portfolio curation {artifact_id} rewrites controller data"
@@ -1389,7 +1815,11 @@ class CreativeRunContract:
                 expected_reason = (
                     "no_concepts_generated"
                     if base_count + memory_count == 0
-                    else "all_candidates_failed_hook"
+                    else (
+                        "all_candidates_failed_concept_screen"
+                        if contract_version == "2"
+                        else "all_candidates_failed_hook"
+                    )
                     if not hook_passed
                     else "shortlist_empty"
                 )
@@ -1739,7 +2169,12 @@ def get_run_contract(
             f"route {route_id!r} does not support run schema {schema_version}"
         )
     contract_version = route.get("contract_version")
-    if contract_version != contract.contract_version:
+    supported_contract_versions = getattr(
+        contract,
+        "supported_contract_versions",
+        frozenset({contract.contract_version}),
+    )
+    if contract_version not in supported_contract_versions:
         raise RouteContractError(
             f"unsupported {route_id!r} contract version: {contract_version!r}"
         )
@@ -2910,6 +3345,7 @@ def _validate_success_report_payload(
     if zero_reason in {
         "no_concepts_generated",
         "all_candidates_failed_hook",
+        "all_candidates_failed_concept_screen",
         "shortlist_empty",
     } and batch_reason != zero_reason:
         errors.append("zero-Idea report does not match its empty review batch")

@@ -38,8 +38,9 @@ Card 唯一授权、显式不可逆 close、默认两 active、FIFO queue。
       handoff。
 - [x] Creative adapter：要求 completed + frozen C7 closure；按 C7 authority 读取
       Cards，加载并复核现有 exact handoff artifacts。
-- [x] zero-card 输出合法空 catalog；waiting/failed/incomplete/v1/unknown/tampered
-      均 fail closed、零写入。
+- [x] zero-card 输出合法空 catalog；waiting/failed/incomplete/run-schema-v1/
+      unknown/tampered 均 fail closed、零写入；route contract 显式支持 Useful v1
+      与 Creative v1/v2。
 - [x] catalog 首次原子冻结；重开时重新投影并要求 exact match。
 
 ### 1.3 Tests
@@ -349,6 +350,18 @@ run mutation、无 duplicate Team。
   `AGENTS.md` 非空而 unhealthy。对应真实 E2E 条目保持未勾选；核验后 Docker
   Desktop 已关闭，且未复制 runtime credential。
 
+### 7.6 main 合并回归（2026-07-25）
+
+- 合并 main 后补充 Creative route contract v2 的 post-card 与 Build ingestion
+  allowlist；保留 frozen Creative v1 和 Useful v1，并以 current Creative workflow
+  projection 及 Build route/version 正反例锁定兼容性。
+- 保留 main 的 Creative software-first v2、Pitch CLI/resources、Build shared
+  system prompt、六小时 Worker turn timeout/cleanup，以及 legacy role/Skill/mail
+  Compose 清理。
+- Root `unittest discover` 329 tests、BuildFactory `pytest` 375 tests 全通过；
+  Ruff、mypy（40 source files）、compileall、Node syntax、Compose config 与
+  staged/unstaged `git diff --check` 全通过。
+
 ## 8. Suggested commit sequence and PR handoff
 
 1. `post-card catalog contracts and route adapters`
@@ -358,7 +371,7 @@ run mutation、无 duplicate Team。
 5. `connect approval outbox to build operator`
 6. `prove joined routes and document operations`
 
-每个 commit 都应可运行相关局部测试。最终先推
-`codex/idea-card-build-approval` 并创建 draft PR 到
-`codex/creative-review-loop`；待 Creative base 合入后，重新检查 diff 再 retarget
-main。不要在未通过真实/模拟边界验证时把 PR 标为 ready。
+每个 commit 都应可运行相关局部测试。当前分支
+`codex/idea-card-build-approval` 已改为面向上游 `main` 的 Draft PR，并以普通
+merge 吸收最新 main；后续主线漂移继续使用 main-first 冲突处理和完整回归。不要在
+未通过真实 joined E2E 与剩余 Browser matrix 时把 PR 标为 ready。

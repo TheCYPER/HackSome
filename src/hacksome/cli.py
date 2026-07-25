@@ -47,6 +47,12 @@ from hacksome.creative.workflow import (
 )
 from hacksome.hub import RunHub
 from hacksome.models import CodexDoctorResult
+from hacksome.pitch import (
+    PITCH_MODEL,
+    PITCH_REASONING_EFFORT,
+    PitchWorkflow,
+    PitchWorkflowError,
+)
 from hacksome.post_card.catalog import (
     PostCardCatalogError,
     project_post_card_catalog,
@@ -185,6 +191,52 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_float,
         default=defaults.run_timeout_seconds,
         metavar="SECONDS",
+    )
+
+    pitch = commands.add_parser(
+        "pitch",
+        help="create a Pitch from one completed Project snapshot",
+    )
+    pitch.add_argument(
+        "--project",
+        type=Path,
+        required=True,
+        help="completed Project directory to copy",
+    )
+    pitch.add_argument(
+        "--idea-card",
+        type=Path,
+        required=True,
+        help="Idea Card Markdown file",
+    )
+    pitch.add_argument(
+        "--challenge",
+        type=Path,
+        required=True,
+        help="original hackathon challenge file",
+    )
+    pitch.add_argument(
+        "--output-root",
+        type=Path,
+        required=True,
+        help="new directory for this Pitch run",
+    )
+    pitch.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
+    pitch.add_argument(
+        "--infrastructure-retries",
+        type=_non_negative_int,
+        default=codex_defaults.infrastructure_retries,
+    )
+    pitch.add_argument(
+        "--task-timeout",
+        type=_positive_float,
+        default=codex_defaults.default_timeout_seconds,
+        metavar="SECONDS",
+    )
+    pitch.add_argument(
+        "--browser",
+        type=Path,
+        help="Chromium-family executable for the final browser smoke",
     )
 
     status = commands.add_parser("status", help="inspect a saved run")
@@ -417,6 +469,31 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     if args.route == "creative":
         return _run_creative_command(args, challenge)
     return _run_useful_command(args, challenge)
+
+
+def _pitch_command(args: argparse.Namespace) -> int:
+    config = CodexConfig(
+        executable=args.codex,
+        infrastructure_retries=args.infrastructure_retries,
+        default_timeout_seconds=args.task_timeout,
+        model=PITCH_MODEL,
+        reasoning_effort=PITCH_REASONING_EFFORT,
+    )
+    workflow = PitchWorkflow.create(
+        args.project,
+        args.idea_card,
+        args.challenge,
+        args.output_root,
+        codex_config=config,
+        browser_executable=args.browser,
+        task_timeout_seconds=args.task_timeout,
+    )
+    print(f"Pitch run directory: {workflow.run_dir}")
+    outcome = asyncio.run(workflow.execute())
+    print(f"Deck outline: {outcome.deck_outline}")
+    print(f"Pitch deck: {outcome.pitch_deck}")
+    print(f"Pitch script: {outcome.pitch_script}")
+    return 0
 
 
 def _print_creative_outcome(outcome: CreativeRunOutcome) -> int:
@@ -1135,6 +1212,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "run":
             return _run_command(args, parser)
+        if args.command == "pitch":
+            return _pitch_command(args)
         if args.command == "status":
             return _status_command(args)
         if args.command == "validate":
@@ -1165,6 +1244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         StateError,
         ValueError,
         WorkflowError,
+        PitchWorkflowError,
         CreativeWorkflowError,
         CreativeFeedbackError,
         ApprovalError,

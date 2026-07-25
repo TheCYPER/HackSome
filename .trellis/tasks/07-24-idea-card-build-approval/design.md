@@ -155,7 +155,9 @@ catalog 与后续 authorization envelope 中出现，不能加入 handoff v1。
 ### 4.2 Catalog 创建与重开
 
 1. 调用现有 route-aware `validate_run()`，要求 schema v2、`completed`、无离线错误。
-2. 按 persisted route ID/version 选择唯一 adapter；未知组合 fail closed。
+2. 按 persisted route ID/version 选择唯一 adapter；未知组合 fail closed。当前
+   显式支持 Useful v1，以及 Creative 的 frozen v1 与 main 当前 v2；这不是对未来
+   route version 的自动兼容承诺。
 3. adapter 读取并复核 exact artifact bytes/hash，输出稳定 Card 顺序。
 4. 共享 decoder 验证 catalog/Card/handoff 不变量并计算 catalog hash。
 5. 若不存在 `catalog.json`，原子写入；若已存在，重新投影并要求 byte-for-byte
@@ -617,10 +619,11 @@ team_operator resume    --build-root ... TEAM_ID --request-id ...
 - Creative exact five-field handoff 保持不变。
 - 新状态全部位于 source run 外部；删除/禁用 Approval 功能不会使原 run 无法
   `status/validate`。
-- 首版仅支持 completed schema v2 run；不自动迁移 Useful v1。
+- 首版仅支持 completed run schema v2；不自动迁移 Useful run schema v1。route
+  contract 则显式支持 Useful v1 与 Creative v1/v2。
 - 现有手工 `buildfactory make init/up` 可继续使用，但不会自动进入新 registry。
-- 本分支基于 `codex/creative-review-loop`，首个 PR 以该分支为 base；Creative 合入
-  main 后再 retarget/rebase，避免复制尚未落在 main 的 C7 合同。
+- 当前分支已以 main-first 的普通 merge 吸收上游 `main`，Draft PR 直接以
+  `west0nG/HackSome:main` 为 base；不得 rebase/force-push 改写已经发布的分支历史。
 
 ## 14. Validation strategy
 

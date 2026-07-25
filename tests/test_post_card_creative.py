@@ -54,6 +54,7 @@ class CreativePostCardTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(completed.status, "completed")
 
             catalog = project_post_card_catalog(workflow.run_dir)
+            self.assertEqual(catalog.source.route_contract_version, "2")
             self.assertEqual(len(catalog.cards), len(review_round.concepts))
             for card in catalog.cards:
                 self.assertIsNotNone(card.route_handoff_ref)

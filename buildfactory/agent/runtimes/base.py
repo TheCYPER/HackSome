@@ -90,6 +90,7 @@ class RunResult:
     ok: bool
     text: str                             # final assistant message
     error: str | None
+    timed_out: bool = False               # caller must retire any dedicated execution container
     session_token: str | None = None      # next RunRequest.resume_token; None = don't persist
     cost_usd: float | None = None         # codex has no dollar field → always None there
     usage: dict | None = None             # token counts, each CLI's native shape

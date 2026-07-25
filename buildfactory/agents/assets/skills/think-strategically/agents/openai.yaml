@@ -1,4 +1,0 @@
-interface:
-  display_name: "Think Strategically"
-  short_description: "Route CEO decisions through deliberate strategic reasoning"
-  default_prompt: "Use $think-strategically, make a real call to at least one cognitive atom, and examine what this situation changes before deciding what to do."

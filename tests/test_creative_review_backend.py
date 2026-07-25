@@ -68,6 +68,7 @@ class CreativeReviewBackendTests(unittest.IsolatedAsyncioTestCase):
                 include_team_wall=True,
             )
             self.assertEqual(before["run_id"], workflow.hub.run_id)
+            self.assertEqual(before["schema_version"], 2)
             self.assertEqual(before["round"]["sha256"], backend.round.round_sha256)
             self.assertEqual(
                 [item["concept_ref"] for item in before["concepts"]],
@@ -75,6 +76,16 @@ class CreativeReviewBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(all(item["hook"] for item in before["concepts"]))
             self.assertTrue(all(item["novelty"] for item in before["concepts"]))
+            self.assertTrue(
+                all(item["software_core_and_runtime"] for item in before["concepts"])
+            )
+            self.assertTrue(
+                all(item["share_trigger_and_artifact"] for item in before["concepts"])
+            )
+            self.assertNotIn(
+                "feasibility_evidence",
+                json.dumps(before, ensure_ascii=False),
+            )
             self.assertNotIn("team_wall", before)
             self.assertNotIn("curation", before)
 
@@ -103,6 +114,9 @@ class CreativeReviewBackendTests(unittest.IsolatedAsyncioTestCase):
                 include_team_wall=True,
             )
             self.assertEqual(len(after["team_wall"]), 1)
+            wall_signal = after["team_wall"][0]["concept_reviews"][0]
+            self.assertEqual(wall_signal["share_impulse"], "immediate")
+            self.assertEqual(wall_signal["demo_confidence"], "yes")
 
             curator = backend.snapshot(
                 role="curator",
@@ -110,11 +124,24 @@ class CreativeReviewBackendTests(unittest.IsolatedAsyncioTestCase):
                 include_team_wall=True,
             )
             self.assertEqual(len(curator["curation"]["receipts"]), 1)
+            curator_signal = curator["curation"]["receipts"][0]["concept_reviews"][0]
+            self.assertEqual(curator_signal["share_impulse"], "immediate")
+            self.assertEqual(curator_signal["demo_confidence"], "yes")
             self.assertEqual(
                 len(curator["curation"]["coverage"]),
                 len(backend.round.concepts),
             )
             self.assertTrue(curator["curation"]["feedback_fragments"])
+            self.assertEqual(
+                len(curator["curation"]["feasibility_evidence"]),
+                len(backend.round.concepts),
+            )
+            self.assertTrue(
+                all(
+                    row["dimensions"]
+                    for row in curator["curation"]["feasibility_evidence"]
+                )
+            )
             self.assertTrue(curator["curation"]["resolution_controls"]["can_close"])
 
             resolution_payload = _resolution_payload(

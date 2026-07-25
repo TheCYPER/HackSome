@@ -25,7 +25,9 @@ hacksome = [
   "prompts/*.md",
   "prompts/creative/*.md",
   "build_approval_ui/*",
+  "prompts/pitch/*.md",
   "review_ui/*",
   "schemas/*.json",
   "schemas/creative/*.json",
+  "schemas/pitch/*.json",
 ]

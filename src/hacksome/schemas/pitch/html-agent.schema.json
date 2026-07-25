@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "artifact", "browser_check"],
+  "properties": {
+    "status": {"type": "string", "const": "completed"},
+    "artifact": {"type": "string", "const": "pitch-deck.html"},
+    "browser_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opened", "keyboard_navigation", "checked_slide_ids"],
+      "properties": {
+        "opened": {"type": "boolean", "const": true},
+        "keyboard_navigation": {"type": "boolean", "const": true},
+        "checked_slide_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

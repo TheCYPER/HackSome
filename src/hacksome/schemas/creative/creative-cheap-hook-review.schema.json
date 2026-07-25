@@ -10,8 +10,8 @@
     },
     "dimensions": {
       "type": "array",
-      "minItems": 6,
-      "maxItems": 6,
+      "minItems": 7,
+      "maxItems": 7,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -25,7 +25,8 @@
               "mechanism_driven_surprise",
               "thirty_second_moment",
               "one_sentence_retell",
-              "capability_integrity"
+              "capability_integrity",
+              "share_trigger"
             ]
           },
           "verdict": {
@@ -41,7 +42,8 @@
               "surprise_not_mechanism_driven",
               "misses_thirty_second_moment",
               "not_one_sentence_retainable",
-              "requires_hidden_labor_or_impossible_capability"
+              "requires_hidden_labor_or_impossible_capability",
+              "share_trigger_not_immediate_or_concrete"
             ]
           },
           "evidence": {"type": "string", "minLength": 1}

@@ -144,6 +144,68 @@ def test_missing_first_token_is_recorded_without_replacing_worker(tmp_path):
     assert len(backend.created) == 1
 
 
+def test_timeout_retires_container_and_recreates_before_same_session_resume(tmp_path):
+    backend = FakeBackend()
+    backend.results.append(
+        RunResult(
+            ok=False,
+            text="",
+            error="timeout",
+            timed_out=True,
+            session_token="session-timeout",
+        )
+    )
+    manager = _manager(tmp_path, backend)
+    launch = _launch()
+    manager.create_worker(launch)
+
+    result = manager.run_worker(launch.worker_id, "first", resume=False)
+
+    assert result.timed_out is True
+    assert len(backend.stopped) == 1
+    timed_out = manager.get(launch.worker_id)
+    assert timed_out["state"] == "missing"
+    assert timed_out["session_token"] == "session-timeout"
+    assert timed_out["last_result"]["timed_out"] is True
+
+    manager.create_worker(launch)
+    backend.results.append(
+        RunResult(
+            ok=True,
+            text="fixed",
+            error=None,
+            session_token="session-timeout",
+        )
+    )
+    manager.run_worker(launch.worker_id, "feedback", resume=True)
+
+    assert len(backend.created) == 2
+    assert backend.runs[-1][2] == "session-timeout"
+
+
+def test_reconcile_retires_orphaned_turn_before_command_replay(tmp_path):
+    backend = FakeBackend()
+    first_manager = _manager(tmp_path, backend)
+    launch = _launch()
+    first_manager.create_worker(launch)
+    row = first_manager.get(launch.worker_id)
+    row["state"] = "running"
+    first_manager._save(row)
+    restarted_manager = WorkerManager(
+        first_manager.root,
+        company_id=first_manager.company_id,
+        company_dir=first_manager.company_dir,
+        backend=backend,
+        max_workers=first_manager.max_workers,
+    )
+
+    changes = restarted_manager.reconcile()
+
+    assert changes == [{"worker_id": launch.worker_id, "state": "missing"}]
+    assert backend.stopped[-1].worker_id == launch.worker_id
+    assert restarted_manager.get(launch.worker_id)["state"] == "missing"
+
+
 def test_manager_enforces_hard_five_limit_independently(tmp_path):
     backend = FakeBackend()
     manager = _manager(tmp_path, backend, max_workers=2)

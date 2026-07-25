@@ -162,3 +162,35 @@ def test_run_task_extra_env_cannot_override_credentials(monkeypatch):
     cmd = captured["cmd"]
     assert "ANTHROPIC_API_KEY=leak" not in cmd
     assert "GOAL_ID=goal-1" in cmd
+
+
+def test_timeout_preserves_partial_codex_session_for_safe_resume(monkeypatch):
+    partial = (
+        b'{"type":"thread.started","thread_id":"thread-timeout"}\n'
+        b'{"type":"turn.started"}\n'
+    )
+
+    def fake_run(cmd, **kw):
+        raise subprocess.TimeoutExpired(
+            cmd,
+            kw["timeout"],
+            output=partial,
+            stderr=b"still running",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    spec = AgentSpec(
+        name="t",
+        provider="codex",
+        credentials="subscription",
+        mcp_config=None,
+    )
+
+    result = run_task(spec, "long turn", container="worker-1", timeout=1)
+
+    assert result.ok is False
+    assert result.error == "timeout"
+    assert result.timed_out is True
+    assert result.session_token == "thread-timeout"
+    assert "thread.started" in result.raw_output
+    assert result.stderr == "still running"

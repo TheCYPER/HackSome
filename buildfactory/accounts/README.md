@@ -1,9 +1,10 @@
 # Account Provisioning Contract
 
-`accounts/<id>/` 是一个公司的外部账号包。`make up` 会把
-`accounts/${ACCOUNT:-${COMPANY}}/secrets.env` 作为 env file 注入五个常驻
-agent，并把整个目录只读挂载到容器内 `/account`。缺目录、缺文件或缺 token 都
-必须是合法状态：CLI 会保持未认证，agent 启动不应失败。
+`accounts/<id>/` 是一个 Team 的外部账号包。`make up` 会把
+`accounts/${ACCOUNT:-foundagent}/secrets.env` 作为 env file 注入 resident Lead，
+Worker/Verifier manager 也会把同一账号包交给动态 Agent，并把目录只读挂载到
+容器内 `/account`。缺目录、缺文件或缺 token 都必须是合法状态：CLI 会保持
+未认证，Agent 启动不应失败。
 
 ## 文件布局
 
@@ -33,21 +34,20 @@ CLOUDFLARE_API_TOKEN=
 # 可选：Wrangler 在无 wrangler.jsonc/account_id 的非交互环境里可能需要。
 CLOUDFLARE_ACCOUNT_ID=
 
-# GA4 / Google Search Console MCP（ceo/growth 的 ga4 server + researcher 的
-# gsc server 共用同一个 service account，见下方 "Google Service Account"）。
+# GA4 / Google Search Console MCP（Lead/Worker 共用同一个 service account，
+# 见下方 "Google Service Account"）。
 GOOGLE_APPLICATION_CREDENTIALS=/account/google-sa.json
 
-# GA4 Admin API provisioning。人工创建 GA4 account 后，把 account id 写这里；
-# 首个站点上线时由 agent 用 provision-ga4 skill 创建 property + web data stream。
+# GA4 Admin API。人工创建 GA4 account 后，把 account id 写这里。
 GA4_ACCOUNT_ID=
 
-# DataForSEO MCP（researcher）。控制台 https://app.dataforseo.com/api-access
+# DataForSEO MCP（Lead/Worker）。控制台 https://app.dataforseo.com/api-access
 # 生成的 API 凭证（Basic auth 用户名/密码，不是登录密码）。
 # pay-as-you-go，$50 起充；缺省时 dataforseo server 连接失败，其余不受影响。
 DATAFORSEO_USERNAME=
 DATAFORSEO_PASSWORD=
 
-# Stripe MCP（全员）。Stripe Dashboard → Developers → API keys 的完整
+# Stripe MCP（Lead/Worker）。Stripe Dashboard → Developers → API keys 的完整
 # secret key（sk_live_...，非 restricted key，07-09 拍板）。
 # 缺省时 stripe server 连接失败，其余不受影响。见下方 "Stripe" 一节。
 STRIPE_SECRET_KEY=
@@ -91,8 +91,7 @@ STRIPE_SECRET_KEY=
 
 ## Google Service Account
 
-GA4 MCP（ceo/growth）和 Search Console MCP（researcher）共用同一个
-service account：
+GA4 MCP 和 Search Console MCP 由 Lead/Worker 共用同一个 service account：
 
 1. GCP 项目里创建 service account，启用 Google Analytics Data API、
    Google Analytics Admin API、Search Console API。
@@ -102,16 +101,15 @@ service account：
 4. **GA4**：analytics.google.com 里人工创建 GA4 account（这一步含 ToS，
    不能由 service account 代签），在 Account access management 把 SA 邮箱
    （`xxx@<project>.iam.gserviceaccount.com`）加为 Editor，并把 account id
-   写入 `secrets.env` 的 `GA4_ACCOUNT_ID`。之后每个新站点由
-   `provision-ga4` skill 创建 property + web data stream，拿到
-   `measurementId` 后埋入站点。
+   写入 `secrets.env` 的 `GA4_ACCOUNT_ID`。仓库不再附带 GA4 provisioning
+   Skill；需要创建 property/data stream 时，由 Worker 通过现有工具或 API 完成。
 5. **GSC**：Search Console 添加 Domain property `foundagent.net`，按 UI 给出的
    TXT 值在 Cloudflare apex 保留一条 `google-site-verification=...` TXT，然后
    在 Settings → Users and permissions 把同一个 SA 邮箱加为 Full 用户。这一步
    不做的话 gsc server 能起但列不到任何属性。
 
-验证：researcher 容器内 claude 会话里 `/mcp` 看 gsc/dataforseo 连接状态；
-ceo/growth 容器同理看 ga4。
+验证：Lead 容器内会话通过 MCP 检查 GSC、DataForSEO 与 GA4 连接状态；动态
+Worker 使用同一 MCP 配置和账号包。
 
 ## foundagent.net domain rail
 
@@ -119,8 +117,8 @@ ceo/growth 容器同理看 ga4。
 Domain property 验证根域，覆盖 `foundagent.net` 及所有子域；新开
 `*.foundagent.net` 子域不需要再做 Google 侧动作。
 
-agent 侧规则（子域自助、项目命名/绑域规范、DNS 禁则）的单一事实源是
-`agents/assets/skills/deploy-site/SKILL.md`，本节不重复正文。
+仓库不再附带域名部署 Skill。需要绑域时，由 Worker 根据当前项目、DNS 所有权和
+本节安全边界执行，不能假设存在历史角色 Skill。
 
 ### 一次性 Google 前置状态
 
@@ -136,14 +134,14 @@ agent 侧规则（子域自助、项目命名/绑域规范、DNS 禁则）的单
 1. 注册 https://dataforseo.com/（pay-as-you-go，$50 起充）。
 2. 控制台 API Access 页取 API login/password（独立于网站登录密码）。
 3. 写入 `secrets.env` 的 `DATAFORSEO_USERNAME` / `DATAFORSEO_PASSWORD`。
-4. 验证：researcher 容器内 `/mcp` 看 dataforseo server 状态，或直接
+4. 验证：Lead 容器内通过 MCP 看 dataforseo server 状态，或直接
    `curl -u "$DATAFORSEO_USERNAME:$DATAFORSEO_PASSWORD"
    https://api.dataforseo.com/v3/appendix/user_data`。
 
 ## Stripe
 
-前置：Stripe 开户 + KYC 已人工完成（live 账户可收款）。MCP server 全员配置
-（五个 role 的 `agents/mcp/<role>.json` 均含 stripe）。
+前置：Stripe 开户 + KYC 已人工完成（live 账户可收款）。Lead/Worker 使用的
+`agents/mcp/ceo.json` 包含 Stripe；Verifier 的窄 MCP 配置不包含 Stripe。
 
 1. Stripe Dashboard → Developers → API keys，取 **secret key**（`sk_live_...`，
    点 Reveal 复制）。本 fleet 用完整 secret key 而非 restricted key
@@ -179,7 +177,7 @@ agent 的 playwright 浏览器（经 `agent/browser_mcp.sh` 包装启动）默�
    浏览器弹出后人工登录 X，**关闭浏览器时自动保存**。加 `--channel chrome`
    可直接用系统 Chrome，免下载 playwright 浏览器。
 2. 文件已被 `.gitignore` 覆盖（`accounts/*/cookies/`），不会进 git。
-3. 验证：growth 容器内 claude 会话里让浏览器打开 https://x.com，应显示
+3. 验证：Lead 或动态 Worker 会话里让浏览器打开 https://x.com，应显示
    已登录。
 
 ### 备选：浏览器扩展导出（2026-07-06 实测路线）
@@ -246,20 +244,20 @@ agent_loop 都看不到，所以查各自的 environ）：
 
 ```sh
 # computer-server 子树：应看到六个展开变量（外加 CUA_PROXY 本体）
-docker compose exec ceo sh -c \
+docker compose exec lead sh -c \
   'tr "\0" "\n" < /proc/$(pgrep -o -f computer_server)/environ | grep -i proxy'
-# agent_loop（claude 的父进程）：除 CUA_PROXY 本体外必须干净
-docker compose exec ceo sh -c \
-  'tr "\0" "\n" < /proc/$(pgrep -o -f orchestration.agent_loop)/environ | grep -i proxy'
+# lead_loop（模型进程的父进程）：除 CUA_PROXY 本体外必须干净
+docker compose exec lead sh -c \
+  'tr "\0" "\n" < /proc/$(pgrep -o -f orchestration.lead_loop)/environ | grep -i proxy'
 ```
 
 ## 冒烟命令
 
 ```sh
-docker compose exec builder gh auth status
-docker compose exec builder vercel whoami
-docker compose exec builder wrangler whoami
+docker compose exec lead gh auth status
+docker compose exec lead vercel whoami
+docker compose exec lead wrangler whoami
 ```
 
-没有 provisioned token 时，这些命令失败是正常的；不允许的是 `make up` 或五个
-常驻 agent 因缺 token 而启动失败。
+没有 provisioned token 时，这些命令失败是正常的；不允许的是 `make up` 或任一
+Team Agent 因缺 token 而启动失败。

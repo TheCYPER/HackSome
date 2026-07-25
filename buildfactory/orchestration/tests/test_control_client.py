@@ -12,8 +12,11 @@ from orchestration.control_client import (
 
 
 @pytest.fixture
-def live_hub(tmp_path):
-    hub = CompanyHub(tmp_path / "new-company")
+def live_hub(tmp_path, department_specs):
+    hub = CompanyHub(
+        tmp_path / "new-company",
+        department_specs_path=department_specs,
+    )
     hub.tick()
     server = HubHTTPServer(("127.0.0.1", 0), hub)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

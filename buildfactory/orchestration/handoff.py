@@ -18,6 +18,10 @@ from orchestration.runtime_store import StoreError
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _AUTHORIZATION_ID = re.compile(r"^auth-[0-9a-f]{32}$")
 _ROUTE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_SUPPORTED_ROUTE_CONTRACT_VERSIONS = {
+    "useful": frozenset({"1"}),
+    "creative": frozenset({"1", "2"}),
+}
 _HANDOFF_FIELDS = frozenset(
     {
         "source_run_id",
@@ -229,7 +233,7 @@ class BuildAuthorizationEnvelopeV1:
             label="source route_contract_version",
             max_chars=64,
         )
-        if route_version != "1":
+        if route_version not in _SUPPORTED_ROUTE_CONTRACT_VERSIONS[route_id]:
             raise HandoffError("source route contract version is unsupported")
         handoff = BuildHandoffV1.from_mapping(raw["handoff"])
         if authorization_id != handoff.authorization_id:

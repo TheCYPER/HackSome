@@ -475,6 +475,7 @@ class ReliableInbox(Protocol):
 
 def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                charter_path: str | None = None, mcp_config: str | None = None,
+               system_prompt: str | None = None,
                model=UNSET, effort=UNSET, provider: str | None = None,
                inbox: ReliableInbox,
                session_mode: str = "fresh", idle: str = "stop",
@@ -494,7 +495,11 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
     resume = session_mode == "resume"
     fresh = not resume
     session_id = load_session(session_file) if resume else None
-    charter = _read_charter(charter_path)
+    # Normal resident startup uses AgentSpec's fully assembled system prompt.
+    # AGENT_CHARTER remains an explicit operator/debug override, but a stale
+    # path or empty file must not erase the production prompt.
+    override_prompt = _read_charter(charter_path)
+    charter = override_prompt if override_prompt is not None else system_prompt
     print(f"[agent_loop:{key}] start heartbeat={heartbeat}s "
           f"session={'fresh-per-wake' if fresh else (session_id or '(new)')}",
           flush=True)
@@ -627,8 +632,8 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
 
 def _role_config(key: str) -> tuple:
     """Resolve (provider, model, effort, mcp_config, session_mode, idle,
-    strategic) from the fixed AgentSpec selected by ``AGENT_SPEC`` (falling
-    back to ``agents/<AGENT_KEY>.yaml``).
+    strategic, system_prompt) from the fixed AgentSpec selected by
+    ``AGENT_SPEC`` (falling back to ``agents/<AGENT_KEY>.yaml``).
 
     provider (07-07 codex-runtime): the yaml's runtime pick; no yaml / bad
     yaml → None (wake then uses the claude default).
@@ -647,11 +652,13 @@ def _role_config(key: str) -> tuple:
     degradation direction is stay-quiet, not brick).
     strategic (07-11 opportunity-viability-redteam): bool; missing yaml / key
     / non-bool → False (the opt-in can never leak into another role).
+    system_prompt: AgentSpec's deterministic shared-fragments-then-charter
+    assembly; missing yaml / bad asset → None.
     ANY failure → WARN + defaults so a bad template does not brick the loop."""
     agents_dir = os.environ.get("AGENTS_DIR", "/opt/foundagent-orch/agents")
     path = os.environ.get("AGENT_SPEC") or os.path.join(agents_dir, f"{key}.yaml")
     if not os.path.isfile(path):
-        return None, UNSET, UNSET, None, "fresh", "stop", False
+        return None, UNSET, UNSET, None, "fresh", "stop", False, None
     try:
         from agent.spec import AgentSpec
         spec = AgentSpec.load(path)
@@ -671,12 +678,13 @@ def _role_config(key: str) -> tuple:
             print(f"[agent_loop] WARN: strategic mode {strategic!r} is not a "
                   "boolean — strategic wake prompts disabled", flush=True)
             strategic = False
+        system_prompt = spec.read_system_prompt()
         return (spec.provider, spec.model, spec.effort, mcp, session_mode, idle,
-                strategic)
+                strategic, system_prompt)
     except Exception as e:  # noqa: BLE001 — defaults over brick
         print(f"[agent_loop] WARN: role yaml config unusable ({e!r}) — "
               "fleet defaults", flush=True)
-        return None, UNSET, UNSET, None, "fresh", "stop", False
+        return None, UNSET, UNSET, None, "fresh", "stop", False, None
 
 
 def main() -> None:
@@ -688,7 +696,7 @@ def main() -> None:
     session_file = os.environ.get("AGENT_SESSION_FILE", "/tmp/foundagent-session-id")
     heartbeat = int(os.environ.get("AGENT_HEARTBEAT_SECS", "900"))
     (provider, model, effort, role_mcp, session_mode, idle,
-     strategic) = _role_config(key)
+     strategic, role_prompt) = _role_config(key)
     # AGENT_MCP remains an operator/debug override; normal V7 startup resolves
     # the immutable CEO or Department template selected by AGENT_SPEC.
     mcp_config = os.environ.get("AGENT_MCP") or role_mcp or DEFAULT_MCP_CONFIG
@@ -702,13 +710,15 @@ def main() -> None:
     client = HubClient()
     inbox = RemoteInbox(client)
     retry_backoff = float(os.environ.get("AGENT_RETRY_BACKOFF_SECS", "5"))
+    prompt_source = f"override:{charter_path}" if charter_path is not None else "agent-spec"
     print(f"[agent_loop] boot key={key} provider={provider or DEFAULT_PROVIDER} "
-          f"charter={charter_path} mcp={mcp_config} model={model} "
+          f"charter={prompt_source} mcp={mcp_config} model={model} "
           f"effort={effort} objective=hub inbox=hub session={session_mode} "
           f"idle={idle} strategic={str(strategic).lower()}",
           flush=True)
     agent_loop(key=key, session_file=session_file, heartbeat=heartbeat,
-               charter_path=charter_path, mcp_config=mcp_config,
+               charter_path=charter_path, system_prompt=role_prompt,
+               mcp_config=mcp_config,
                model=model, effort=effort, provider=provider,
                session_mode=session_mode, idle=idle, strategic=strategic,
                retry_backoff=retry_backoff, inbox=inbox,

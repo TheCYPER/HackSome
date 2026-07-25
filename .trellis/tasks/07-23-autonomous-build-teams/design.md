@@ -132,10 +132,24 @@ skills: []
 - 明确配置的其他 MCP；
 - Hub 的确定性方法。
 
+### 5.1 共享 Tool-use Prompt
+
+Tool-use 指引作为单一共享 prompt asset 维护，并由 `AgentSpec` 在运行时与角色自己的
+charter 组装成最终 system prompt。三个角色的声明都显式引用这个共享 asset，因此：
+
+- Agent 在 turn 开始前已经看到指引，不需要再读取某份说明文档；
+- GitHub、Vercel 和 Markdown 持久化的说明只维护一份；
+- 每个角色仍保留自己的 charter 和权限边界；
+- 新增角色是否继承该指引仍由 AgentSpec 显式声明，不做隐式全局注入。
+
+组装顺序为共享 tool-use 指引在前、角色 charter 在后。共享指引自身必须声明它不覆盖
+角色 charter；Lead 和 Verifier 因此可以知道 `gh` / `vercel` 的存在并做获准的只读
+检查，但不能据此执行角色禁止的 mutation。
+
 ## 6. Prompt 设计
 
-所有角色都采用“稳定 charter + 当前 trigger/context”的方式。稳定运行协议直接写入
-Prompt，不通过 Skill 发现。
+所有角色都采用“共享 tool-use 指引 + 稳定角色 charter + 当前 trigger/context”的
+方式。稳定运行协议直接写入 Prompt，不通过 Skill 发现。
 
 ### 6.1 Lead 固定 Prompt
 

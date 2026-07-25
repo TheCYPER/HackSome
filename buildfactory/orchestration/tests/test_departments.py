@@ -12,6 +12,14 @@ from orchestration.verifier_manager import VerifierManager
 DEPARTMENT_SPECS = Path(__file__).parents[2] / "agents" / "departments"
 
 
+@pytest.fixture(autouse=True)
+def _use_fixture_catalog(department_specs, monkeypatch):
+    monkeypatch.setattr(
+        "orchestration.tests.test_departments.DEPARTMENT_SPECS",
+        department_specs,
+    )
+
+
 def _world(tmp_path):
     reviews = VerifierManager(tmp_path / "reviews")
     objectives = ObjectiveStore(tmp_path / "agents", reviews)

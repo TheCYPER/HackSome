@@ -33,137 +33,19 @@ def _materialize(tmp_path, monkeypatch, key: str, relative_spec: str):
     )
 
 
-def test_ceo_gets_organization_objective_and_strategy_skills(tmp_path):
-    info = resident_loadout.materialize_for(
-        "ceo", agents_dir=str(AGENTS), claude_home=str(tmp_path / "ceo-home")
-    )
-    assert set(info.skills) == {
-        "company-state",
-        "claim-mailbox",
-        "manage-notes",
-        "manage-departments",
-        "manage-objectives",
-        "find-opportunity",
-        "think-strategically",
-        "trace-causal-chain",
-        "challenge-thesis",
-        "reason-as-buyer",
-        "integrate-new-information",
-    }
-
-
 @pytest.mark.parametrize(
-    ("key", "expected"),
+    ("key", "relative_spec"),
     [
-        (
-            "strategist",
-            {
-                "company-state",
-                "check-email",
-                "send-email",
-                "manage-notes",
-                "manage-goals",
-                "department-messaging",
-                "find-opportunity",
-                "challenge-thesis",
-                "reason-as-buyer",
-                "integrate-new-information",
-                "trace-causal-chain",
-            },
-        ),
-        (
-            "researcher",
-            {
-                "company-state",
-                "check-email",
-                "send-email",
-                "manage-notes",
-                "manage-goals",
-                "department-messaging",
-                "challenge-thesis",
-                "integrate-new-information",
-                "trace-causal-chain",
-                "reason-as-buyer",
-            },
-        ),
-        (
-            "builder",
-            {
-                "company-state",
-                "check-email",
-                "send-email",
-                "manage-notes",
-                "manage-goals",
-                "department-messaging",
-                "challenge-thesis",
-                "integrate-new-information",
-                "trace-causal-chain",
-            },
-        ),
-        (
-            "growth",
-            {
-                "company-state",
-                "check-email",
-                "send-email",
-                "manage-notes",
-                "manage-goals",
-                "department-messaging",
-                "challenge-thesis",
-                "integrate-new-information",
-                "trace-causal-chain",
-                "reason-as-buyer",
-            },
-        ),
+        ("lead", "lead.yaml"),
+        ("team-worker", "ephemeral/team-worker.yaml"),
+        ("team-verifier", "ephemeral/team-verifier.yaml"),
     ],
 )
-def test_department_templates_get_goal_methods_and_broad_judgment_skills(
-    tmp_path, monkeypatch, key, expected
+def test_active_team_templates_materialize_zero_skills(
+    tmp_path, monkeypatch, key, relative_spec
 ):
-    info = _materialize(tmp_path, monkeypatch, key, f"departments/{key}.yaml")
-    assert set(info.skills) == expected
-
-
-def test_worker_reuses_broad_execution_skill_library(tmp_path, monkeypatch):
-    info = _materialize(tmp_path, monkeypatch, "worker", "ephemeral/worker.yaml")
-    assert set(info.skills) == {
-        "company-state",
-        "check-email",
-        "send-email",
-        "submit-work",
-        "challenge-thesis",
-        "trace-causal-chain",
-        "reason-as-buyer",
-        "integrate-new-information",
-        "mine-customer-voice",
-        "de-ai-ify",
-        "design-asset",
-        "gen-image",
-        "visual-iterate",
-        "deploy-site",
-        "provision-ga4",
-        "operate-twitter",
-    }
-    skills_root = tmp_path / "user-home" / ".agents" / "skills"
-    assert (skills_root / "de-ai-ify" / "references" / "en-humanizer.md").is_file()
-    assert (skills_root / "design-asset" / "scripts" / "render_asset.mjs").is_file()
-    assert (skills_root / "gen-image" / "scripts" / "generate_image.py").is_file()
-
-
-def test_ephemeral_verifier_keeps_only_read_skill_and_charter_verdict(
-    tmp_path, monkeypatch
-):
-    info = _materialize(tmp_path, monkeypatch, "verifier", "ephemeral/verifier.yaml")
-    assert info.skills == ["company-state-readonly"]
-
-
-def test_old_static_role_templates_are_absent():
-    assert not {
-        "researcher.yaml",
-        "builder.yaml",
-        "growth.yaml",
-        "verifier.yaml",
-    }.intersection(path.name for path in AGENTS.glob("*.yaml"))
+    info = _materialize(tmp_path, monkeypatch, key, relative_spec)
+    assert info.skills == []
 
 
 def test_unknown_key_is_charter_only(tmp_path):
@@ -195,6 +77,5 @@ def test_deprecated_loadout_overlay_cannot_mutate_fixed_template(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("AGENT_LOADOUT", str(tmp_path / "arbitrary.yaml"))
-    info = _materialize(tmp_path, monkeypatch, "builder", "departments/builder.yaml")
-    assert "manage-goals" in info.skills
-    assert "trace-causal-chain" in info.skills
+    info = _materialize(tmp_path, monkeypatch, "lead", "lead.yaml")
+    assert info.skills == []

@@ -109,11 +109,28 @@ def test_role_prompts_are_self_contained_and_keep_acceptance_private():
     assert "cancel_goal" in lead
     assert "do not" in lead.lower()
     assert "implement product work yourself" in lead
-    assert "delegate the next substantive work" in lead
+    assert "delegate the next substantive product work" in lead
     assert "using direct work" not in lead
+    assert "PRODUCT BUILDER + PM JUDGMENT" in lead
+    assert "Own the product\ndecision, not merely the queue" in lead
+    assert "real user, the job they are\ntrying to accomplish" in lead
+    assert "desired user outcome, the relevant observed reality" in lead
+    assert "leaving implementation choices to the\nWorker" in lead
+    assert "Do not mechanically clear a backlog" in lead
+    assert "no mandatory scoring framework, category system" in lead
+    assert "PRODUCT-ONLY BOUNDARY" in lead
+    assert "product-building\nstage, not the hackathon-submission stage" in lead
+    assert "Do not treat\nchallenge submission requirements as a product backlog" in lead
+    assert "pitch decks, speaker scripts, one-pagers" in lead
+    assert "presenter-only wrapper around it is not" in lead
+    assert "needed\nto operate, ship, or improve the real product" in lead
+    assert "Do not\ndelegate hackathon submission or presentation packaging" in lead
     assert "--request-id 'goal-<stable-purpose-id>'" in lead
     assert "no deadline, completion state" in lead
     assert "CURRENT OBJECTIVE" not in lead
+    assert "Inspect the current real state and continue improving the project." in lead
+    assert "Quiet heartbeat" not in lead
+    assert "Quiet is not a completion or idle state" not in lead
     assert lead_loop.DEFAULT_LEAD_HEARTBEAT_SECS == 60
 
     launch = WorkerLaunch(

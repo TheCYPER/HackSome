@@ -24,10 +24,18 @@ from hacksome.state import (
 )
 
 
-MEMORY_SCHEMA_VERSION = 1
+MEMORY_SCHEMA_VERSION = 2
+SUPPORTED_MEMORY_SCHEMA_VERSIONS = frozenset({1, MEMORY_SCHEMA_VERSION})
 SNAPSHOT_SCHEMA_VERSION = 1
-SUPPORTED_SOURCE_CONTRACT_VERSION = "1"
-SUPPORTED_REPORT_POLICY_VERSION = "1"
+SUPPORTED_SOURCE_CONTRACT_VERSION = "2"
+SUPPORTED_SOURCE_CONTRACT_VERSIONS = frozenset(
+    {"1", SUPPORTED_SOURCE_CONTRACT_VERSION}
+)
+SUPPORTED_REPORT_POLICY_VERSION = "2"
+SUPPORTED_REPORT_POLICY_BY_CONTRACT = {
+    "1": "1",
+    SUPPORTED_SOURCE_CONTRACT_VERSION: SUPPORTED_REPORT_POLICY_VERSION,
+}
 MEMORY_RECORD_ARTIFACT_TYPE = "creative_memory_record"
 MEMORY_SNAPSHOT_RELATIVE_PATH = (
     "state/creative-memory/idea-memory-snapshot.json"
@@ -72,6 +80,7 @@ _ZERO_REASON_CODES = frozenset(
     {
         "no_concepts_generated",
         "all_candidates_failed_hook",
+        "all_candidates_failed_concept_screen",
         "shortlist_empty",
         "all_human_rejected",
     }
@@ -283,11 +292,18 @@ class MemoryEntry:
     reason_evidence: tuple[MemoryReasonEvidence, ...]
     evidence_refs: tuple[str, ...]
     classification: MemoryClassification
+    software_core_and_runtime: str | None = None
+    share_trigger_and_artifact: str | None = None
+    minimum_hackathon_demo: str | None = None
 
     @classmethod
-    def from_mapping(cls, value: Any) -> MemoryEntry:
-        expected = frozenset(
-            {
+    def from_mapping(
+        cls,
+        value: Any,
+        *,
+        memory_schema_version: int = 1,
+    ) -> MemoryEntry:
+        expected_fields = {
                 "memory_entry_id",
                 "capsule_sha256",
                 "source_kind",
@@ -305,7 +321,19 @@ class MemoryEntry:
                 "reason_evidence",
                 "evidence_refs",
                 "classification",
-            }
+        }
+        if memory_schema_version == 2:
+            expected_fields.update(
+                {
+                    "software_core_and_runtime",
+                    "share_trigger_and_artifact",
+                    "minimum_hackathon_demo",
+                }
+            )
+        elif memory_schema_version != 1:
+            raise MemoryValidationError("unsupported memory entry schema version")
+        expected = frozenset(
+            expected_fields
         )
         raw = _strict_object(value, expected=expected, label="memory entry")
         source_kind = raw["source_kind"]
@@ -368,6 +396,30 @@ class MemoryEntry:
                 raw["evidence_refs"], "memory evidence refs"
             ),
             classification=classification,
+            software_core_and_runtime=(
+                _text(
+                    raw["software_core_and_runtime"],
+                    "memory software core and runtime",
+                )
+                if memory_schema_version == 2
+                else None
+            ),
+            share_trigger_and_artifact=(
+                _text(
+                    raw["share_trigger_and_artifact"],
+                    "memory share trigger and artifact",
+                )
+                if memory_schema_version == 2
+                else None
+            ),
+            minimum_hackathon_demo=(
+                _text(
+                    raw["minimum_hackathon_demo"],
+                    "memory minimum hackathon demo",
+                )
+                if memory_schema_version == 2
+                else None
+            ),
         )
         if any(
             evidence.reason_code not in entry.reason_codes
@@ -395,7 +447,7 @@ class MemoryEntry:
         return payload
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "memory_entry_id": self.memory_entry_id,
             "capsule_sha256": self.capsule_sha256,
             "source_kind": self.source_kind,
@@ -416,6 +468,13 @@ class MemoryEntry:
             "evidence_refs": list(self.evidence_refs),
             "classification": self.classification,
         }
+        if self.software_core_and_runtime is not None:
+            result["software_core_and_runtime"] = self.software_core_and_runtime
+        if self.share_trigger_and_artifact is not None:
+            result["share_trigger_and_artifact"] = self.share_trigger_and_artifact
+        if self.minimum_hackathon_demo is not None:
+            result["minimum_hackathon_demo"] = self.minimum_hackathon_demo
+        return result
 
 
 def expected_memory_classification(
@@ -482,7 +541,7 @@ class MemoryRecord:
             ),
             label="creative memory record",
         )
-        if raw["memory_schema_version"] != MEMORY_SCHEMA_VERSION:
+        if raw["memory_schema_version"] not in SUPPORTED_MEMORY_SCHEMA_VERSIONS:
             raise MemoryValidationError("unsupported memory schema version")
         route = _strict_object(
             raw["source_route"],
@@ -491,18 +550,45 @@ class MemoryRecord:
         )
         if route["id"] != "creative":
             raise MemoryValidationError("memory source route must be creative")
-        if route["contract_version"] != SUPPORTED_SOURCE_CONTRACT_VERSION:
+        if route["contract_version"] not in SUPPORTED_SOURCE_CONTRACT_VERSIONS:
             raise MemoryValidationError("unsupported memory source contract version")
+        expected_schema_version = (
+            1 if route["contract_version"] == "1" else MEMORY_SCHEMA_VERSION
+        )
+        if raw["memory_schema_version"] != expected_schema_version:
+            raise MemoryValidationError(
+                "memory schema version does not match source contract version"
+            )
         producer_kind = raw["producer_kind"]
         if producer_kind not in {"live", "fixture"}:
             raise MemoryValidationError("memory producer_kind is invalid")
         zero_reason = raw["zero_reason_code"]
         if zero_reason is not None and zero_reason not in _ZERO_REASON_CODES:
             raise MemoryValidationError("memory zero_reason_code is invalid")
+        if (
+            route["contract_version"] == "1"
+            and zero_reason == "all_candidates_failed_concept_screen"
+        ):
+            raise MemoryValidationError(
+                "Creative v1 memory cannot use the v2 Concept Screen zero reason"
+            )
+        if (
+            route["contract_version"] == "2"
+            and zero_reason == "all_candidates_failed_hook"
+        ):
+            raise MemoryValidationError(
+                "Creative v2 memory cannot use the legacy Hook zero reason"
+            )
         raw_entries = raw["entries"]
         if not isinstance(raw_entries, list):
             raise MemoryValidationError("memory entries must be an array")
-        entries = tuple(MemoryEntry.from_mapping(item) for item in raw_entries)
+        entries = tuple(
+            MemoryEntry.from_mapping(
+                item,
+                memory_schema_version=raw["memory_schema_version"],
+            )
+            for item in raw_entries
+        )
         entry_ids = tuple(entry.memory_entry_id for entry in entries)
         if len(entry_ids) != len(set(entry_ids)):
             raise MemoryValidationError("memory entry IDs must be unique")
@@ -520,10 +606,10 @@ class MemoryRecord:
         created_at = _text(raw["created_at"], "memory created_at")
         _parse_timestamp(created_at, "memory created_at")
         return cls(
-            memory_schema_version=MEMORY_SCHEMA_VERSION,
+            memory_schema_version=raw["memory_schema_version"],
             source_run_id=_identifier(raw["source_run_id"], "memory source run id"),
             source_route_id="creative",
-            source_contract_version=SUPPORTED_SOURCE_CONTRACT_VERSION,
+            source_contract_version=route["contract_version"],
             source_report_artifact_id=_identifier(
                 raw["source_report_artifact_id"], "memory source report artifact id"
             ),
@@ -590,10 +676,7 @@ class MemoryCapsuleRef:
         )
         if raw["source_route_id"] != "creative":
             raise MemoryValidationError("memory capsule route must be creative")
-        if (
-            raw["source_contract_version"]
-            != SUPPORTED_SOURCE_CONTRACT_VERSION
-        ):
+        if raw["source_contract_version"] not in SUPPORTED_SOURCE_CONTRACT_VERSIONS:
             raise MemoryValidationError(
                 "memory capsule contract version is unsupported"
             )
@@ -602,7 +685,7 @@ class MemoryCapsuleRef:
                 raw["source_run_id"], "capsule source run id"
             ),
             source_route_id="creative",
-            source_contract_version=SUPPORTED_SOURCE_CONTRACT_VERSION,
+            source_contract_version=raw["source_contract_version"],
             source_artifact_id=_identifier(
                 raw["source_artifact_id"], "capsule source artifact id"
             ),
@@ -692,12 +775,18 @@ class MemoryCapsule:
             expected=frozenset({"memory_ref", "challenge_context", "entry"}),
             label="memory capsule",
         )
+        memory_ref = MemoryCapsuleRef.from_mapping(raw["memory_ref"])
         capsule = cls(
-            memory_ref=MemoryCapsuleRef.from_mapping(raw["memory_ref"]),
+            memory_ref=memory_ref,
             challenge_context=MemoryChallengeContext.from_mapping(
                 raw["challenge_context"]
             ),
-            entry=MemoryEntry.from_mapping(raw["entry"]),
+            entry=MemoryEntry.from_mapping(
+                raw["entry"],
+                memory_schema_version=(
+                    1 if memory_ref.source_contract_version == "1" else 2
+                ),
+            ),
         )
         if (
             capsule.memory_ref.source_artifact_id
@@ -753,10 +842,7 @@ class MemorySourceRecord:
         )
         if raw["source_route_id"] != "creative":
             raise MemoryValidationError("memory source record route is invalid")
-        if (
-            raw["source_contract_version"]
-            != SUPPORTED_SOURCE_CONTRACT_VERSION
-        ):
+        if raw["source_contract_version"] not in SUPPORTED_SOURCE_CONTRACT_VERSIONS:
             raise MemoryValidationError(
                 "memory source record contract version is unsupported"
             )
@@ -765,7 +851,7 @@ class MemorySourceRecord:
                 raw["source_run_id"], "memory source record run id"
             ),
             source_route_id="creative",
-            source_contract_version=SUPPORTED_SOURCE_CONTRACT_VERSION,
+            source_contract_version=raw["source_contract_version"],
             source_memory_record_artifact_id=_identifier(
                 raw["source_memory_record_artifact_id"],
                 "memory source record artifact id",
@@ -1013,7 +1099,7 @@ class _EligibleSource:
         return MemorySourceRecord(
             source_run_id=self.run_id,
             source_route_id="creative",
-            source_contract_version=SUPPORTED_SOURCE_CONTRACT_VERSION,
+            source_contract_version=self.record.source_contract_version,
             source_memory_record_artifact_id=self.record_artifact_id,
             source_memory_record_sha256=self.record_sha256,
         )
@@ -1304,12 +1390,16 @@ def _load_eligible_source(
         raise _SourceRejected("unsupported_route", "run has no route metadata")
     if route.get("id") != "creative":
         raise _SourceRejected("unsupported_route", "run is not Creative")
-    if route.get("contract_version") != SUPPORTED_SOURCE_CONTRACT_VERSION:
+    contract_version = route.get("contract_version")
+    if contract_version not in SUPPORTED_SOURCE_CONTRACT_VERSIONS:
         raise _SourceRejected(
             "unsupported_contract_version",
             "Creative contract version is unsupported",
         )
-    if route.get("report_policy_version") != SUPPORTED_REPORT_POLICY_VERSION:
+    if (
+        route.get("report_policy_version")
+        != SUPPORTED_REPORT_POLICY_BY_CONTRACT.get(str(contract_version))
+    ):
         raise _SourceRejected(
             "unsupported_report_policy",
             "Creative report policy version is unsupported",

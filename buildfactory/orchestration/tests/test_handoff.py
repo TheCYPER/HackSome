@@ -14,6 +14,8 @@ def envelope(
     run_id="run-1",
     card_id="card-1",
     markdown="# Card\n\nExact.\n",
+    route_id="useful",
+    route_contract_version="1",
 ):
     digest = hashlib.sha256(markdown.encode()).hexdigest()
     identity = hashlib.sha256(
@@ -32,8 +34,8 @@ def envelope(
         "schema_version": 1,
         "authorization_id": f"auth-{identity[:32]}",
         "source": {
-            "route_id": "useful",
-            "route_contract_version": "1",
+            "route_id": route_id,
+            "route_contract_version": route_contract_version,
             "catalog_sha256": "c" * 64,
         },
         "handoff": {
@@ -61,3 +63,20 @@ def test_handoff_exact_schema_sha_and_stable_identity():
     stale["handoff"]["initial_idea_card_markdown"] = "# Changed\n"
     with pytest.raises(HandoffError, match="does not match"):
         BuildAuthorizationEnvelopeV1.from_mapping(stale)
+
+
+def test_handoff_supports_current_creative_contract_only_for_creative():
+    decoded = BuildAuthorizationEnvelopeV1.from_mapping(
+        envelope(route_id="creative", route_contract_version="2")
+    )
+    assert decoded.route_id == "creative"
+    assert decoded.route_contract_version == "2"
+
+    with pytest.raises(HandoffError, match="version is unsupported"):
+        BuildAuthorizationEnvelopeV1.from_mapping(
+            envelope(route_id="useful", route_contract_version="2")
+        )
+    with pytest.raises(HandoffError, match="version is unsupported"):
+        BuildAuthorizationEnvelopeV1.from_mapping(
+            envelope(route_id="creative", route_contract_version="3")
+        )

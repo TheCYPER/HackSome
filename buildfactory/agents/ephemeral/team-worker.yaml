@@ -3,6 +3,8 @@ provider: codex
 model: gpt-5.6-sol
 effort: xhigh
 credentials: subscription
+system_prompt_fragments:
+  - ../assets/shared-tool-use.md
 system_prompt: ../assets/team-worker-charter.md
 skills: []
 mcp_config: ../mcp/ceo.json

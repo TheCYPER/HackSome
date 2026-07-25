@@ -9,7 +9,7 @@
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#concept-stage">跳到当前 Concept</a>
+    <a class="skip-link" href="#active-concept-stage">跳到正在评审的项目</a>
     <div class="app-frame">
       <header class="topbar">
         <div class="brand-lockup" aria-label="HackSome Relay Room">
@@ -25,227 +25,211 @@
         </div>
       </header>
 
-      <main class="relay-shell">
-        <nav class="relay-rail" aria-label="候选 Concept">
-          <div class="rail-heading">
-            <div>
-              <p class="eyebrow">本轮接力</p>
-              <p id="relay-position" class="relay-position">— / —</p>
-            </div>
-            <span class="rail-signal" aria-hidden="true"></span>
+      <main id="review-desk" class="review-desk">
+        <section class="desk-intro" aria-labelledby="desk-title">
+          <div>
+            <p class="eyebrow">C6 / Relay Deck</p>
+            <h2 id="desk-title">一次只接一张卡</h2>
+            <p class="desk-deck">
+              看懂这一个项目，留下复述与建议，再决定保留、修改或淘汰。卡片传走后仍可返回；
+              最后再把整批回执一次提交。
+            </p>
           </div>
-          <ol id="concept-list" class="concept-list"></ol>
-          <button id="pair-mode-button" class="quiet-button" type="button">
-            进入可选对比
-          </button>
-          <div id="coverage-summary" class="coverage-summary" aria-live="polite"></div>
-        </nav>
-
-        <section id="concept-stage" class="concept-stage" tabindex="-1">
-          <div id="page-state" class="page-state" role="status" aria-live="polite">
-            <span class="state-pulse" aria-hidden="true"></span>
-            <span id="page-state-text">正在读取本轮候选…</span>
+          <div class="desk-progress" aria-label="本轮已填写项目进度">
+            <p class="eyebrow">已留下复述</p>
+            <p id="relay-position" class="relay-position">— / —</p>
+            <div id="coverage-summary" class="coverage-summary" aria-live="polite"></div>
           </div>
-
-          <article id="concept-card" class="concept-card" hidden>
-            <header class="concept-header">
-              <div>
-                <p id="concept-id" class="concept-id"></p>
-                <p id="concept-territory" class="territory-label"></p>
-              </div>
-              <span id="concept-hash" class="hash-label"></span>
-            </header>
-            <h2 id="concept-hook" class="concept-hook"></h2>
-            <div class="experience-path" aria-label="前三十秒体验路径">
-              <section>
-                <p class="path-label">先看到</p>
-                <p id="concept-first-impression"></p>
-              </section>
-              <span aria-hidden="true">→</span>
-              <section>
-                <p class="path-label">做什么</p>
-                <p id="concept-action"></p>
-              </section>
-              <span aria-hidden="true">→</span>
-              <section class="reveal-step">
-                <p class="path-label">Reveal</p>
-                <p id="concept-reveal"></p>
-              </section>
-            </div>
-            <details class="concept-details">
-              <summary>展开机制、Demo 与风险</summary>
-              <div class="detail-grid">
-                <section>
-                  <h3>核心机制</h3>
-                  <p id="concept-mechanism"></p>
-                </section>
-                <section>
-                  <h3>最小 Demo</h3>
-                  <p id="concept-demo"></p>
-                </section>
-                <section>
-                  <h3>先例与差异</h3>
-                  <p id="concept-novelty"></p>
-                </section>
-                <section>
-                  <h3>尚未解决</h3>
-                  <p id="concept-risks"></p>
-                </section>
-              </div>
-            </details>
-          </article>
-
-          <section id="pair-stage" class="pair-stage" hidden aria-labelledby="pair-title">
-            <div class="pair-heading">
-              <div>
-                <p class="eyebrow">可跳过的 Pairwise</p>
-                <h2 id="pair-title">更想把哪一个拿给别人看？</h2>
-              </div>
-              <button id="leave-pair-mode" class="text-button" type="button">
-                返回单项评审
-              </button>
-            </div>
-            <div class="pair-cards">
-              <button id="pair-left" class="pair-card" type="button"></button>
-              <button id="pair-right" class="pair-card" type="button"></button>
-            </div>
-            <div class="field">
-              <label for="pair-reason">为什么？也可以留空跳过</label>
-              <textarea id="pair-reason" maxlength="1000" rows="4"></textarea>
-              <p class="field-note"><span id="pair-reason-count">0</span> / 1000</p>
-            </div>
-            <div class="button-row">
-              <button id="save-pair" class="secondary-button" type="button">
-                保存这组选择
-              </button>
-              <button id="skip-pair" class="quiet-button" type="button">
-                跳过这一组
-              </button>
-            </div>
-          </section>
-
-          <section id="team-wall" class="team-wall" hidden aria-labelledby="team-wall-title">
-            <header>
-              <div>
-                <p class="eyebrow">只读 Team Wall</p>
-                <h2 id="team-wall-title">接力已经传到这里</h2>
-              </div>
-              <p>首次提交后可见；这里不会展示 Idea Memory 来源。</p>
-            </header>
-            <div id="team-wall-content" class="team-wall-content"></div>
-          </section>
-
-          <section id="curator-workbench" class="curator-workbench" hidden>
-            <header class="workbench-header">
-              <div>
-                <p class="eyebrow">Percy 策展台</p>
-                <h2>把团队判断交回 Agent</h2>
-              </div>
-              <span class="curator-badge">Curator capability</span>
-            </header>
-            <div class="curator-grid">
-              <section aria-labelledby="curator-coverage-title">
-                <h3 id="curator-coverage-title">覆盖与原始回执</h3>
-                <div id="curator-coverage"></div>
-                <div id="curator-receipts"></div>
-              </section>
-              <section aria-labelledby="curator-memory-title">
-                <h3 id="curator-memory-title">Memory 来源与 copy-risk</h3>
-                <div id="curator-memory"></div>
-              </section>
-            </div>
-            <form id="resolution-form">
-              <fieldset>
-                <legend>每个候选的最终动作</legend>
-                <div id="resolution-actions"></div>
-              </fieldset>
-              <div class="field">
-                <label for="curator-name">策展人名字</label>
-                <input id="curator-name" name="curator_name" maxlength="80" autocomplete="name">
-              </div>
-              <div class="field">
-                <label for="coverage-override">覆盖不足时的明确例外理由</label>
-                <textarea id="coverage-override" maxlength="4000" rows="3"></textarea>
-                <p class="field-note"><span id="coverage-override-count">0</span> / 4000</p>
-              </div>
-              <div id="resolution-errors" class="form-error" role="alert" hidden></div>
-              <button id="close-round" class="primary-button coral-action" type="submit">
-                关闭本轮并交回 Agent
-              </button>
-            </form>
-          </section>
         </section>
 
-        <aside id="review-panel" class="review-panel" aria-labelledby="receipt-title">
-          <div id="receipt-form-wrap">
-            <p class="eyebrow">你的传递回执</p>
-            <h2 id="receipt-title">先独立说清你看到了什么</h2>
-            <form id="review-form">
-              <div class="field">
-                <label for="reviewer-name">你的名字</label>
-                <input id="reviewer-name" name="reviewer_name" maxlength="80" autocomplete="name" required>
-              </div>
-              <div class="field">
-                <label for="retell">一句话复述</label>
-                <textarea id="retell" maxlength="400" rows="4" required aria-describedby="retell-note"></textarea>
-                <p id="retell-note" class="field-note">
-                  不看原文时，你会怎样讲给下一位？
-                  <span><span id="retell-count">0</span> / 400</span>
-                </p>
-              </div>
-              <div class="field">
-                <label for="share-target">立刻想到想发给谁？</label>
-                <input id="share-target" maxlength="200" placeholder="一个具体的人，或“暂时没有”">
-                <p class="field-note"><span id="share-target-count">0</span> / 200</p>
-              </div>
-              <fieldset class="reaction-fieldset">
-                <legend>第一反应</legend>
-                <div id="reaction-chips" class="reaction-chips"></div>
-              </fieldset>
-              <div class="field">
-                <label for="recommendation">你希望它接下来怎样？</label>
-                <select id="recommendation">
-                  <option value="no_opinion">暂不表态</option>
-                  <option value="keep">保留</option>
-                  <option value="revise">修订</option>
-                  <option value="reject">拒绝</option>
-                  <option value="taste_veto">Taste veto</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="comment">自由评论</label>
-                <textarea id="comment" maxlength="4000" rows="6"></textarea>
-                <p class="field-note"><span id="comment-count">0</span> / 4000</p>
-              </div>
-              <div class="field">
-                <label for="overall-comment">对整个候选组合的补充</label>
-                <textarea id="overall-comment" maxlength="4000" rows="4"></textarea>
-                <p class="field-note"><span id="overall-comment-count">0</span> / 4000</p>
-              </div>
-              <div id="stale-warning" class="stale-warning" role="alert" hidden>
-                <p>评审轮次已经变化，旧草稿不会被静默提交。</p>
-                <button id="discard-stale-draft" class="secondary-button" type="button">
-                  清除旧草稿并重新检查
-                </button>
-              </div>
-              <div id="review-errors" class="form-error" role="alert" hidden></div>
-              <button id="submit-review" class="primary-button" type="submit">
-                传递回执
-              </button>
-            </form>
-          </div>
-
-          <section id="receipt-signal" class="receipt-signal" hidden aria-live="polite">
-            <span class="signal-line" aria-hidden="true"></span>
-            <p class="eyebrow">传递回执</p>
-            <h2 id="receipt-signature"></h2>
-            <p id="receipt-target"></p>
-            <p id="receipt-binding" class="hash-label"></p>
-            <button id="edit-after-reveal" class="secondary-button" type="button">
-              在看过 Team Wall 后追加修改
+        <nav id="concept-index" class="concept-index" aria-label="候选项目目录" hidden>
+          <header class="concept-index-heading">
+            <div>
+              <p class="eyebrow">本轮目录</p>
+              <h2>跳到任意一张项目卡</h2>
+            </div>
+            <button id="close-concept-directory" class="text-button" type="button">
+              关闭目录
             </button>
+          </header>
+          <ol id="concept-list" class="concept-list"></ol>
+        </nav>
+
+        <div id="page-state" class="page-state" role="status" aria-live="polite">
+          <span class="state-pulse" aria-hidden="true"></span>
+          <span id="page-state-text">正在读取本轮候选…</span>
+        </div>
+
+        <form id="review-form" class="review-form" novalidate>
+          <section id="reviewer-intake" class="reviewer-intake" aria-labelledby="reviewer-title">
+            <div>
+              <p class="eyebrow">评审者</p>
+              <h2 id="reviewer-title">谁在接这一棒？</h2>
+              <p>草稿会留在这台浏览器里，并分别绑定每张卡的 exact revision 与 hash。</p>
+            </div>
+            <div class="field compact-field">
+              <label for="reviewer-name">你的名字</label>
+              <input
+                id="reviewer-name"
+                name="reviewer_name"
+                maxlength="80"
+                autocomplete="name"
+                required
+              >
+            </div>
           </section>
-        </aside>
+
+          <section id="relay-controller" class="relay-controller" aria-label="项目卡导航">
+            <div class="active-card-meta">
+              <p class="eyebrow">正在评审</p>
+              <p id="active-concept-position" class="active-concept-position">— / —</p>
+              <p id="active-concept-status" class="active-concept-status">等待项目</p>
+            </div>
+            <div class="relay-navigation">
+              <button id="previous-concept" class="quiet-button" type="button">
+                ← 上一张
+              </button>
+              <button
+                id="toggle-concept-directory"
+                class="secondary-button"
+                type="button"
+                aria-controls="concept-index"
+                aria-expanded="false"
+              >
+                目录
+              </button>
+            </div>
+          </section>
+
+          <div id="active-concept-stage" class="concept-deck-shell" tabindex="-1">
+            <span class="deck-shadow deck-shadow-back" aria-hidden="true"></span>
+            <span class="deck-shadow deck-shadow-middle" aria-hidden="true"></span>
+            <section
+              id="concept-review-cards"
+              class="concept-review-deck"
+              aria-label="正在评审的候选项目与本项目回执"
+            ></section>
+          </div>
+          <p id="relay-announcer" class="visually-hidden" aria-live="polite"></p>
+
+          <section id="review-submit-bar" class="review-submit-bar">
+            <div class="field">
+              <label for="overall-comment">对整个候选组合的补充</label>
+              <textarea id="overall-comment" maxlength="4000" rows="4"></textarea>
+              <p class="field-note"><span>这段属于整轮，不归入某个项目。</span><span><span id="overall-comment-count">0</span> / 4000</span></p>
+            </div>
+            <div id="stale-warning" class="stale-warning" role="alert" hidden>
+              <p>评审轮次已经变化，旧草稿不会被静默提交。</p>
+              <button id="discard-stale-draft" class="secondary-button" type="button">
+                清除旧草稿并重新检查
+              </button>
+            </div>
+            <div id="review-errors" class="form-error" role="alert" hidden></div>
+            <div class="submit-actions">
+              <button id="pair-mode-button" class="quiet-button" type="button">
+                进入可选对比
+              </button>
+              <button id="submit-review" class="primary-button" type="submit">
+                提交已填写的项目回执
+              </button>
+            </div>
+          </section>
+        </form>
+
+        <section id="receipt-signal" class="receipt-signal" hidden aria-live="polite">
+          <span class="signal-line" aria-hidden="true"></span>
+          <p class="eyebrow">传递回执</p>
+          <h2 id="receipt-signature"></h2>
+          <div id="receipt-projects" class="receipt-projects"></div>
+          <p id="receipt-binding" class="hash-label"></p>
+          <button id="edit-after-reveal" class="secondary-button" type="button">
+            在看过 Team Wall 后追加修改
+          </button>
+        </section>
+
+        <section id="pair-stage" class="pair-stage" hidden aria-labelledby="pair-title">
+          <div class="pair-heading">
+            <div>
+              <p class="eyebrow">可跳过的 Pairwise</p>
+              <h2 id="pair-title">更想立刻点开、转发或让别人试哪一个？</h2>
+            </div>
+            <button id="leave-pair-mode" class="text-button" type="button">
+              返回项目档案
+            </button>
+          </div>
+          <div class="pair-cards">
+            <button id="pair-left" class="pair-card" type="button"></button>
+            <button id="pair-right" class="pair-card" type="button"></button>
+          </div>
+          <div class="field">
+            <label for="pair-reason">为什么？也可以留空跳过</label>
+            <textarea id="pair-reason" maxlength="1000" rows="4"></textarea>
+            <p class="field-note"><span id="pair-reason-count">0</span> / 1000</p>
+          </div>
+          <div class="button-row">
+            <button id="save-pair" class="secondary-button" type="button">
+              保存这组选择
+            </button>
+            <button id="skip-pair" class="quiet-button" type="button">
+              跳过这一组
+            </button>
+          </div>
+        </section>
+
+        <section id="team-wall" class="team-wall" hidden aria-labelledby="team-wall-title">
+          <header>
+            <div>
+              <p class="eyebrow">只读 Team Wall</p>
+              <h2 id="team-wall-title">接力已经传到这里</h2>
+            </div>
+            <p>首次提交后可见；这里不会展示 Idea Memory 来源。</p>
+          </header>
+          <div id="team-wall-content" class="team-wall-content"></div>
+        </section>
+
+        <section id="curator-workbench" class="curator-workbench" hidden>
+          <header class="workbench-header">
+            <div>
+              <p class="eyebrow">Percy 策展台</p>
+              <h2>把团队判断交回 Agent</h2>
+            </div>
+            <span class="curator-badge">Curator capability</span>
+          </header>
+          <div class="curator-grid">
+            <section aria-labelledby="curator-coverage-title">
+              <h3 id="curator-coverage-title">覆盖与原始回执</h3>
+              <div id="curator-coverage"></div>
+              <div id="curator-receipts"></div>
+            </section>
+            <section aria-labelledby="curator-memory-title">
+              <h3 id="curator-memory-title">Memory 来源与 copy-risk</h3>
+              <div id="curator-memory"></div>
+            </section>
+            <section aria-labelledby="curator-feasibility-title">
+              <h3 id="curator-feasibility-title">软件 Demo 可行性证据</h3>
+              <div id="curator-feasibility"></div>
+            </section>
+          </div>
+          <form id="resolution-form">
+            <fieldset>
+              <legend>每个候选的最终动作</legend>
+              <div id="resolution-actions"></div>
+            </fieldset>
+            <div class="field">
+              <label for="curator-name">策展人名字</label>
+              <input id="curator-name" name="curator_name" maxlength="80" autocomplete="name">
+            </div>
+            <div class="field">
+              <label for="coverage-override">覆盖不足时的明确例外理由</label>
+              <textarea id="coverage-override" maxlength="4000" rows="3"></textarea>
+              <p class="field-note"><span id="coverage-override-count">0</span> / 4000</p>
+            </div>
+            <div id="resolution-errors" class="form-error" role="alert" hidden></div>
+            <button id="close-round" class="primary-button coral-action" type="submit">
+              关闭本轮并交回 Agent
+            </button>
+          </form>
+        </section>
       </main>
 
       <footer class="app-footer">

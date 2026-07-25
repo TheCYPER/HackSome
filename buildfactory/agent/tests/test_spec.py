@@ -5,6 +5,7 @@ and is tested in test_runtimes.py; the spec keeps the declaration semantics —
 including the load-bearing absent-vs-null distinction for model/effort."""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -20,13 +21,9 @@ from agent.runtimes.base import UNSET
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 AGENTS = os.path.join(REPO, "agents")
 ROLE_SPECS = {
-    "ceo": os.path.join(AGENTS, "ceo.yaml"),
-    "strategist": os.path.join(AGENTS, "departments", "strategist.yaml"),
-    "researcher": os.path.join(AGENTS, "departments", "researcher.yaml"),
-    "builder": os.path.join(AGENTS, "departments", "builder.yaml"),
-    "growth": os.path.join(AGENTS, "departments", "growth.yaml"),
-    "worker": os.path.join(AGENTS, "ephemeral", "worker.yaml"),
-    "verifier": os.path.join(AGENTS, "ephemeral", "verifier.yaml"),
+    "lead": os.path.join(AGENTS, "lead.yaml"),
+    "team-worker": os.path.join(AGENTS, "ephemeral", "team-worker.yaml"),
+    "team-verifier": os.path.join(AGENTS, "ephemeral", "team-verifier.yaml"),
 }
 
 
@@ -58,40 +55,28 @@ def test_load_full_spec(tmp_path):
     assert spec.name == "demo"
     assert spec.provider == "claude-code"
     assert spec.credentials == "subscription"
+    assert spec.system_prompt_fragments == []
     assert spec.system_prompt == "assets/charter.md"
     assert spec.skills == ["assets/skills/demo-skill"]
     assert spec.mcp_config == "/opt/foundagent/mcp.json"
     assert spec.bypass_permissions is True
 
 
-def test_load_researcher():
-    spec = AgentSpec.load(ROLE_SPECS["researcher"])
-    assert spec.name == "researcher"
+def test_load_team_worker():
+    spec = AgentSpec.load(ROLE_SPECS["team-worker"])
+    assert spec.name == "team-worker"
     assert spec.provider == "codex"
     assert spec.model == "gpt-5.6-sol"
     assert spec.effort == "xhigh"
-    # 07-07 longrun-hardening: back to the fleet default — no real api key was
-    # ever provisioned, so the old `api-key` demo value 401'd every wake.
     assert spec.credentials == "subscription"
-    assert {os.path.basename(path) for path in spec.skills} == {
-        "company-state",
-        "check-email",
-        "send-email",
-        "manage-notes",
-        "manage-goals",
-        "department-messaging",
-        "challenge-thesis",
-        "integrate-new-information",
-        "trace-causal-chain",
-        "reason-as-buyer",
-    }
-    assert spec.system_prompt == "../assets/departments/researcher-charter.md"
+    assert spec.skills == []
+    assert spec.system_prompt_fragments == ["../assets/shared-tool-use.md"]
+    assert spec.system_prompt == "../assets/team-worker-charter.md"
     assert spec.hooks is None
 
 
 def test_resident_roles_use_codex_sol_xhigh():
-    """The thirdtest fleet comparison runs every resident role on one model
-    baseline; a single role silently falling back to Opus invalidates it."""
+    """Every active Team role stays on the same declared model baseline."""
     for role, path in ROLE_SPECS.items():
         spec = AgentSpec.load(path)
         assert spec.provider == "codex", role
@@ -121,6 +106,7 @@ def test_defaults_minimal_spec():
     assert spec.credentials == "subscription"
     assert spec.mcp_config == "/opt/foundagent/mcp.json"
     assert spec.permission_mode == "bypass"
+    assert spec.system_prompt_fragments == []
     assert spec.skills == []
     assert spec.session == "fresh"       # issue #207: resume is the opt-in exception
     assert spec.idle == "stop"           # 07-08: proactive is the opt-in exception
@@ -128,35 +114,28 @@ def test_defaults_minimal_spec():
 
 
 def test_session_field_loads_and_defaults_fresh(tmp_path):
-    """`session:` (issue #207) — absent key → "fresh"; every baseline role
-    uses that default. Value sanitation (unknown → fresh + WARN) is the
-    consumer's job (agent_loop._role_config); the spec stays a pure
-    declaration."""
+    """`session:` defaults fresh; only the long-running Lead opts into resume."""
     spec = AgentSpec.load(_write_fixture_yaml(tmp_path))    # no session key
     assert spec.session == "fresh"
-    for role, path in ROLE_SPECS.items():
-        role_spec = AgentSpec.load(path)
-        assert role_spec.session == "fresh"
+    assert AgentSpec.load(ROLE_SPECS["lead"]).session == "resume"
+    assert AgentSpec.load(ROLE_SPECS["team-worker"]).session == "fresh"
+    assert AgentSpec.load(ROLE_SPECS["team-verifier"]).session == "fresh"
 
 
 def test_idle_field_loads_and_defaults_stop(tmp_path):
-    """`idle:` (07-08 proactive-idle) — absent key → "stop"; the repo ceo.yaml
-    is the one proactive role. Value sanitation (unknown → stop + WARN) is the
-    consumer's job (agent_loop._role_config); the spec stays a pure declaration."""
+    """`idle:` defaults stop; the resident Lead is the only proactive role."""
     spec = AgentSpec.load(_write_fixture_yaml(tmp_path))    # no idle key
     assert spec.idle == "stop"
-    assert AgentSpec.load(ROLE_SPECS["ceo"]).idle == "proactive"
-    assert AgentSpec.load(ROLE_SPECS["builder"]).idle == "proactive"
-    assert AgentSpec.load(ROLE_SPECS["worker"]).idle == "stop"
+    assert AgentSpec.load(ROLE_SPECS["lead"]).idle == "proactive"
+    assert AgentSpec.load(ROLE_SPECS["team-worker"]).idle == "stop"
+    assert AgentSpec.load(ROLE_SPECS["team-verifier"]).idle == "stop"
 
 
 def test_strategic_field_loads_and_defaults_false(tmp_path):
-    """`strategic:` is resident-only and opt-in: the CEO enables the every-wake
-    reasoning prefix while an absent key leaves every other role unchanged."""
+    """The Team runtime leaves the retired Company strategic prefix disabled."""
     spec = AgentSpec.load(_write_fixture_yaml(tmp_path))
     assert spec.strategic is False
-    assert AgentSpec.load(ROLE_SPECS["ceo"]).strategic is True
-    for role in set(ROLE_SPECS) - {"ceo"}:
+    for role in ROLE_SPECS:
         assert AgentSpec.load(ROLE_SPECS[role]).strategic is False
 
 
@@ -198,22 +177,58 @@ def test_read_system_prompt_and_skill_paths(tmp_path):
     assert os.path.exists(os.path.join(paths[0], "SKILL.md"))
 
 
-def test_civic_goal_skills_wired_and_resolvable():
-    # V7: a resident Department creates Goals; disposable Workers receive the
-    # one Goal directly from Worker Manager. The CEO never dispatches Goals.
-    dept = {
-        os.path.basename(p): p
-        for p in AgentSpec.load(
-            os.path.join(AGENTS, "departments", "builder.yaml")
-        ).skill_paths()
-    }
-    assert "manage-goals" in dept
-    assert os.path.exists(os.path.join(dept["manage-goals"], "SKILL.md"))
-    ceo = {os.path.basename(p): p for p in
-           AgentSpec.load(os.path.join(AGENTS, "ceo.yaml")).skill_paths()}
-    assert "send-goal" not in ceo
-    assert "manage-departments" in ceo
-    assert "manage-objectives" in ceo
+def test_system_prompt_fragments_precede_role_charter(tmp_path):
+    agents = tmp_path / "agents"
+    assets = agents / "assets"
+    assets.mkdir(parents=True)
+    (assets / "shared.md").write_text("SHARED TOOL GUIDANCE\n")
+    (assets / "charter.md").write_text("ROLE CHARTER\n")
+    spec_path = agents / "demo.yaml"
+    spec_path.write_text(
+        "name: demo\n"
+        "system_prompt_fragments:\n"
+        "  - assets/shared.md\n"
+        "system_prompt: assets/charter.md\n"
+    )
+
+    spec = AgentSpec.load(str(spec_path))
+
+    assert spec.system_prompt_fragments == ["assets/shared.md"]
+    assert spec.read_system_prompt() == "SHARED TOOL GUIDANCE\n\nROLE CHARTER"
+
+
+def test_active_roles_share_one_tool_prompt_without_losing_role_boundaries():
+    shared_path = os.path.join(AGENTS, "assets", "shared-tool-use.md")
+    shared = Path(shared_path).read_text(encoding="utf-8").strip()
+    prompts = {}
+
+    for role, path in ROLE_SPECS.items():
+        spec = AgentSpec.load(path)
+        assert len(spec.system_prompt_fragments) == 1, role
+        assert os.path.realpath(spec.resolve(spec.system_prompt_fragments[0])) == (
+            os.path.realpath(shared_path)
+        ), role
+        prompt = spec.read_system_prompt()
+        assert prompt is not None
+        assert prompt.startswith(shared + "\n\n"), role
+        assert prompt.count("# Shared Tool-Use Environment") == 1, role
+        prompts[role] = prompt
+
+    for required in (
+        "GitHub CLI (`gh`)",
+        "Vercel CLI (`vercel`)",
+        "meaningful, independently verifiable step",
+        "create a project repository",
+        "deploy the product",
+        "Markdown under\n`/project`",
+    ):
+        assert required in shared
+    assert "never grants permission or overrides the role charter" in shared
+    assert "Lead remains responsible for judgment and Goal delegation" in shared
+    assert "Verifier remains read-only" in shared
+    assert "# Hackathon Lead" in prompts["lead"]
+    assert "# One-Goal Hackathon Worker" in prompts["team-worker"]
+    assert "# Fresh Hackathon Verifier" in prompts["team-verifier"]
 
 
 def test_model_effort_unset_override_and_null(tmp_path):

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Challenge Thesis"
-  short_description: "Stress-test a strategic conclusion and why it may fail"
-  default_prompt: "Use $challenge-thesis to find the strongest reasons this current conclusion could be wrong."

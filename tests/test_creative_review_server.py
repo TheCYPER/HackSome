@@ -46,7 +46,7 @@ class FakeReviewBackend:
             self.snapshot_calls.append((role, reviewer_id, include_team_wall))
         # Deliberately return the superset. The HTTP layer must redact it.
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "creative-run-001",
             "round": {
                 "id": "creative-review-round-001",
@@ -59,6 +59,10 @@ class FakeReviewBackend:
                     "sha256": "b" * 64,
                     "title": "会回望你的影子",
                     "hook": "灯熄灭后，影子继续完成你刚才没做完的动作。",
+                    "software_core_and_runtime": "浏览器输入经过本地 JS 变换后返回动画。",
+                    "share_trigger_and_artifact": "每人得到一个可转发 URL。",
+                    "minimum_hackathon_demo": "两台浏览器跑通输入到可见输出。",
+                    "software_demo_feasibility": "must-not-leak",
                     "memory_sources": ["must-not-leak"],
                     "memory_source_refs": ["must-not-leak"],
                     "memory_cue_refs": ["must-not-leak"],
@@ -74,8 +78,19 @@ class FakeReviewBackend:
             "team_wall": [
                 {
                     "reviewer_name": "Weston",
-                    "one_sentence_retell": "影子在你离开后继续表演。",
-                    "share_target": "会做装置艺术的朋友",
+                    "schema_version": 2,
+                    "concept_reviews": [
+                        {
+                            "concept_ref": "creative-concept-s01-01-r002",
+                            "one_sentence_retell": "影子在你离开后继续表演。",
+                            "share_impulse": "immediate",
+                            "share_target": "会做网页实验的朋友",
+                            "demo_confidence": "yes",
+                            "reactions": {"surprise": "yes"},
+                            "recommendation": "keep",
+                            "comment": "想试。",
+                        }
+                    ],
                     "memory_provenance": "nested-secret",
                 }
             ],
@@ -92,6 +107,20 @@ class FakeReviewBackend:
                     }
                 ],
                 "feedback_fragments": [{"feedback_ref": "feedback-001"}],
+                "feasibility_evidence": [
+                    {
+                        "concept_ref": "creative-concept-s01-01-r002",
+                        "overall_decision": "pass",
+                        "dimensions": [
+                            {
+                                "dimension": "software_first_core",
+                                "verdict": "pass",
+                                "reason_code": None,
+                                "evidence": "浏览器路径完整。",
+                            }
+                        ],
+                    }
+                ],
                 "resolution_controls": {"can_close": True},
             },
         }
@@ -240,6 +269,7 @@ class ReviewServerTestCase(unittest.TestCase):
 
     def valid_review(self, reviewer_id: str) -> dict[str, Any]:
         return {
+            "schema_version": 2,
             "review_id": f"review-{reviewer_id}",
             "run_id": "creative-run-001",
             "round_id": "creative-review-round-001",
@@ -252,6 +282,8 @@ class ReviewServerTestCase(unittest.TestCase):
                     "concept_sha256": "b" * 64,
                     "one_sentence_retell": "灯灭后，影子替我继续动作。",
                     "share_target": "做舞台的朋友",
+                    "share_impulse": "immediate",
+                    "demo_confidence": "yes",
                     "reactions": {
                         "surprise": "yes",
                         "fun": "maybe",
@@ -290,6 +322,45 @@ class TestReviewUIResources(unittest.TestCase):
         self.assertNotIn("insertAdjacentHTML", javascript)
         self.assertIn("round_sha256", javascript)
         self.assertIn("localStorage", javascript)
+        self.assertIn("share_impulse", javascript)
+        self.assertIn("demo_confidence", javascript)
+        self.assertIn("软件核心与运行入口", javascript)
+        self.assertIn("分享触发与可转发物", javascript)
+
+    def test_ui_renders_one_active_relay_card_with_its_own_review(self) -> None:
+        root = resources.files("hacksome").joinpath("review_ui")
+        html = root.joinpath("index.html").read_text(encoding="utf-8")
+        css = root.joinpath("styles.css").read_text(encoding="utf-8")
+        javascript = root.joinpath("app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="concept-review-cards"', html)
+        self.assertIn('class="concept-review-deck"', html)
+        self.assertIn('id="active-concept-stage"', html)
+        self.assertIn('id="toggle-concept-directory"', html)
+        self.assertIn('id="previous-concept"', html)
+        self.assertIn('id="relay-announcer"', html)
+        self.assertNotIn('class="concept-review-stack"', html)
+        self.assertNotIn('id="review-panel"', html)
+        self.assertNotIn('id="retell"', html)
+        self.assertIn("function createConceptReviewCard(", javascript)
+        self.assertIn("createConceptReviewSection(concept, index)", javascript)
+        self.assertIn('"用户做什么"', javascript)
+        self.assertIn('"软件如何回应"', javascript)
+        self.assertIn('"为何会再试 / 分享"', javascript)
+        self.assertIn('"one_sentence_retell"', javascript)
+        self.assertIn('"share_impulse"', javascript)
+        self.assertIn('"demo_confidence"', javascript)
+        self.assertIn("active_concept_ref", javascript)
+        self.assertIn('["reject", "revise", "keep"]', javascript)
+        self.assertIn('finishCardAction("later")', javascript)
+        self.assertIn("nextUndecidedIndex", javascript)
+        self.assertIn("globalThis.matchMedia", javascript)
+        self.assertIn(".project-review-card", css)
+        self.assertIn(".project-facts", css)
+        self.assertIn(".project-review-section", css)
+        self.assertIn(".concept-deck-shell", css)
+        self.assertIn("@keyframes card-exit-keep", css)
+        self.assertIn(".card-actions", css)
 
     def test_non_loopback_binding_requires_a_public_host(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -343,6 +414,18 @@ class TestRoleProjection(unittest.TestCase):
             projection["concepts"][0]["hook"],
             "灯熄灭后，影子继续完成你刚才没做完的动作。",
         )
+        self.assertEqual(
+            projection["concepts"][0]["software_core_and_runtime"],
+            "浏览器输入经过本地 JS 变换后返回动画。",
+        )
+        self.assertEqual(
+            projection["concepts"][0]["share_trigger_and_artifact"],
+            "每人得到一个可转发 URL。",
+        )
+        self.assertNotIn(
+            "software_demo_feasibility",
+            json.dumps(projection, ensure_ascii=False),
+        )
 
     def test_post_submit_reviewer_gets_wall_but_not_memory_metadata(self) -> None:
         projection = review_server_module._project_snapshot(
@@ -353,8 +436,16 @@ class TestRoleProjection(unittest.TestCase):
         )
         self.assert_memory_metadata_hidden(projection)
         self.assertEqual(
-            projection["team_wall"][0]["one_sentence_retell"],
+            projection["team_wall"][0]["concept_reviews"][0]["one_sentence_retell"],
             "影子在你离开后继续表演。",
+        )
+        self.assertEqual(
+            projection["team_wall"][0]["concept_reviews"][0]["share_impulse"],
+            "immediate",
+        )
+        self.assertEqual(
+            projection["team_wall"][0]["concept_reviews"][0]["demo_confidence"],
+            "yes",
         )
 
     def test_curator_keeps_complete_memory_metadata(self) -> None:
@@ -370,6 +461,7 @@ class TestRoleProjection(unittest.TestCase):
         self.assertEqual(concept["memory_cue_refs"], ["must-not-leak"])
         self.assertIn("memory_provenance", projection)
         self.assertIn("curation", projection)
+        self.assertIn("feasibility_evidence", projection["curation"])
 
 
 class TestReviewServerHTTP(ReviewServerTestCase):
@@ -561,6 +653,19 @@ class TestReviewServerHTTP(ReviewServerTestCase):
         )
         self.assertEqual(status, 422)
         self.assertIn(b"text_field_too_long", body)
+        self.assertEqual(self.backend.review_calls, [])
+
+        review = self.valid_review("reviewer-alpha")
+        review["concept_reviews"][0]["share_target"] = ""
+        status, _, body = self.request(
+            "POST",
+            "/api/reviews",
+            jar=reviewer,
+            payload=review,
+            origin=self.server.origin,
+        )
+        self.assertEqual(status, 422)
+        self.assertIn(b"share_target_required", body)
         self.assertEqual(self.backend.review_calls, [])
 
         curator = self.join(curator=True)

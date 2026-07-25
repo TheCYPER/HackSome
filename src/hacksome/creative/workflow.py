@@ -38,17 +38,25 @@ from hacksome.creative.contracts import (
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
     C4_CHEAP_HOOK_REVIEW,
+    C4_SOFTWARE_DEMO_REVIEW,
     C5M_MEMORY_RECALL,
     C5M_MEMORY_REMIX,
     C5W_NOVELTY_SCAN,
     C6A_EVIDENCE_REVISE,
     C6B_PORTFOLIO_CURATE,
     C6C_FEEDBACK_REVISE,
+    CREATIVE_CONTRACT_VERSION,
+    CREATIVE_PROMPT_POLICY_VERSION,
+    CREATIVE_REPORT_POLICY_VERSION,
+    CREATIVE_STAGE_POLICY_VERSION,
     CreativeWorkflowSettings,
     DEFAULT_CREATIVE_BRIEF,
     DEFAULT_TERRITORY_LENSES,
     RevisionBudget,
     RevisionReason,
+    SOFTWARE_DEMO_POLICY,
+    SOFTWARE_DEMO_POLICY_VERSION,
+    StableReasonCode,
     atom_id,
     base_concept_id,
     concept_revision_ref,
@@ -65,6 +73,7 @@ from hacksome.creative.memory import (
 )
 from hacksome.creative.prompting import (
     creative_prompt_catalog,
+    creative_prompt_catalog_for_contract,
     validate_creative_output,
 )
 from hacksome.creative.review import (
@@ -96,9 +105,40 @@ DEFAULT_RUN_TIMEOUT_SECONDS = 6 * 60 * 60
 SYNTHESIS_LENSES = (
     "Combine atoms through a legible interaction loop",
     "Combine atoms around a sharp reversal and reveal",
-    "Combine atoms around a social retelling or shared performance",
-    "Combine atoms through a strange but coherent wildcard structure",
+    "Combine atoms around a software-native share, replay, or remix artifact",
+    "Combine atoms through software-visible hidden state or a surprising technical mechanism",
 )
+
+_PORTFOLIO_CURATOR_LENSES = (
+    (
+        "meaning_value_red_team",
+        (
+            "After removing poetic copy and visual atmosphere, verify that an "
+            "ordinary person can explain the product loop, affect a meaningful "
+            "output, repeat it, and understand its value to a recipient. Reject "
+            "curator-dependent installation metaphors and empty AI spectacles."
+        ),
+    ),
+    (
+        "hackathon_floor_red_team",
+        (
+            "Evaluate the exact Concept as a real hackathon-floor demo: a visitor "
+            "must be able to start within about 30 seconds, receive software-made "
+            "feedback, want a second round, and invite another person to try it "
+            "without relying on an author performance or long explanation."
+        ),
+    ),
+)
+
+_HARD_SOFTWARE_DEMO_REASON_CODES = frozenset(
+    {
+        StableReasonCode.CORE_NOT_SOFTWARE_FIRST.value,
+        StableReasonCode.REQUIRES_CUSTOM_HARDWARE_OR_FABRICATION.value,
+        StableReasonCode.CORE_IS_MANUAL_PERFORMANCE_OR_INSTALLATION.value,
+        StableReasonCode.REQUIRES_UNAVAILABLE_DEPENDENCY_OR_PERMISSION.value,
+    }
+)
+_CONCEPT_SCREEN_MATRIX_VERSION = "1"
 
 class CreativeWorkflowError(RuntimeError):
     """The Creative C0-C5 prefix cannot safely continue."""
@@ -145,6 +185,26 @@ class HookGateOutcome:
     passed: tuple[CreativeConcept, ...]
     disposition_refs: tuple[str, ...]
     reviewed_revisions: tuple[CreativeConcept, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConceptScreenReviews:
+    hook_reviews: tuple[tuple[str, dict[str, Any], str], ...]
+    software_demo_review: tuple[str, dict[str, Any], str]
+
+    @property
+    def evidence_refs(self) -> tuple[str, ...]:
+        return (
+            *(reference for reference, _, _ in self.hook_reviews),
+            self.software_demo_review[0],
+        )
+
+    @property
+    def task_ids(self) -> tuple[str, ...]:
+        return (
+            *(task_id for _, _, task_id in self.hook_reviews),
+            self.software_demo_review[2],
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +259,7 @@ class CreativeIdeaWorkflow:
         settings: CreativeWorkflowSettings,
         prompt_catalog: PromptCatalog,
         memory_snapshot: IdeaMemorySnapshot,
+        contract_version: str,
         semantic_validator: SemanticValidator,
         task_timeout_seconds: float,
         run_timeout_seconds: float,
@@ -208,6 +269,7 @@ class CreativeIdeaWorkflow:
         self.settings = settings
         self.prompt_catalog = prompt_catalog
         self.memory_snapshot = memory_snapshot
+        self.contract_version = contract_version
         self.task_timeout_seconds = _positive_timeout(
             task_timeout_seconds, "task_timeout_seconds"
         )
@@ -261,17 +323,6 @@ class CreativeIdeaWorkflow:
             SnapshotPersister, persist_memory_snapshot
         )
         selected_catalog = prompt_catalog or creative_prompt_catalog
-        if semantic_validator is None:
-            def default_validator(stage: str, output: dict[str, Any]) -> None:
-                validate_creative_output(
-                    stage,
-                    output,
-                    settings=selected_settings,
-                )
-
-            selected_validator: SemanticValidator = default_validator
-        else:
-            selected_validator = semantic_validator
 
         if creative_brief is not None and creative_brief_file is not None:
             raise ValueError("creative_brief and creative_brief_file are mutually exclusive")
@@ -301,7 +352,13 @@ class CreativeIdeaWorkflow:
             settings=settings_payload,
             codex_config=selected_config,
             run_id=run_id,
-            route="creative",
+            route={
+                "id": "creative",
+                "contract_version": CREATIVE_CONTRACT_VERSION,
+                "prompt_policy_version": CREATIVE_PROMPT_POLICY_VERSION,
+                "stage_policy_version": CREATIVE_STAGE_POLICY_VERSION,
+                "report_policy_version": CREATIVE_REPORT_POLICY_VERSION,
+            },
         )
         brief_path = hub.run_dir / "input" / "creative-brief-input.md"
         atomic_write_text(brief_path, brief_text)
@@ -311,6 +368,17 @@ class CreativeIdeaWorkflow:
                 "path": "input/creative-brief-input.md",
                 "sha256": sha256_text(brief_text),
                 "source": brief_source,
+            },
+        )
+        policy_path = hub.run_dir / "input" / "software-demo-policy.json"
+        atomic_write_text(policy_path, SOFTWARE_DEMO_POLICY)
+        hub.register_input(
+            "software_demo_policy",
+            {
+                "path": "input/software-demo-policy.json",
+                "sha256": sha256_text(SOFTWARE_DEMO_POLICY),
+                "policy_version": SOFTWARE_DEMO_POLICY_VERSION,
+                "source": "controller",
             },
         )
         snapshot_record = selected_persister(selected_snapshot, hub.run_dir)
@@ -325,12 +393,27 @@ class CreativeIdeaWorkflow:
             stage_policy_version=route["stage_policy_version"],
         )
         hub.set_resource_manifest(frozen.manifest_reference())
+        if semantic_validator is None:
+
+            def default_validator(stage: str, output: dict[str, Any]) -> None:
+                validate_creative_output(
+                    stage,
+                    output,
+                    settings=selected_settings,
+                    contract_version=CREATIVE_CONTRACT_VERSION,
+                    schema_path=frozen.catalog[stage].schema_path,
+                )
+
+            selected_validator: SemanticValidator = default_validator
+        else:
+            selected_validator = semantic_validator
         return cls(
             hub,
             runner or CodexRunner(selected_config),
             settings=selected_settings,
             prompt_catalog=frozen.catalog,
             memory_snapshot=selected_snapshot,
+            contract_version=CREATIVE_CONTRACT_VERSION,
             semantic_validator=selected_validator,
             task_timeout_seconds=selected_config.default_timeout_seconds,
             run_timeout_seconds=run_timeout_seconds,
@@ -382,7 +465,11 @@ class CreativeIdeaWorkflow:
                 expected_sha256=expected_settings_hash,
             )
             config = hub.load_codex_config()
-            catalog = creative_prompt_catalog.load_frozen(
+            contract_version = str(route.get("contract_version", ""))
+            package_catalog = creative_prompt_catalog_for_contract(
+                contract_version
+            )
+            catalog = package_catalog.load_frozen(
                 hub.run_dir,
                 route_id="creative",
                 contract_version=str(route.get("contract_version", "")),
@@ -419,7 +506,13 @@ class CreativeIdeaWorkflow:
             ) from exc
 
         def validator(stage: str, output: dict[str, Any]) -> None:
-            validate_creative_output(stage, output, settings=settings)
+            validate_creative_output(
+                stage,
+                output,
+                settings=settings,
+                contract_version=contract_version,
+                schema_path=catalog[stage].schema_path,
+            )
 
         return cls(
             hub,
@@ -427,6 +520,7 @@ class CreativeIdeaWorkflow:
             settings=settings,
             prompt_catalog=catalog,
             memory_snapshot=memory_snapshot,
+            contract_version=contract_version,
             semantic_validator=validator,
             task_timeout_seconds=config.default_timeout_seconds,
             run_timeout_seconds=run_timeout_seconds,
@@ -567,7 +661,7 @@ class CreativeIdeaWorkflow:
                             prefix.base_concept_refs
                             or prefix.memory_challenger_refs
                         )
-                        else "all_candidates_failed_hook"
+                        else "all_candidates_failed_concept_screen"
                     )
                     batch_ref, _ = self._publish_review_batch(
                         concept_refs=(),
@@ -890,6 +984,26 @@ class CreativeIdeaWorkflow:
                     "evidence_refs",
                 )
             )
+            hook_evidence_refs = tuple(
+                reference
+                for reference in evidence_refs
+                if _artifact_record(self.hub, reference).get("artifact_type")
+                == "creative_cheap_hook_review"
+            )
+            feasibility_evidence_refs = tuple(
+                reference
+                for reference in evidence_refs
+                if _artifact_record(self.hub, reference).get("artifact_type")
+                == "creative_software_demo_review"
+            )
+            if (
+                len(hook_evidence_refs)
+                != int(self.settings.hook_reviewers_per_concept)
+                or len(feasibility_evidence_refs) != 1
+            ):
+                raise CreativeWorkflowError(
+                    f"{concept.artifact_ref} has an incomplete C4 screen"
+                )
             novelty_ref = self._novelty_ref_for(concept.artifact_ref)
             relevant_cues, cue_source_ref = self._relevant_memory_cues(concept)
             task_id = (
@@ -900,6 +1014,7 @@ class CreativeIdeaWorkflow:
                 challenge_ref,
                 constraint_ref,
                 brief_ref,
+                "input:software_demo_policy",
                 concept.artifact_ref,
                 *evidence_refs,
                 novelty_ref,
@@ -919,12 +1034,23 @@ class CreativeIdeaWorkflow:
                     ),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
                     (
+                        "SOFTWARE_DEMO_POLICY",
+                        _input_text(self.hub, "software_demo_policy"),
+                    ),
+                    (
                         "CONCEPT_REVISION",
                         self.hub.read_artifact(concept.artifact_ref),
                     ),
                     (
                         "CHEAP_HOOK_EVIDENCE",
-                        _artifact_json_index(self.hub, evidence_refs),
+                        _artifact_json_index(self.hub, hook_evidence_refs),
+                    ),
+                    (
+                        "SOFTWARE_DEMO_FEASIBILITY_EVIDENCE",
+                        _artifact_json_index(
+                            self.hub,
+                            feasibility_evidence_refs,
+                        ),
                     ),
                     (
                         "NOVELTY_SCAN",
@@ -975,6 +1101,9 @@ class CreativeIdeaWorkflow:
                     ],
                     "hook_disposition_ref": str(
                         hook_disposition["disposition_id"]
+                    ),
+                    "software_demo_review_ref": (
+                        feasibility_evidence_refs[0]
                     ),
                     "novelty_scan_ref": novelty_ref,
                     "relevant_memory_cue_ids": [
@@ -1057,25 +1186,59 @@ class CreativeIdeaWorkflow:
 
         allowed_refs = {concept.artifact_ref for concept in concepts}
         portfolio = _curation_portfolio_text(self.hub, concepts)
+        software_policy = _input_text(self.hub, "software_demo_policy")
+        curator_lenses_enabled = (
+            self.prompt_catalog[C6B_PORTFOLIO_CURATE].version == "4"
+        )
+        if int(self.settings.portfolio_curators) != len(
+            _PORTFOLIO_CURATOR_LENSES
+        ):
+            raise CreativeWorkflowError(
+                "portfolio_curators must match the fixed curator lens count"
+            )
 
-        async def curate(slot: int) -> tuple[int, dict[str, Any], str, str]:
+        async def curate(
+            slot: int,
+            lens_id: str,
+            lens_instruction: str,
+        ) -> tuple[int, dict[str, Any], str, str]:
             task_id = f"creative-c6b-portfolio-curator-{slot:02d}"
+            blocks: list[tuple[str, str]] = [
+                ("EVIDENCE_INFORMED_PORTFOLIO", portfolio),
+                ("SOFTWARE_DEMO_POLICY", software_policy),
+            ]
+            if curator_lenses_enabled:
+                blocks.append(
+                    (
+                        "CURATOR_LENS",
+                        _json_text(
+                            {
+                                "curator_lens_id": lens_id,
+                                "primary_counterevidence_question": (
+                                    lens_instruction
+                                ),
+                            }
+                        ),
+                    )
+                )
+            blocks.append(
+                (
+                    "CURATION_CONTRACT",
+                    (
+                        "Classify every exact Concept ref once as "
+                        "include, hold, or exclude. Do not score, rank, "
+                        "merge, or emit primary Territory. The categorical "
+                        "dimensions mechanically determine the decision."
+                    ),
+                )
+            )
             output = await self._execute(
                 stage=C6B_PORTFOLIO_CURATE,
                 task_id=task_id,
-                blocks=(
-                    ("EVIDENCE_INFORMED_PORTFOLIO", portfolio),
-                    (
-                        "CURATION_CONTRACT",
-                        (
-                            "Classify every exact Concept ref once as "
-                            "include, hold, or exclude. Do not score, rank, "
-                            "merge, or emit primary Territory."
-                        ),
-                    ),
-                ),
-                parent_refs=tuple(
-                    concept.artifact_ref for concept in concepts
+                blocks=tuple(blocks),
+                parent_refs=(
+                    "input:software_demo_policy",
+                    *(concept.artifact_ref for concept in concepts),
                 ),
             )
             output = self._validate_completed_output(
@@ -1087,6 +1250,12 @@ class CreativeIdeaWorkflow:
             artifact_ref = (
                 f"creative-portfolio-curation-r001-v{slot:02d}"
             )
+            metadata: dict[str, Any] = {
+                "curator_slot": slot,
+                "concept_refs": sorted(allowed_refs),
+            }
+            if curator_lenses_enabled:
+                metadata["curator_lens_id"] = lens_id
             self.hub.publish_artifact(
                 artifact_id=artifact_ref,
                 artifact_type="creative_portfolio_curation",
@@ -1099,10 +1268,7 @@ class CreativeIdeaWorkflow:
                 source_refs=tuple(
                     concept.artifact_ref for concept in concepts
                 ),
-                metadata={
-                    "curator_slot": slot,
-                    "concept_refs": sorted(allowed_refs),
-                },
+                metadata=metadata,
             )
             return slot, output, task_id, artifact_ref
 
@@ -1110,10 +1276,13 @@ class CreativeIdeaWorkflow:
             sorted(
                 await asyncio.gather(
                     *(
-                        curate(slot)
-                        for slot in range(
-                            1,
-                            int(self.settings.portfolio_curators) + 1,
+                        curate(slot, lens_id, lens_instruction)
+                        for slot, (
+                            lens_id,
+                            lens_instruction,
+                        ) in enumerate(
+                            _PORTFOLIO_CURATOR_LENSES,
+                            start=1,
                         )
                     )
                 )
@@ -1188,6 +1357,7 @@ class CreativeIdeaWorkflow:
             None,
             "no_concepts_generated",
             "all_candidates_failed_hook",
+            "all_candidates_failed_concept_screen",
             "shortlist_empty",
         }:
             raise CreativeWorkflowError(
@@ -1399,7 +1569,10 @@ class CreativeIdeaWorkflow:
                 "Creative execution preflight requires route resources"
             )
         try:
-            verified_catalog = creative_prompt_catalog.load_frozen(
+            contract_version = str(route.get("contract_version", ""))
+            verified_catalog = creative_prompt_catalog_for_contract(
+                contract_version
+            ).load_frozen(
                 self.run_dir,
                 route_id="creative",
                 contract_version=str(route.get("contract_version", "")),
@@ -1445,6 +1618,25 @@ class CreativeIdeaWorkflow:
             raise CreativeWorkflowError(
                 "Creative Idea Memory Snapshot differs from the frozen run input"
             )
+        if contract_version == CREATIVE_CONTRACT_VERSION:
+            policy_record = (
+                inputs.get("software_demo_policy")
+                if isinstance(inputs, dict)
+                else None
+            )
+            if not isinstance(policy_record, dict):
+                raise CreativeWorkflowError(
+                    "Creative v2 run requires a frozen Software Demo Policy"
+                )
+            if (
+                policy_record.get("policy_version")
+                != SOFTWARE_DEMO_POLICY_VERSION
+                or _input_text(self.hub, "software_demo_policy")
+                != SOFTWARE_DEMO_POLICY
+            ):
+                raise CreativeWorkflowError(
+                    "Creative Software Demo Policy is unsupported or changed"
+                )
 
         self.prompt_catalog = verified_catalog
         self.task_executor.catalog = verified_catalog
@@ -1486,6 +1678,7 @@ class CreativeIdeaWorkflow:
     async def _run_c1(self, challenge_ref: str, constraint_ref: str) -> str:
         task_id = "creative-c1-brief-normalize"
         brief_input = _input_text(self.hub, "creative_brief")
+        software_policy = _input_text(self.hub, "software_demo_policy")
         output = await self._execute(
             stage=C1_BRIEF_NORMALIZE,
             task_id=task_id,
@@ -1494,8 +1687,14 @@ class CreativeIdeaWorkflow:
                 ("CHALLENGE_BRIEF", self.hub.read_artifact(challenge_ref)),
                 ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                 ("CREATIVE_BRIEF_INPUT", brief_input),
+                ("SOFTWARE_DEMO_POLICY", software_policy),
             ),
-            parent_refs=(challenge_ref, constraint_ref, "input:creative_brief"),
+            parent_refs=(
+                challenge_ref,
+                constraint_ref,
+                "input:creative_brief",
+                "input:software_demo_policy",
+            ),
         )
         markdown = _required_text(output, "markdown")
         return self.hub.publish_artifact(
@@ -1522,6 +1721,7 @@ class CreativeIdeaWorkflow:
                 start=1,
             )
         )
+        software_policy = _input_text(self.hub, "software_demo_policy")
 
         async def explore(
             slot: int,
@@ -1536,6 +1736,7 @@ class CreativeIdeaWorkflow:
                     ("CHALLENGE_BRIEF", self.hub.read_artifact(challenge_ref)),
                     ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    ("SOFTWARE_DEMO_POLICY", software_policy),
                     ("TERRITORY_LENS", lens),
                     (
                         "LIMITS",
@@ -1543,7 +1744,12 @@ class CreativeIdeaWorkflow:
                         f"{int(self.settings.max_atoms_per_territory)} atoms.",
                     ),
                 ),
-                parent_refs=(challenge_ref, constraint_ref, brief_ref),
+                parent_refs=(
+                    challenge_ref,
+                    constraint_ref,
+                    brief_ref,
+                    "input:software_demo_policy",
+                ),
             )
             return slot, territory_ref_id, output, task_id
 
@@ -1614,6 +1820,7 @@ class CreativeIdeaWorkflow:
         if not atom_refs:
             return ()
         atom_index = _atom_index(self.hub, atom_refs)
+        software_policy = _input_text(self.hub, "software_demo_policy")
 
         async def synthesize(slot: int, lens: str) -> tuple[int, dict[str, Any], str]:
             task_id = f"creative-c3-synthesis-{slot:02d}"
@@ -1624,6 +1831,7 @@ class CreativeIdeaWorkflow:
                     ("CHALLENGE_BRIEF", self.hub.read_artifact(challenge_ref)),
                     ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    ("SOFTWARE_DEMO_POLICY", software_policy),
                     ("CURRENT_ATOM_INDEX", atom_index),
                     ("SYNTHESIS_LENS", lens),
                     (
@@ -1636,6 +1844,7 @@ class CreativeIdeaWorkflow:
                     challenge_ref,
                     constraint_ref,
                     brief_ref,
+                    "input:software_demo_policy",
                     *atom_refs,
                 ),
             )
@@ -1779,31 +1988,51 @@ class CreativeIdeaWorkflow:
         constraint_ref: str,
         brief_ref: str,
     ) -> HookGateOutcome:
-        first_reviews = await self._review_concept(
+        first_reviews = await self._screen_concept(
             concept,
             constraint_ref=constraint_ref,
             brief_ref=brief_ref,
             cycle=1,
         )
-        decisions = tuple(_review_decision(output) for _, output, _ in first_reviews)
-        reason_codes = _review_reason_codes(output for _, output, _ in first_reviews)
-        evidence_refs = tuple(ref for ref, _, _ in first_reviews)
-        task_ids = tuple(task_id for _, _, task_id in first_reviews)
+        hook_decisions = tuple(
+            _review_decision(output)
+            for _, output, _ in first_reviews.hook_reviews
+        )
+        feasibility_decision = _review_decision(
+            first_reviews.software_demo_review[1]
+        )
+        reason_codes = _review_reason_codes(
+            (
+                *(output for _, output, _ in first_reviews.hook_reviews),
+                first_reviews.software_demo_review[1],
+            )
+        )
+        evidence_refs = first_reviews.evidence_refs
+        task_ids = first_reviews.task_ids
 
-        if decisions == ("pass", "pass"):
+        if hook_decisions == ("pass", "pass") and feasibility_decision == "pass":
+            codes = (
+                StableReasonCode.C4_CONCEPT_SCREEN_PASSED.value,
+                *reason_codes,
+            )
             decision_ref = self._record_hook_decision(
                 concept,
                 outcome="pass",
-                reason_codes=reason_codes,
+                reason_codes=codes,
                 evidence_refs=evidence_refs,
                 task_ids=task_ids,
                 cycle=1,
+                hook_review_refs=tuple(
+                    reference
+                    for reference, _, _ in first_reviews.hook_reviews
+                ),
+                feasibility_review_ref=first_reviews.software_demo_review[0],
             )
             disposition_ref = self._publish_disposition(
                 concept,
                 outcome="pass",
                 terminal=False,
-                reason_codes=reason_codes,
+                reason_codes=codes,
                 decision_ref=decision_ref,
                 evidence_refs=evidence_refs,
                 task_ids=task_ids,
@@ -1811,8 +2040,19 @@ class CreativeIdeaWorkflow:
             )
             return HookGateOutcome((concept,), (disposition_ref,), (concept,))
 
-        if decisions == ("invalid", "invalid"):
-            codes = ("c4_double_invalid", *reason_codes)
+        hard_feasibility_failure = (
+            feasibility_decision == "invalid"
+            and bool(
+                _HARD_SOFTWARE_DEMO_REASON_CODES.intersection(reason_codes)
+            )
+        )
+        if hard_feasibility_failure or hook_decisions == ("invalid", "invalid"):
+            terminal_reason = (
+                StableReasonCode.C4_SOFTWARE_DEMO_INVALID.value
+                if hard_feasibility_failure
+                else StableReasonCode.C4_DOUBLE_INVALID.value
+            )
+            codes = (terminal_reason, *reason_codes)
             decision_ref = self._record_hook_decision(
                 concept,
                 outcome="eliminated",
@@ -1820,6 +2060,11 @@ class CreativeIdeaWorkflow:
                 evidence_refs=evidence_refs,
                 task_ids=task_ids,
                 cycle=1,
+                hook_review_refs=tuple(
+                    reference
+                    for reference, _, _ in first_reviews.hook_reviews
+                ),
+                feasibility_review_ref=first_reviews.software_demo_review[0],
             )
             disposition_ref = self._publish_disposition(
                 concept,
@@ -1840,6 +2085,10 @@ class CreativeIdeaWorkflow:
             evidence_refs=evidence_refs,
             task_ids=task_ids,
             cycle=1,
+            hook_review_refs=tuple(
+                reference for reference, _, _ in first_reviews.hook_reviews
+            ),
+            feasibility_review_ref=first_reviews.software_demo_review[0],
         )
         repair_disposition = self._publish_disposition(
             concept,
@@ -1868,24 +2117,37 @@ class CreativeIdeaWorkflow:
             task_ids=task_ids,
             suffix="superseded",
         )
-        second_reviews = await self._review_concept(
+        second_reviews = await self._screen_concept(
             repaired,
             constraint_ref=constraint_ref,
             brief_ref=brief_ref,
             cycle=2,
         )
-        second_decisions = tuple(
-            _review_decision(output) for _, output, _ in second_reviews
+        second_hook_decisions = tuple(
+            _review_decision(output)
+            for _, output, _ in second_reviews.hook_reviews
+        )
+        second_feasibility_decision = _review_decision(
+            second_reviews.software_demo_review[1]
         )
         second_reasons = _review_reason_codes(
-            output for _, output, _ in second_reviews
+            (
+                *(output for _, output, _ in second_reviews.hook_reviews),
+                second_reviews.software_demo_review[1],
+            )
         )
-        second_evidence = tuple(ref for ref, _, _ in second_reviews)
-        second_tasks = tuple(task_id for _, _, task_id in second_reviews)
-        if second_decisions == ("pass", "pass"):
+        second_evidence = second_reviews.evidence_refs
+        second_tasks = second_reviews.task_ids
+        if (
+            second_hook_decisions == ("pass", "pass")
+            and second_feasibility_decision == "pass"
+        ):
             outcome = "pass"
             terminal = False
-            codes = second_reasons
+            codes = (
+                StableReasonCode.C4_CONCEPT_SCREEN_PASSED.value,
+                *second_reasons,
+            )
         else:
             outcome = "eliminated"
             terminal = True
@@ -1897,6 +2159,10 @@ class CreativeIdeaWorkflow:
             evidence_refs=second_evidence,
             task_ids=second_tasks,
             cycle=2,
+            hook_review_refs=tuple(
+                reference for reference, _, _ in second_reviews.hook_reviews
+            ),
+            feasibility_review_ref=second_reviews.software_demo_review[0],
         )
         second_disposition = self._publish_disposition(
             repaired,
@@ -1915,6 +2181,35 @@ class CreativeIdeaWorkflow:
             (concept, repaired),
         )
 
+    async def _screen_concept(
+        self,
+        concept: CreativeConcept,
+        *,
+        constraint_ref: str,
+        brief_ref: str,
+        cycle: int,
+    ) -> ConceptScreenReviews:
+        """Run two fresh Hook views and one fresh feasibility view in parallel."""
+
+        hook_reviews, feasibility_review = await asyncio.gather(
+            self._review_concept(
+                concept,
+                constraint_ref=constraint_ref,
+                brief_ref=brief_ref,
+                cycle=cycle,
+            ),
+            self._review_software_demo(
+                concept,
+                constraint_ref=constraint_ref,
+                brief_ref=brief_ref,
+                cycle=cycle,
+            ),
+        )
+        return ConceptScreenReviews(
+            hook_reviews=hook_reviews,
+            software_demo_review=feasibility_review,
+        )
+
     async def _review_concept(
         self,
         concept: CreativeConcept,
@@ -1923,6 +2218,8 @@ class CreativeIdeaWorkflow:
         brief_ref: str,
         cycle: int,
     ) -> tuple[tuple[str, dict[str, Any], str], ...]:
+        software_policy = _input_text(self.hub, "software_demo_policy")
+
         async def review(reviewer: int) -> tuple[str, dict[str, Any], str]:
             task_id = (
                 f"creative-c4-review-{concept.concept_id}-"
@@ -1934,9 +2231,15 @@ class CreativeIdeaWorkflow:
                 blocks=(
                     ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    ("SOFTWARE_DEMO_POLICY", software_policy),
                     ("CONCEPT_REVISION", self.hub.read_artifact(concept.artifact_ref)),
                 ),
-                parent_refs=(constraint_ref, brief_ref, concept.artifact_ref),
+                parent_refs=(
+                    constraint_ref,
+                    brief_ref,
+                    "input:software_demo_policy",
+                    concept.artifact_ref,
+                ),
             )
             artifact_ref = (
                 f"creative-hook-review-{concept.concept_id}-"
@@ -1962,13 +2265,66 @@ class CreativeIdeaWorkflow:
 
         return tuple(await asyncio.gather(review(1), review(2)))
 
+    async def _review_software_demo(
+        self,
+        concept: CreativeConcept,
+        *,
+        constraint_ref: str,
+        brief_ref: str,
+        cycle: int,
+    ) -> tuple[str, dict[str, Any], str]:
+        task_id = (
+            f"creative-c4f-software-demo-{concept.concept_id}-"
+            f"r{concept.revision:03d}-c{cycle}"
+        )
+        output = await self._execute(
+            stage=C4_SOFTWARE_DEMO_REVIEW,
+            task_id=task_id,
+            blocks=(
+                ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
+                ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                (
+                    "SOFTWARE_DEMO_POLICY",
+                    _input_text(self.hub, "software_demo_policy"),
+                ),
+                ("CONCEPT_REVISION", self.hub.read_artifact(concept.artifact_ref)),
+            ),
+            parent_refs=(
+                constraint_ref,
+                brief_ref,
+                "input:software_demo_policy",
+                concept.artifact_ref,
+            ),
+        )
+        artifact_ref = (
+            f"creative-software-demo-review-{concept.concept_id}-"
+            f"r{concept.revision:03d}-c{cycle}"
+        )
+        self.hub.publish_artifact(
+            artifact_id=artifact_ref,
+            artifact_type="creative_software_demo_review",
+            relative_path=(
+                "artifacts/creative/software-demo-reviews/"
+                f"{artifact_ref}.json"
+            ),
+            content=_json_text(output),
+            task_id=task_id,
+            source_refs=(concept.artifact_ref,),
+            metadata={
+                "concept_revision_ref": concept.artifact_ref,
+                "cycle": cycle,
+                "policy_version": SOFTWARE_DEMO_POLICY_VERSION,
+            },
+        )
+        return artifact_ref, output, task_id
+
     async def _repair_concept(
         self,
         concept: CreativeConcept,
         *,
         constraint_ref: str,
         brief_ref: str,
-        reviews: Sequence[tuple[str, Mapping[str, Any], str]],
+        reviews: ConceptScreenReviews,
     ) -> CreativeConcept:
         if concept.revision != 1:
             raise CreativeWorkflowError("C4 repair budget is already consumed")
@@ -1979,16 +2335,24 @@ class CreativeIdeaWorkflow:
             blocks=(
                 ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                 ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                (
+                    "SOFTWARE_DEMO_POLICY",
+                    _input_text(self.hub, "software_demo_policy"),
+                ),
                 ("CONCEPT_REVISION", self.hub.read_artifact(concept.artifact_ref)),
-                ("HOOK_REVIEW_A", _json_text(reviews[0][1])),
-                ("HOOK_REVIEW_B", _json_text(reviews[1][1])),
+                ("HOOK_REVIEW_A", _json_text(reviews.hook_reviews[0][1])),
+                ("HOOK_REVIEW_B", _json_text(reviews.hook_reviews[1][1])),
+                (
+                    "SOFTWARE_DEMO_REVIEW",
+                    _json_text(reviews.software_demo_review[1]),
+                ),
             ),
             parent_refs=(
                 constraint_ref,
                 brief_ref,
+                "input:software_demo_policy",
                 concept.artifact_ref,
-                reviews[0][0],
-                reviews[1][0],
+                *reviews.evidence_refs,
             ),
         )
         output = self._validate_completed_output(
@@ -2012,7 +2376,7 @@ class CreativeIdeaWorkflow:
             relative_path=f"artifacts/creative/concepts/{artifact_ref}.md",
             content=markdown,
             task_id=task_id,
-            source_refs=(concept.artifact_ref, reviews[0][0], reviews[1][0]),
+            source_refs=(concept.artifact_ref, *reviews.evidence_refs),
             metadata={
                 "concept_id": concept.concept_id,
                 "origin": concept.origin,
@@ -2049,6 +2413,8 @@ class CreativeIdeaWorkflow:
         evidence_refs: Sequence[str],
         task_ids: Sequence[str],
         cycle: int,
+        hook_review_refs: Sequence[str],
+        feasibility_review_ref: str,
     ) -> str:
         decision_id = (
             f"creative-decision-c4-{concept.concept_id}-"
@@ -2058,13 +2424,20 @@ class CreativeIdeaWorkflow:
             {
                 "decision_id": decision_id,
                 "route_id": "creative",
-                "stage": "creative-cheap-hook",
+                "stage": "creative-concept-screen",
                 "decision_type": "candidate_gate",
                 "outcome": outcome,
                 "reason_codes": list(dict.fromkeys(reason_codes)),
                 "subject_refs": [concept.artifact_ref],
                 "evidence_refs": list(evidence_refs),
                 "task_ids": list(task_ids),
+                "metadata": {
+                    "hook_review_refs": list(hook_review_refs),
+                    "feasibility_review_ref": feasibility_review_ref,
+                    "aggregation_matrix_version": (
+                        _CONCEPT_SCREEN_MATRIX_VERSION
+                    ),
+                },
             }
         )
         return decision_id
@@ -2300,12 +2673,17 @@ class CreativeIdeaWorkflow:
                 blocks=(
                     ("CHALLENGE_BRIEF", self.hub.read_artifact(challenge_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    (
+                        "SOFTWARE_DEMO_POLICY",
+                        _input_text(self.hub, "software_demo_policy"),
+                    ),
                     ("CURRENT_ATOM", self.hub.read_artifact(atom_ref)),
                     ("MEMORY_CUE", _json_text(cue.to_dict())),
                 ),
                 parent_refs=(
                     challenge_ref,
                     brief_ref,
+                    "input:software_demo_policy",
                     atom_ref,
                     packet_ref,
                 ),
@@ -2649,6 +3027,8 @@ class CreativeIdeaWorkflow:
                 output,
                 settings=self.settings,
                 context=context,
+                contract_version=self.contract_version,
+                schema_path=self.prompt_catalog[stage].schema_path,
             )
         except Exception as exc:
             self.hub.invalidate_task(task_id, exc)
@@ -2805,7 +3185,12 @@ def _curation_portfolio_text(
         metadata = _artifact_metadata(hub, concept.artifact_ref)
         novelty_ref = metadata.get("novelty_scan_ref")
         hook_ref = metadata.get("hook_disposition_ref")
-        if not isinstance(novelty_ref, str) or not isinstance(hook_ref, str):
+        feasibility_ref = metadata.get("software_demo_review_ref")
+        if (
+            not isinstance(novelty_ref, str)
+            or not isinstance(hook_ref, str)
+            or not isinstance(feasibility_ref, str)
+        ):
             raise CreativeWorkflowError(
                 f"C6A Concept is missing evidence refs: {concept.artifact_ref}"
             )
@@ -2814,6 +3199,9 @@ def _curation_portfolio_text(
                 "concept_ref": concept.artifact_ref,
                 "concept_markdown": hub.read_artifact(concept.artifact_ref),
                 "hook_disposition": json.loads(hub.read_artifact(hook_ref)),
+                "software_demo_review": json.loads(
+                    hub.read_artifact(feasibility_ref)
+                ),
                 "novelty_scan": hub.read_artifact(novelty_ref),
                 "relevant_memory_cue_ids": metadata.get(
                     "relevant_memory_cue_ids",

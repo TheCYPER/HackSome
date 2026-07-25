@@ -232,17 +232,18 @@ class CreativeRevisionAndDispositionTests(unittest.TestCase):
                 reason_codes=(StableReasonCode.C4_DOUBLE_INVALID.value,),
             )
 
-    def test_zero_reason_enum_contains_exactly_four_mutually_named_causes(self) -> None:
+    def test_zero_reason_enum_contains_legacy_and_v2_screen_causes(self) -> None:
         self.assertEqual(
             {reason.value for reason in ZeroReasonCode},
             {
                 "no_concepts_generated",
                 "all_candidates_failed_hook",
+                "all_candidates_failed_concept_screen",
                 "shortlist_empty",
                 "all_human_rejected",
             },
         )
-        self.assertEqual(len(CREATIVE_STAGES), 12)
+        self.assertEqual(len(CREATIVE_STAGES), 13)
 
 
 if __name__ == "__main__":

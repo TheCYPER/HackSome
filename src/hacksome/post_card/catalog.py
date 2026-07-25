@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from hacksome.artifacts import ArtifactError, title_of
+from hacksome.creative.contracts import (
+    CREATIVE_CONTRACT_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    SUPPORTED_CREATIVE_CONTRACT_VERSIONS,
+)
 from hacksome.hub import RUN_SCHEMA_VERSION, RunHub
 from hacksome.post_card.contracts import (
     ArtifactRefV1,
@@ -170,7 +175,17 @@ class UsefulPostCardProvider:
 
 class CreativePostCardProvider:
     route_id = "creative"
-    contract_version = "1"
+
+    def __init__(
+        self,
+        contract_version: str = CREATIVE_CONTRACT_VERSION,
+    ) -> None:
+        if contract_version not in SUPPORTED_CREATIVE_CONTRACT_VERSIONS:
+            raise ValueError(
+                "unsupported Creative post-card contract version: "
+                f"{contract_version!r}"
+            )
+        self.contract_version = contract_version
 
     def project(
         self,
@@ -252,7 +267,14 @@ class CreativePostCardProvider:
 
 _PROVIDERS: dict[tuple[str, str], PostCardProvider] = {
     ("useful", "1"): UsefulPostCardProvider(),
-    ("creative", "1"): CreativePostCardProvider(),
+    (
+        "creative",
+        LEGACY_CREATIVE_CONTRACT_VERSION,
+    ): CreativePostCardProvider(LEGACY_CREATIVE_CONTRACT_VERSION),
+    (
+        "creative",
+        CREATIVE_CONTRACT_VERSION,
+    ): CreativePostCardProvider(CREATIVE_CONTRACT_VERSION),
 }
 
 

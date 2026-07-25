@@ -28,7 +28,9 @@ authorize|list|inspect|reconcile|pause|resume`；`authorize` 的 envelope 从 st
 ## 1. Ingestion 与稳定 identity
 
 Build 进程只接受 strict `BuildAuthorizationEnvelopeV1`。outer envelope、source 与
-五字段 handoff 都要求 exact key set；仅支持 Useful/Creative route contract v1。
+五字段 handoff 都要求 exact key set；route/version allowlist 只支持 Useful v1
+以及 Creative v1/v2。BuildFactory 不 import `hacksome` 私有类型；新增 route
+contract 必须在两侧显式升级并补跨进程测试。
 在任何 root/state 写入前必须复核 Card exact UTF-8 bytes 与 SHA。
 
 稳定 identity：

@@ -57,10 +57,12 @@ curl -X PUT \
 
 ## Verify
 
-Run `make mail-up`, then send mail to a claimed address. An `inbox/*.eml`
-object appears in `foundagent-mail`, the singleton router writes only the
-owning Company's `state/<company>/mailboxes/messages.jsonl`, and the object
-moves to `processed/`. An unclaimed address moves to `unmatched/`.
+This upstream reference is no longer wired into the active Team Compose. When
+exercising it independently, build and run the router explicitly, then send
+mail to a claimed address. An `inbox/*.eml` object appears in
+`foundagent-mail`, the singleton router writes only the owning Company's
+`state/<company>/mailboxes/messages.jsonl`, and the object moves to
+`processed/`. An unclaimed address moves to `unmatched/`.
 
 ## Rollback
 

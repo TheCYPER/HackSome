@@ -160,9 +160,13 @@ def publish_partial_report(hub: RunHub) -> tuple[str, str]:
     """Idempotently publish both partial-report views on a failed run."""
 
     bundle = render_partial_report(hub.load_consistent_snapshot())
-    source_refs = _partial_source_refs(
-        json.loads(bundle.json.decode("utf-8"))
-    )
+    payload = json.loads(bundle.json.decode("utf-8"))
+    source_refs = _partial_source_refs(payload)
+    report_policy_version = payload.get("report_policy_version")
+    if not isinstance(report_policy_version, str) or not report_policy_version:
+        raise CreativePartialReportError(
+            "partial report requires a persisted report policy version"
+        )
     markdown_id = hub.publish_artifact(
         artifact_id=PARTIAL_REPORT_MARKDOWN_ID,
         artifact_type="creative_partial_report_markdown",
@@ -170,7 +174,10 @@ def publish_partial_report(hub: RunHub) -> tuple[str, str]:
         content=bundle.markdown.decode("utf-8"),
         task_id=None,
         source_refs=source_refs,
-        metadata={"status": "failed", "report_policy_version": "1"},
+        metadata={
+            "status": "failed",
+            "report_policy_version": report_policy_version,
+        },
     )
     json_id = hub.publish_artifact(
         artifact_id=PARTIAL_REPORT_JSON_ID,
@@ -179,7 +186,10 @@ def publish_partial_report(hub: RunHub) -> tuple[str, str]:
         content=bundle.json.decode("utf-8"),
         task_id=None,
         source_refs=source_refs,
-        metadata={"status": "failed", "report_policy_version": "1"},
+        metadata={
+            "status": "failed",
+            "report_policy_version": report_policy_version,
+        },
     )
     return markdown_id, json_id
 
