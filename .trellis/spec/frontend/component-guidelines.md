@@ -6,9 +6,10 @@
 
 ## 1. Scope / Trigger
 
-修改 `src/hacksome/review_ui/` 中的候选呈现、普通 reviewer 表单、卡片导航、
-草稿恢复或判断动作时，必须遵守本文件。Percy curator、Team Wall 与 pairwise
-仍是独立模式，不能借单卡改造泄漏到普通 reviewer 首次提交前的投影。
+修改 `src/hacksome/stages/ideation/creative/review_ui/` 中的候选呈现、普通
+reviewer 表单、卡片导航、草稿恢复或判断动作时，必须遵守本文件。Percy
+curator、Team Wall 与 pairwise 仍是独立模式，不能借单卡改造泄漏到普通
+reviewer 首次提交前的投影。
 
 ## 2. Signatures
 

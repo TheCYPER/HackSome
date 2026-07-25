@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify the reorganization consolidates ownership without leaving duplicate implementations."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify CLI, package data, Docker, tests, and documentation stay aligned across layer boundaries."}
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "Regression-check Useful route semantics and availability."}
+{"file": ".trellis/spec/backend/creative-agent-workflow-contracts.md", "reason": "Regression-check Creative route semantics, frozen runs, and resources."}
+{"file": ".trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Regression-check Build orchestration and agent runtime contracts."}
+{"file": ".trellis/spec/backend/pitch-workflow-contracts.md", "reason": "Regression-check Pitch CLI and workflow contracts."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Regression-check review UI asset relocation and behavior."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Regression-check review state persistence and active-card behavior."}
+{"file": ".trellis/tasks/07-25-repository-stage-reorganization/research/current-repository-inventory.md", "reason": "Compare final structure, active Build closure, ignored payloads, and test counts with the verified pre-migration inventory."}

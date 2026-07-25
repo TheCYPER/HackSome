@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/three-layer-agent-company-contracts.md", "reason": "逐项核对 V7 当前契约与代码、测试、真实 E2E 是否一致。"}
-{"file": ".trellis/tasks/07-12-three-layer-proactive-agent-company/research/e2e-evidence/preflight.md", "reason": "核对全新 Company、旧 Company 启动前指纹和隔离前提。"}
-{"file": ".trellis/tasks/07-12-three-layer-proactive-agent-company/research/e2e-evidence/report.md", "reason": "核对真实运行主路径、并发、恢复、日志、停机与未完成故障注入项。"}

@@ -7,7 +7,7 @@
 
 当修改以下任一部分时必须读取本文：
 
-- `src/hacksome/creative/` 下的 C0–C7 工作流；
+- `src/hacksome/stages/ideation/creative/` 下的 C0–C7 工作流；
 - Hub route、wait、human ledger、finalization 或 result artifact；
 - `run --route creative`、`review`、Creative `resume` 或 `benchmark`；
 - Idea Memory 的发现、冻结、Recall/Remix 或完成后回写；
@@ -362,7 +362,7 @@ Lineage
 `Human Signal` 必须包含可用的 retell/share target/share impulse/demo
 confidence，同时声明它只是构想阶段代理信号，不得声称真实传播力或构建成功率。
 Build handoff 是纯 JSON，不能 import Build runtime。它的
-`challenge_markdown` 与 `initial_idea_card_markdown` 对齐 BuildFactory 的
+`challenge_markdown` 与 `initial_idea_card_markdown` 对齐 Build Stage 的
 bootstrap 输入，但发布 handoff 不等于授权启动 Team。Build-side adapter 必须
 复核 `idea_card_sha256`，并用至少
 `source_run_id + idea_card_id + idea_card_sha256` 构造跨 run 身份；任何一侧

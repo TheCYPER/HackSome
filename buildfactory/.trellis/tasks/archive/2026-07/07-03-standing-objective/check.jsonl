@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/07-03-standing-objective/prd.md", "reason": "Acceptance criteria to verify against (injection regression-safety, CLI three paths, rubric ownership, e2e cold start)."}
-{"file": ".trellis/tasks/07-03-standing-objective/design.md", "reason": "Design contracts the implementation must match (byte-identical prompt when no objective, fail-closed CLI, zero new mounts)."}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "Existing agent_loop/compose contracts that must not regress."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse checks: overlay fault-tolerance stance, verifier VERDICT precedent, company.py CLI style."}

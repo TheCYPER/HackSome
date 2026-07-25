@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Containerized claude auth and loadout landing-point contracts for the cua-agent image."}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "Resident agent image, compose, charter, and startup contracts touched by the CLI toolchain."}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "Confirms this task must not change loadout overlay semantics or parser paths."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Pre-modification search and constant/config reuse guidance."}

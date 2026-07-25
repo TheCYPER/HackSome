@@ -1,19 +1,21 @@
 # Hackathon Team Runtime Contracts
 
 > Active backend contract for the autonomous `Lead → Worker → Verify` product
-> build loop under `buildfactory/`.
+> build loop. Production Python and Agent assets live under
+> `src/hacksome/stages/build/`; operator configuration lives under `ops/build/`.
 
 ## 1. Runtime boundary
 
 One approved Idea Card creates one Team. The Team mounts only its own
-`state/<team>/project/` at `/project`. The two files under `project/reference/`
-initialize the Team but do not freeze its direction.
+`ops/build/state/<team>/project/` at `/project`. The two files under
+`project/reference/` initialize the Team but do not freeze its direction.
 
-The only production AgentSpec manifests are `agents/lead.yaml`,
-`agents/ephemeral/team-worker.yaml`, and
-`agents/ephemeral/team-verifier.yaml`. All three declare `skills: []`; the
-generic materialization framework remains, but BuildFactory bundles no business
-Skill catalog or independent mail Compose.
+The only production AgentSpec manifests are
+`src/hacksome/stages/build/assets/agents/lead.yaml`,
+`src/hacksome/stages/build/assets/agents/ephemeral/team-worker.yaml`, and
+`src/hacksome/stages/build/assets/agents/ephemeral/team-verifier.yaml`. All
+three declare `skills: []`; the generic materialization framework remains, but
+the Build Stage bundles no business Skill catalog or independent mail Compose.
 
 The deterministic control plane owns Goal, Worker, review, command, session,
 and telemetry state. Model runtimes may change anything under `/project`, but
@@ -120,17 +122,17 @@ remains read-only.
 
 ### 2.6 Tests Required
 
-- `agent/tests/test_spec.py`
+- `tests/stages/build/agent_runtime/test_spec.py`
   - assert shared fragments precede the role charter;
   - assert all active roles resolve the same single asset;
   - assert required tool guidance and role-boundary text occur in final prompts.
-- `agent/tests/test_team_loadout.py`
+- `tests/stages/build/agent_runtime/test_team_loadout.py`
   - assert the shared asset is present without adding any Skill.
-- `orchestration/tests/test_agent_loop_v7.py`
+- `tests/stages/build/control/test_agent_loop_v7.py`
   - assert resident Lead receives the assembled prompt;
   - assert a valid override wins;
   - assert missing and empty overrides fall back.
-- `orchestration/tests/test_compose_accounts.py`
+- `tests/stages/build/control/test_compose_accounts.py`
   - assert production Compose sets `AGENT_SPEC` and omits `AGENT_CHARTER`.
 
 ### 2.7 Wrong vs Correct
@@ -179,7 +181,8 @@ For the lifetime of a Goal, retries and Verifier rework preserve:
 Hackathon Team Goal records do not need `owner_department`. Container recovery
 uses the owner already persisted in the Worker lifecycle. Team mode may fall
 back to the fixed `lead` owner only when an older lifecycle lacks the field.
-Company mode must fail closed if neither lifecycle nor Goal records an owner.
+Worker and Verifier module entrypoints are Team-only; no environment fallback
+may restore the retired Company product mode.
 
 Positive example: a missing `worker-20` container is recreated from
 `worker-20.json` with the same Goal, owner, home, workspace, and session token.
@@ -255,23 +258,197 @@ same `/project` concurrently.
 
 The executable contract is covered by:
 
-- `agent/tests/test_runner.py`
+- `tests/stages/build/agent_runtime/test_runner.py`
   - timeout bytes and strings are normalized;
   - partial Codex JSONL retains `thread.started`;
   - `RunResult.timed_out` is explicit.
-- `orchestration/tests/test_worker_manager.py`
+- `tests/stages/build/control/test_worker_manager.py`
   - a timeout retires the container;
   - lifecycle state becomes `missing`;
   - recreation uses the retained session token.
   - manager restart retires an orphaned in-container turn before command
     replay.
-- `orchestration/tests/test_v7_runtime_services.py`
+- `tests/stages/build/control/test_v7_runtime_services.py`
   - Team resume reconstructs a missing Worker from lifecycle ownership even
     though its Goal has no `owner_department`.
 
 Required validation:
 
 ```bash
-cd buildfactory
-.venv-cua/bin/python -m pytest agent/tests orchestration/tests
+PYTHONPATH=src .venv/bin/python -m pytest tests/stages/build -q
+make -C ops/build validate
 ```
+
+## 7. Repository and operator boundary
+
+### 7.1 Scope / Trigger
+
+Use this contract whenever Build Python, Agent assets, Compose, Dockerfiles,
+account paths, state paths, module entrypoints, or package data change. These
+paths cross the Python distribution, host operator surface, manager containers,
+and Agent containers, so a local import pass alone is insufficient.
+
+### 7.2 Signatures
+
+```bash
+make -C ops/build init \
+  TEAM=<team> \
+  CHALLENGE_FILE=/absolute/challenge.md \
+  IDEA_CARD_FILE=/absolute/idea-card.md
+
+make -C ops/build up TEAM=<team> ACCOUNT=<account>
+make -C ops/build validate
+
+python -m hacksome.stages.build.control.team_store ...
+python -m hacksome.stages.build.control.team_hub
+python -m hacksome.stages.build.control.worker_manager
+python -m hacksome.stages.build.control.verifier_runtime
+```
+
+The Agent image is built from the repository root:
+
+```bash
+docker build -f ops/build/docker/agent.Dockerfile \
+  -t foundagent/cua-agent:latest .
+```
+
+### 7.3 Contracts
+
+- `src/hacksome/stages/build/` is the only Build production Python namespace.
+- `ops/build/` contains Make, Compose, Dockerfiles, startup/config scripts, and
+  account instructions; it must not contain production `.py` sources.
+- `src/hacksome/stages/build/assets/` contains packaged AgentSpec YAML, charters,
+  MCP JSON, and runtime shell assets.
+- `src/hacksome/stages/build/agent_runtime/cua_mcp.py` is copied by
+  `ops/build/docker/agent.Dockerfile` to `/opt/foundagent/cua_mcp.py`.
+- Mutable Team state is under `ops/build/state/`; credentials and browser state
+  are under `ops/build/accounts/`. Both are ignored and excluded from wheels.
+- `HACKSOME_ROOT` and `BUILD_OPS_ROOT` are Compose interpolation inputs.
+  Containers receive canonical `PYTHONPATH`, `FOUNDAGENT_HOST_REPO`,
+  `TEAM_STATE_ROOT`, `TEAM`, `ACCOUNT`, `TEAM_NETWORK`, and `HUB_URL`.
+- Worker and Verifier entrypoints always initialize `TeamLayout`, mount
+  `/project`, and use one slot. `TEAM_MODE`/`COMPANY` do not select another
+  product mode.
+
+### 7.4 Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| challenge or Idea Card argument missing | `make init` fails before Team bootstrap |
+| `project/reference` initializer missing | `make up` fails at `check-init` |
+| AgentSpec path moved without package-data update | wheel/resource test fails |
+| Compose points to a non-canonical module or mount | Compose/entrypoint contract test fails |
+| Worker receives control-plane mount | mount-boundary test fails |
+| Verifier receives writable `/project` | mount-boundary test fails |
+| account/state/credential payload becomes tracked | sensitive-path audit fails |
+| production `.py` appears under `ops/build/` | repository-boundary audit fails |
+| namespace, Docker, mount, startup, AgentSpec, or account/state path migration deletes its compatibility path without a live smoke | migration is incomplete even when offline tests pass |
+| Docker registry metadata lookup fails before a build reaches project layers | record an infrastructure failure and retry; do not report the image as built |
+| live Worker or Verifier cannot start KasmVNC, `computer_server`, its model runtime, or a browser | migration fails and the compatibility path must remain |
+| Verifier verdict is durably accepted before Hub cleanup terminates its still-open model process | reconcile the request receipt, Review, Goal, and method ledger as authoritative; preserve the non-zero runtime exit as cleanup evidence rather than relabeling the accepted verdict as failed |
+| Verifier runtime exits non-zero without a durable verdict and matching Goal transition | live smoke fails; a runtime log alone cannot manufacture PASS/FAIL |
+
+### 7.5 Good / Base / Bad Cases
+
+- Good: the host checkout is mounted read-only into Agent containers at
+  `/opt/hacksome/hacksome`, with `PYTHONPATH=/opt/hacksome`; managers use the
+  same canonical package through the root checkout.
+- Good for a high-risk migration: build both images, run an isolated disposable
+  Team through a bounded real Worker → Verifier result, assert the Verifier
+  mount is read-only, and separately boot the resident Lead behind a
+  non-terminal-Goal wake gate before deleting the old path.
+- Base: `make -C ops/build validate` checks Compose, compiles the Build package,
+  and runs offline tests without starting a Team or model. This is sufficient
+  for an ordinary local logic change only when no cross-container path or image
+  boundary changed.
+- Bad: copy `agent/` and `orchestration/` into `ops/build/` to make Compose
+  imports work. That recreates a second Python product tree.
+- Bad: build `agent.Dockerfile` from `ops/build/docker/`; its canonical Python
+  `COPY src/...` source is intentionally resolved from repository-root context.
+- Bad: treat Compose rendering, mocked lifecycle tests, or a headless browser
+  launched directly from the image as proof that the CUA desktop runtime,
+  dynamic Agent containers, model credentials, and read-only Verifier mount
+  work together.
+
+### 7.6 Tests Required
+
+- `tests/stages/build/control/test_team_runtime.py`
+  - assert canonical manager AgentSpecs;
+  - assert Worker `/project` is writable and Verifier `/project` is read-only;
+  - assert no control-plane mount reaches either Agent.
+- `tests/stages/build/control/test_compose_accounts.py`
+  - assert canonical module entrypoints, mounts, account paths, and env wiring.
+- `tests/stages/build/agent_runtime/test_mcp_assets.py`
+  - assert active MCP assets resolve;
+  - assert the Agent Dockerfile copies `cua_mcp.py` from `src/hacksome/`.
+- Clean-wheel validation must import all four Stage resource families and load
+  an active AgentSpec.
+- A migration that changes any path or boundary named in section 7.3 must also
+  preserve non-secret evidence from a live disposable smoke:
+  - build `foundagent/control-plane` and `foundagent/cua-agent` from the current
+    Dockerfiles, with the Agent image using repository-root context;
+  - initialize a unique ignored Team under `ops/build/state/`;
+  - start a real Hub, Worker Manager, and Verifier Manager;
+  - submit one bounded Goal and observe a dynamic Worker running the rebuilt CUA
+    image, a successful `computer_server` status, at least one real browser or
+    Computer Use observation, and a real `submit_result`;
+  - observe a fresh Verifier with read-only `/project`, a successful
+    `computer_server`, and a real browser or Computer Use observation submit
+    exactly one PASS or FAIL and the Goal reach the corresponding next state;
+  - reconcile the exact-once `submit_result` / `submit_verdict` method events
+    with the Worker, Review, and Goal records. If accepted-verdict cleanup
+    terminates the still-open Verifier model process, report that non-zero run
+    metadata explicitly; only the durable verdict and matching state
+    transition establish success;
+  - boot the Compose resident Lead on a separate disposable Team with a
+    non-terminal Goal, assert the canonical `lead_loop` and
+    `computer_server` are live, and assert the wake gate suppresses a model
+    call;
+  - stop and remove only the disposable containers and networks; keep ignored
+    state/telemetry long enough to write the evidence report.
+
+This live gate is intentionally not an unattended CI test: it consumes a local
+CUA image, Docker Desktop capacity, and an ignored authenticated account. Never
+copy account values or container environment dumps into tracked evidence.
+
+### 7.7 Wrong vs Correct
+
+Wrong:
+
+```dockerfile
+COPY cua_mcp.py /opt/foundagent/cua_mcp.py
+```
+
+This requires a production Python file inside the Docker config directory.
+
+Correct:
+
+```dockerfile
+COPY src/hacksome/stages/build/agent_runtime/cua_mcp.py \
+     /opt/foundagent/cua_mcp.py
+```
+
+Build from repository-root context so the Docker image consumes the same
+canonical Python source as the rest of HackSome.
+
+Wrong:
+
+```bash
+make -C ops/build validate
+# Delete the old runtime path and report the migration complete.
+```
+
+This proves only the offline contract and Compose rendering.
+
+Correct:
+
+```text
+offline validation
+  → build both real images
+  → disposable real Worker → fresh read-only Verifier verdict
+  → resident Lead VM/startup wake-gate probe
+  → remove the old compatibility path
+```
+
+The live sequence proves the same files, mounts, image, VM services, model
+runtime, and Hub state transitions that production uses.

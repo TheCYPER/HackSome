@@ -1,2 +1,0 @@
-{"file": "agents/assets/skills/decide-direction/SKILL.md", "reason": "Verify seam: find-opportunity only generates, hands to this skill, no duplicated/contradictory judging role (AC5)"}
-{"file": "agents/assets/skills/send-goal/SKILL.md", "reason": "Style reference — new skill must match the imperative/concrete/progressive-disclosure voice of existing CEO skills (AC6); check plain language, no 透镜/lens jargon (AC3)"}

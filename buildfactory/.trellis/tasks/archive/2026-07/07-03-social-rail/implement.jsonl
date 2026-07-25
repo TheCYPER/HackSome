@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/07-03-capability-provisioning/research/mcp-research-synthesis.md", "reason": "★社交账号单子（用户拍板版）：X 的 $0=登录态路线、cookies→/account 约定的需求源头"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "compose x-agent 契约 + /account ro 挂载 + CUA_PROXY proxy 插槽语义（wrapper 的 proxy 消费方式、不得破坏的既有契约）"}
-{"file": ".trellis/tasks/07-03-social-rail/research/account-browser-facts.md", "reason": "实施 A 段产出：playwright-mcp flag/导出命令精确语法钉死结论（B 段实现依据；A 段完成前不存在）"}

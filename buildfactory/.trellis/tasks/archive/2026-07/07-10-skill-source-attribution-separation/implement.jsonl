@@ -1,8 +1,0 @@
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-summary.md", "reason": "Cross-group synthesis: byte-exact results, host-editable C1 totals, legal corrections, hazards — read first"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-inhouse.md", "reason": "Item IDs FO/IP/KDP/ETSY/GUM/DD/DC/CR with per-item migration destinations and resolved archive paths (Step 1)"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-voice-visual.md", "reason": "Item IDs MCV-1..10, VI-1..7 and C3 red lines C3-a..f (Step 2)"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-de-ai-ify.md", "reason": "Item IDs H/E/D/Z/F; zh/references/sources.md no-touch constraint; integrity-test interaction (Step 3)"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-gen-image.md", "reason": "Host SKILL.md L8/26/34 rewrites; 35 upstream Source-concept comments = exempt registry entries (Steps 3/6)"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-design-asset.md", "reason": "Item IDs A/B/G/J/X6; token-checklist rework; superdesign AGPLv3 record correction (Step 4)"}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Skill/hook/charter loadout landing points — where materialized skills land per runtime"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "Manifest reconcile + copytree materialization contract the new provenance test must not violate"}

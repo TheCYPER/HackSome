@@ -1,17 +1,7 @@
-"""Autonomous four-role Pitch workflow."""
+"""Compatibility exports for the Pitch stage."""
 
-from hacksome.pitch.workflow import (
-    PITCH_MODEL,
-    PITCH_REASONING_EFFORT,
-    PitchOutcome,
-    PitchWorkflow,
-    PitchWorkflowError,
-)
+from hacksome.stages import pitch as _implementation
 
-__all__ = [
-    "PITCH_MODEL",
-    "PITCH_REASONING_EFFORT",
-    "PitchOutcome",
-    "PitchWorkflow",
-    "PitchWorkflowError",
-]
+
+__all__ = _implementation.__all__
+globals().update({name: getattr(_implementation, name) for name in __all__})

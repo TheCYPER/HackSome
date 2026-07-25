@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-summary.md", "reason": "Check migrations against the audited inventory: every deletion must map to a ledger item ID"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-voice-visual.md", "reason": "C3 red lines (C3-a..f) that must remain untouched; ATTRIBUTION superset claims to verify before deleting Sources sections"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-de-ai-ify.md", "reason": "Verify zh/references/sources.md untouched and de-ai-ify integrity test still green"}
-{"file": ".trellis/tasks/07-10-skill-source-attribution-separation/research/audit-design-asset.md", "reason": "Verify vendored subtrees zero-byte-diff (AC4) and X6 absorption into ATTRIBUTION before stripping"}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Loadout landing-point contract for the materialization assertions in the new scanner test"}

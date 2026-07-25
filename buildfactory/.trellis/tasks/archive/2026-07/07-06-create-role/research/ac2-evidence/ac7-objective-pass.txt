@@ -1,6 +1,0 @@
-=== verdict arrived ===
-objective PASS
-OBJECTIVE-VERDICT role=ceo verdict=PASS :: Cold-start objective is singular (ship one paid info-product), testable in weeks (live listing URL + cost/return retro), tightly sized with a day-3 kill switch, and short enough for every prompt.
-Next: your standing objective is now in force (injected from your next wake; any previous version was archived to objective.history.md)
-=== objective.md ===
-Ship one small paid info-product end to end within two weeks: pick a niche with real search demand (researcher has the SEO tooling), have builder produce the artifact, and get it listed on a live marketplace. Success is a publicly reachable listing URL recorded in /company/assets, plus a one-page retro of what the funnel cost versus returned. If no niche with credible demand signal is found by day 3, report that finding instead and stop.

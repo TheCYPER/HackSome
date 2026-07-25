@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/07-10-email-send-resend/prd.md", "reason": "验收对照：AC1-AC4 与 R1-R5 是检查的最终标准"}
-{"file": ".trellis/tasks/07-10-email-send-resend/design.md", "reason": "实现与设计一致性：三道门结构强制、账本锁序（HTTP 在锁外）、失败占额、根域 DNS 不动"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "检查收件链路契约未被破坏"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "项目质量基线：测试形态与惯例对齐"}

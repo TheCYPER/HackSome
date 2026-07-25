@@ -1,63 +1,7 @@
-"""Creative Idea route contracts, prompts, and artifact validation."""
+"""Compatibility exports for the Creative Ideation route."""
 
-from hacksome.creative.artifacts import (
-    CreativeArtifactError,
-    compose_final_idea_card,
-    normalized_hook,
-    normalized_section,
-    validate_creative_output,
-)
-from hacksome.creative.contracts import (
-    C0_CHALLENGE_PARSE,
-    C1_BRIEF_NORMALIZE,
-    C2_TERRITORY_EXPLORE,
-    C3_CONCEPT_SYNTHESIZE,
-    C4_CHEAP_HOOK_REPAIR,
-    C4_CHEAP_HOOK_REVIEW,
-    C4_SOFTWARE_DEMO_REVIEW,
-    C5M_MEMORY_RECALL,
-    C5M_MEMORY_REMIX,
-    C5W_NOVELTY_SCAN,
-    C6A_EVIDENCE_REVISE,
-    C6B_PORTFOLIO_CURATE,
-    C6C_FEEDBACK_REVISE,
-    CREATIVE_STAGES,
-    ConceptDisposition,
-    ConceptRevisionMetadata,
-    CreativeWorkflowSettings,
-    RevisionBudget,
-    RevisionReason,
-    StableReasonCode,
-    ZeroReasonCode,
-)
-from hacksome.creative.prompting import creative_prompt_catalog
+from hacksome.stages.ideation import creative as _implementation
 
-__all__ = [
-    "C0_CHALLENGE_PARSE",
-    "C1_BRIEF_NORMALIZE",
-    "C2_TERRITORY_EXPLORE",
-    "C3_CONCEPT_SYNTHESIZE",
-    "C4_CHEAP_HOOK_REPAIR",
-    "C4_CHEAP_HOOK_REVIEW",
-    "C4_SOFTWARE_DEMO_REVIEW",
-    "C5M_MEMORY_RECALL",
-    "C5M_MEMORY_REMIX",
-    "C5W_NOVELTY_SCAN",
-    "C6A_EVIDENCE_REVISE",
-    "C6B_PORTFOLIO_CURATE",
-    "C6C_FEEDBACK_REVISE",
-    "CREATIVE_STAGES",
-    "ConceptDisposition",
-    "ConceptRevisionMetadata",
-    "CreativeArtifactError",
-    "CreativeWorkflowSettings",
-    "RevisionBudget",
-    "RevisionReason",
-    "StableReasonCode",
-    "ZeroReasonCode",
-    "compose_final_idea_card",
-    "creative_prompt_catalog",
-    "normalized_hook",
-    "normalized_section",
-    "validate_creative_output",
-]
+
+__all__ = _implementation.__all__
+globals().update({name: getattr(_implementation, name) for name in __all__})

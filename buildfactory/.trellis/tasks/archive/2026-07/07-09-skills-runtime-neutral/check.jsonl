@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/07-09-skills-runtime-neutral/prd.md", "reason": "Check against AC1 (decide-direction degraded mode + dual path), AC2 (full grep sweep of agents/assets/skills/*/SKILL.md incl. references, sweep result recorded), AC3 (explicit provider materialization + template guidance + whitelist lint unchanged), AC4 (deferred to parent AC-P1)."}
-{"file": "agents/assets/skills/decide-direction/SKILL.md", "reason": "Verify the degraded mode states when it applies and its cost (skill three-tests discipline), and that core methodology content is untouched."}
-{"file": "orchestration/role.py", "reason": "Verify whitelist lint semantics unchanged and fleet_default_provider is the single source shared by lint and provisioner."}

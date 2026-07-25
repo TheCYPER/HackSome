@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cua-local": {
+      "command": "python3",
+      "args": ["/opt/foundagent/cua_mcp.py"],
+      "env": {"CUA_HOST_SERVER": "1"}
+    },
+    "playwright": {
+      "command": "/opt/hacksome/hacksome/stages/build/assets/scripts/browser_mcp.sh"
+    }
+  }
+}
