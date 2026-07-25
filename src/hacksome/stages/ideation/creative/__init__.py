@@ -10,6 +10,7 @@ from hacksome.stages.ideation.creative.artifacts import (
 from hacksome.stages.ideation.creative.contracts import (
     C0_CHALLENGE_PARSE,
     C1_BRIEF_NORMALIZE,
+    C1W_CULTURAL_SIGNAL_SCAN,
     C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -31,10 +32,15 @@ from hacksome.stages.ideation.creative.contracts import (
     ZeroReasonCode,
 )
 from hacksome.stages.ideation.creative.prompting import creative_prompt_catalog
+from hacksome.stages.ideation.creative.signals import (
+    CulturalSignalSnapshot,
+    cultural_signal_palette,
+)
 
 __all__ = [
     "C0_CHALLENGE_PARSE",
     "C1_BRIEF_NORMALIZE",
+    "C1W_CULTURAL_SIGNAL_SCAN",
     "C2_TERRITORY_EXPLORE",
     "C3_CONCEPT_SYNTHESIZE",
     "C4_CHEAP_HOOK_REPAIR",
@@ -49,6 +55,7 @@ __all__ = [
     "CREATIVE_STAGES",
     "ConceptDisposition",
     "ConceptRevisionMetadata",
+    "CulturalSignalSnapshot",
     "CreativeArtifactError",
     "CreativeWorkflowSettings",
     "RevisionBudget",
@@ -57,6 +64,7 @@ __all__ = [
     "ZeroReasonCode",
     "compose_final_idea_card",
     "creative_prompt_catalog",
+    "cultural_signal_palette",
     "normalized_hook",
     "normalized_section",
     "validate_creative_output",

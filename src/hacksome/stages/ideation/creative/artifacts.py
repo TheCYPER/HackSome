@@ -21,6 +21,7 @@ from hacksome.stages.ideation.useful.artifacts import (
 from hacksome.stages.ideation.creative.contracts import (
     C0_CHALLENGE_PARSE,
     C1_BRIEF_NORMALIZE,
+    C1W_CULTURAL_SIGNAL_SCAN,
     C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -33,11 +34,11 @@ from hacksome.stages.ideation.creative.contracts import (
     C6B_PORTFOLIO_CURATE,
     C6C_FEEDBACK_REVISE,
     CREATIVE_CONTRACT_VERSION,
-    CREATIVE_STAGES,
     CreativeWorkflowSettings,
     LEGACY_CREATIVE_CONTRACT_VERSION,
     StableReasonCode,
     SUPPORTED_CREATIVE_CONTRACT_VERSIONS,
+    creative_stages_for_contract,
     parse_concept_revision_ref,
     territory_for_atom,
 )
@@ -231,12 +232,20 @@ class CreativeValidationContext(TypedDict):
     source_markdown: NotRequired[str]
     source_hooks: NotRequired[Collection[str]]
     source_mechanism_reveals: NotRequired[Collection[tuple[str, str]]]
+    expected_product_grammar_id: NotRequired[str]
     contract_version: NotRequired[str]
 
 
 _ATOM_REF = re.compile(r"creative-atom-t[0-9]{2}-[0-9]{2}")
 _CONCEPT_REF = re.compile(
     r"creative-concept-(?:s[0-9]{2}-[0-9]{2}|m[0-9]{2})-r[0-9]{3}"
+)
+_PRODUCT_GRAMMAR_MARKER_PREFIX = re.compile(
+    r"(?m)^[ \t]*(?:[-*][ \t]+)?Recognizable product grammar:"
+)
+_PRODUCT_GRAMMAR_MARKER = re.compile(
+    r"(?m)^[ \t]*(?:[-*][ \t]+)?Recognizable product grammar:[ \t]*"
+    r"(?P<grammar_id>[a-z][a-z0-9_]*?)[ \t]+—[ \t]+(?P<description>\S.*)$"
 )
 
 
@@ -255,10 +264,7 @@ def validate_creative_output(
         raise CreativeArtifactError(
             f"unsupported Creative contract version: {contract_version!r}"
         )
-    if stage not in CREATIVE_STAGES or (
-        contract_version == LEGACY_CREATIVE_CONTRACT_VERSION
-        and stage == C4_SOFTWARE_DEMO_REVIEW
-    ):
+    if stage not in creative_stages_for_contract(contract_version):
         raise CreativeArtifactError(f"unknown Creative stage: {stage!r}")
     if not isinstance(settings, CreativeWorkflowSettings):
         raise TypeError("settings must be CreativeWorkflowSettings")
@@ -420,6 +426,23 @@ def _validate_c1(
     )
 
 
+def _validate_c1w(
+    output: dict[str, Any],
+    settings: CreativeWorkflowSettings,
+    context: CreativeValidationContext,
+) -> None:
+    del settings, context
+    from hacksome.stages.ideation.creative.signals import (
+        CulturalSignalError,
+        validate_cultural_signal_agent_output,
+    )
+
+    try:
+        validate_cultural_signal_agent_output(output)
+    except CulturalSignalError as exc:
+        raise CreativeArtifactError(str(exc)) from exc
+
+
 def _validate_c2(
     output: dict[str, Any],
     settings: CreativeWorkflowSettings,
@@ -458,6 +481,7 @@ def _validate_c3(
             "Concept output exceeds configured max_concepts_per_synthesizer"
         )
     allowed_atoms = _optional_allowed(context, "allowed_atom_refs")
+    expected_product_grammar_id = context.get("expected_product_grammar_id")
     markdown_seen: set[str] = set()
     hook_seen: set[str] = set()
     for index, concept in enumerate(concepts):
@@ -482,6 +506,28 @@ def _validate_c3(
             raise CreativeArtifactError(
                 "Concept Parent Atoms section and parent_atom_refs must match exactly"
             )
+        if expected_product_grammar_id is not None:
+            grammar_section = section_body(
+                markdown,
+                "Why It Is Unexpected Yet Legible",
+            )
+            marker_prefixes = tuple(
+                _PRODUCT_GRAMMAR_MARKER_PREFIX.finditer(grammar_section)
+            )
+            grammar_markers = tuple(
+                _PRODUCT_GRAMMAR_MARKER.finditer(grammar_section)
+            )
+            if len(marker_prefixes) != 1 or len(grammar_markers) != 1:
+                raise CreativeArtifactError(
+                    "Concept must contain exactly one Recognizable product grammar "
+                    "marker for its assigned C3 product grammar"
+                )
+            actual_product_grammar_id = grammar_markers[0].group("grammar_id")
+            if actual_product_grammar_id != expected_product_grammar_id:
+                raise CreativeArtifactError(
+                    "Concept product grammar marker does not match the assigned "
+                    f"C3 product grammar {expected_product_grammar_id!r}"
+                )
         normalized = _normalize_text(markdown)
         hook = normalized_hook(markdown)
         if normalized in markdown_seen or hook in hook_seen:
@@ -984,6 +1030,7 @@ def _is_legacy(context: CreativeValidationContext) -> bool:
 _STAGE_VALIDATORS = {
     C0_CHALLENGE_PARSE: _validate_c0,
     C1_BRIEF_NORMALIZE: _validate_c1,
+    C1W_CULTURAL_SIGNAL_SCAN: _validate_c1w,
     C2_TERRITORY_EXPLORE: _validate_c2,
     C3_CONCEPT_SYNTHESIZE: _validate_c3,
     C4_CHEAP_HOOK_REVIEW: _validate_c4_review,

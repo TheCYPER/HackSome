@@ -243,7 +243,7 @@ class CreativeRevisionAndDispositionTests(unittest.TestCase):
                 "all_human_rejected",
             },
         )
-        self.assertEqual(len(CREATIVE_STAGES), 13)
+        self.assertEqual(len(CREATIVE_STAGES), 14)
 
 
 if __name__ == "__main__":

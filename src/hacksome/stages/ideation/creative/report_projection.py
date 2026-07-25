@@ -29,12 +29,18 @@ from hacksome.stages.ideation.creative.contracts import (
     LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
     LEGACY_CREATIVE_REPORT_POLICY_VERSION,
     LEGACY_CREATIVE_STAGE_POLICY_VERSION,
-    OPTIONAL_MEMORY_STAGES,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION,
+    SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION,
+    SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION,
+    C1W_CULTURAL_SIGNAL_SCAN,
     ConceptDisposition,
     DispositionOutcome,
     DispositionStage,
     StableReasonCode,
     parse_concept_revision_ref,
+    creative_optional_stages_for_contract,
+    creative_web_stages_for_contract,
 )
 from hacksome.stages.ideation.creative.memory import (
     IdeaMemorySnapshot,
@@ -47,6 +53,7 @@ from hacksome.stages.ideation.creative.report import (
     ConceptRevisionProjection,
     CreativeReportError,
     CreativeReportProjection,
+    CulturalSignalUseProjection,
     DispositionProjection,
     FinalIdeaProjection,
     HumanSignalProjection,
@@ -55,6 +62,15 @@ from hacksome.stages.ideation.creative.report import (
     ReasonEvidenceProjection,
     ReviewRoundProjection,
     TerritoryProjection,
+)
+from hacksome.stages.ideation.creative.signals import (
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+    CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+    CulturalSignalError,
+    CulturalSignalSnapshot,
+    cultural_signal_window,
+    render_cultural_signal_palette,
 )
 from hacksome.stages.ideation.creative.review import (
     FeedbackFragment,
@@ -67,7 +83,7 @@ from hacksome.stages.ideation.creative.review import (
     latest_receipt_set_sha256,
 )
 from hacksome.core.hub import RUN_SCHEMA_VERSION, RunHub
-from hacksome.core.state import sha256_bytes, sha256_json
+from hacksome.core.state import sha256_bytes, sha256_json, sha256_text
 
 
 _EMPTY_COMPLETE_STAGE = "creative-c6-empty-complete-internal"
@@ -219,6 +235,7 @@ class _ProjectionBuilder:
             )
             for item in self._artifacts_of_type("creative_territory")
         )
+        cultural_signal_scan = self._cultural_signal_projection()
         memory = self._memory_projection()
         concepts, revision_index = self._concept_projections(
             memory_successors=set(memory.successful_challenger_refs),
@@ -252,6 +269,7 @@ class _ProjectionBuilder:
             final_ideas=final_ideas,
             zero_reason_code=zero_reason,
             empty_batch_skip_reason=skip_reason,
+            cultural_signal_scan=cultural_signal_scan,
             route_contract_version=_string(
                 route.get("contract_version"),
                 "contract_version",
@@ -287,6 +305,11 @@ class _ProjectionBuilder:
                 CREATIVE_PROMPT_POLICY_VERSION,
                 CREATIVE_STAGE_POLICY_VERSION,
                 CREATIVE_REPORT_POLICY_VERSION,
+            ),
+            SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION: (
+                SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION,
+                SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION,
+                SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION,
             ),
             LEGACY_CREATIVE_CONTRACT_VERSION: (
                 LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
@@ -402,6 +425,11 @@ class _ProjectionBuilder:
 
     def _verify_tasks(self) -> None:
         raw_tasks = _mapping(self.state.get("tasks"), "run tasks")
+        route = _mapping(self.state.get("route"), "route metadata")
+        contract_version = _string(
+            route.get("contract_version"),
+            "contract_version",
+        )
         for task_id, raw in sorted(raw_tasks.items()):
             task = _mapping(raw, f"task {task_id}")
             if task.get("task_id") != task_id:
@@ -413,12 +441,23 @@ class _ProjectionBuilder:
                 optional_failure = (
                     status in {"failed", "invalidated"}
                     and failure_policy == "optional_branch"
-                    and stage in OPTIONAL_MEMORY_STAGES
+                    and stage
+                    in creative_optional_stages_for_contract(
+                        contract_version
+                    )
                 )
                 if not optional_failure:
                     raise CreativeReportError(
                         f"unfinished or fatal task blocks C7: {task_id}"
                     )
+            if bool(task.get("web_search")) != (
+                stage in creative_web_stages_for_contract(
+                    contract_version
+                )
+            ):
+                raise CreativeReportError(
+                    f"Creative task {task_id} has an invalid web policy"
+                )
             for path_key, hash_key in (
                 ("request_path", "request_sha256"),
                 ("prompt_path", "prompt_sha256"),
@@ -553,6 +592,404 @@ class _ProjectionBuilder:
                     f"non-Creative decision in Creative run: {decision_id}"
                 )
             self.decisions[decision_id] = row
+
+    def _cultural_signal_projection(
+        self,
+    ) -> CulturalSignalUseProjection | None:
+        route = _mapping(self.state.get("route"), "route metadata")
+        contract_version = _string(
+            route.get("contract_version"),
+            "contract_version",
+        )
+        signal_artifacts = self._artifacts_of_type(
+            CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE
+        )
+        signal_tasks = {
+            task_id: task
+            for task_id, task in self.tasks.items()
+            if task.get("stage") == C1W_CULTURAL_SIGNAL_SCAN
+        }
+        downstream = {
+            task_id: task
+            for task_id, task in self.tasks.items()
+            if task.get("stage")
+            in {
+                "creative-territory-explore",
+                "creative-concept-synthesize",
+            }
+        }
+        if contract_version != CREATIVE_CONTRACT_VERSION:
+            if signal_artifacts or signal_tasks:
+                raise CreativeReportError(
+                    "Creative v1/v2 cannot project C1W state"
+                )
+            for task_id, downstream_task in self.tasks.items():
+                parents = _string_tuple(
+                    downstream_task.get("parent_refs"),
+                    f"task {task_id} parent_refs",
+                )
+                if CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID in parents:
+                    raise CreativeReportError(
+                        f"Creative v1/v2 task {task_id} has a signal parent"
+                    )
+                prompt = self._task_prompt(task_id, downstream_task)
+                if "<BEGIN_CULTURAL_SIGNAL_PALETTE_" in prompt:
+                    raise CreativeReportError(
+                        f"Creative v1/v2 task {task_id} has a signal palette"
+                    )
+            return None
+
+        if set(signal_tasks) != {
+            "creative-c1w-cultural-signal-scan-01"
+        }:
+            raise CreativeReportError(
+                "Creative v3 requires exactly one stable C1W task"
+            )
+        if (
+            len(signal_artifacts) != 1
+            or signal_artifacts[0].artifact_id
+            != CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+        ):
+            raise CreativeReportError(
+                "Creative v3 requires exactly one stable Cultural Signal "
+                "Snapshot"
+            )
+        artifact = signal_artifacts[0]
+        if artifact.path != CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH:
+            raise CreativeReportError(
+                "Cultural Signal Snapshot path mismatch"
+            )
+        try:
+            raw = json.loads(artifact.text)
+            if not isinstance(raw, dict):
+                raise CulturalSignalError(
+                    "Cultural Signal Snapshot must be an object"
+                )
+            snapshot = CulturalSignalSnapshot.from_mapping(raw)
+        except (json.JSONDecodeError, CulturalSignalError) as exc:
+            raise CreativeReportError(
+                f"Cultural Signal Snapshot is invalid: {exc}"
+            ) from exc
+        expected_metadata = {
+            "status": snapshot.status,
+            "task_ref": snapshot.task_ref,
+            "diagnostic_ref": snapshot.diagnostic_ref,
+            "signal_count": len(snapshot.signals),
+            "window": snapshot.window.to_dict(),
+        }
+        if artifact.metadata != expected_metadata:
+            raise CreativeReportError(
+                "Cultural Signal Snapshot metadata mismatch"
+            )
+        signal_task_binding = signal_tasks.get(snapshot.task_ref)
+        if signal_task_binding is None:
+            raise CreativeReportError(
+                "Cultural Signal Snapshot task binding is invalid"
+            )
+        expected_context_refs = (
+            self._single_artifact(
+                "creative_challenge_brief"
+            ).artifact_id,
+            self._single_artifact(
+                "creative_constraint_view"
+            ).artifact_id,
+            self._single_artifact("creative_brief").artifact_id,
+        )
+        if _string_tuple(
+            signal_task_binding.get("parent_refs"),
+            "C1W task parent_refs",
+        ) != expected_context_refs:
+            raise CreativeReportError(
+                "C1W task parent refs do not match its exact C0/C1 context"
+            )
+        if artifact.source_refs != expected_context_refs:
+            raise CreativeReportError(
+                "Cultural Signal Snapshot source refs do not match its exact "
+                "C0/C1 context"
+            )
+        if signal_task_binding.get("failure_policy") != "optional_branch":
+            raise CreativeReportError(
+                "C1W task must use optional_branch failure policy"
+            )
+        result_path = _string(
+            signal_task_binding.get("result_path"),
+            "C1W result_path",
+        )
+        result_sha256 = _sha256(
+            signal_task_binding.get("result_sha256"),
+            "C1W result_sha256",
+        )
+        try:
+            result_payload = json.loads(
+                self._read_hash_bound_file(
+                    result_path,
+                    result_sha256,
+                    label="C1W task result",
+                ).decode("utf-8")
+            )
+            result_mapping = _mapping(
+                result_payload,
+                "C1W task result",
+            )
+            expected_window = cultural_signal_window(
+                _string(self.state.get("created_at"), "run created_at"),
+                captured_at=_string(
+                    result_mapping.get("finished_at"),
+                    "C1W task finished_at",
+                ),
+            )
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            CulturalSignalError,
+        ) as exc:
+            raise CreativeReportError(
+                f"C1W task result cannot close snapshot time: {exc}"
+            ) from exc
+        if snapshot.window != expected_window:
+            raise CreativeReportError(
+                "Cultural Signal Snapshot time does not match run.created_at "
+                "and task finished_at"
+            )
+        events = _row_list(self.ledgers.get("events"), "event ledger")
+        diagnostics = [
+            event
+            for event in events
+            if event.get("kind")
+            == "optional_cultural_signal_stage_failed"
+            and isinstance(event.get("data"), dict)
+            and event["data"].get("task_ref") == snapshot.task_ref
+        ]
+        if snapshot.status == "unavailable":
+            if (
+                signal_task_binding.get("status")
+                not in {"failed", "invalidated"}
+                or artifact.task_id is not None
+                or len(diagnostics) != 1
+                or diagnostics[0].get("event_id")
+                != snapshot.diagnostic_ref
+            ):
+                raise CreativeReportError(
+                    "unavailable Cultural Signal Snapshot has no exact "
+                    "task/diagnostic closure"
+                )
+        elif (
+            signal_task_binding.get("status") != "succeeded"
+            or artifact.task_id != snapshot.task_ref
+            or diagnostics
+        ):
+            raise CreativeReportError(
+                "successful Cultural Signal Snapshot has no exact task closure"
+            )
+
+        for task_id, task_record in self.tasks.items():
+            parents = _string_tuple(
+                task_record.get("parent_refs"),
+                f"task {task_id} parent_refs",
+            )
+            signal_parent_count = parents.count(
+                CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+            )
+            is_palette_stage = task_record.get("stage") in {
+                "creative-territory-explore",
+                "creative-concept-synthesize",
+            }
+            if is_palette_stage and signal_parent_count != 1:
+                raise CreativeReportError(
+                    f"Creative v3 task {task_id} requires exactly one "
+                    "Cultural Signal Snapshot parent"
+                )
+            if not is_palette_stage and signal_parent_count:
+                raise CreativeReportError(
+                    f"Creative v3 task {task_id} illegally receives the "
+                    "Cultural Signal Snapshot"
+                )
+            prompt = self._task_prompt(task_id, task_record)
+            if (
+                not is_palette_stage
+                and "<BEGIN_CULTURAL_SIGNAL_PALETTE_" in prompt
+            ):
+                raise CreativeReportError(
+                    f"Creative v3 task {task_id} illegally receives a "
+                    "Cultural Signal Palette"
+                )
+
+        for task_id, task_record in downstream.items():
+            try:
+                slot = int(task_id.rsplit("-", 1)[1])
+                purpose: Literal["c2", "c3"] = (
+                    "c2"
+                    if task_record.get("stage")
+                    == "creative-territory-explore"
+                    else "c3"
+                )
+                palette = render_cultural_signal_palette(
+                    snapshot,
+                    slot=slot,
+                    purpose=purpose,
+                )
+            except (ValueError, CulturalSignalError) as exc:
+                raise CreativeReportError(
+                    f"Creative v3 task {task_id} has invalid signal slot"
+                ) from exc
+            digest = sha256_text(palette)[:12]
+            block = (
+                f"<BEGIN_CULTURAL_SIGNAL_PALETTE_{digest}>\n"
+                f"{palette}\n"
+                f"<END_CULTURAL_SIGNAL_PALETTE_{digest}>"
+            )
+            prompt = self._task_prompt(task_id, task_record)
+            if (
+                prompt.count(block) != 1
+                or prompt.count(
+                    "<BEGIN_CULTURAL_SIGNAL_PALETTE_"
+                )
+                != 1
+                or prompt.count(
+                    "<END_CULTURAL_SIGNAL_PALETTE_"
+                )
+                != 1
+            ):
+                raise CreativeReportError(
+                    f"Creative v3 task {task_id} has a non-deterministic "
+                    "Cultural Signal Palette"
+                )
+            for signal in snapshot.signals:
+                sensitive = [
+                    signal["label"],
+                    signal["neutral_summary"],
+                    *signal["surface_markers_to_avoid"],
+                ]
+                for source in signal["sources"]:
+                    sensitive.extend(
+                        [
+                            source["url"],
+                            source["title"],
+                            source["evidence_summary"],
+                        ]
+                    )
+                if any(
+                    isinstance(value, str)
+                    and len(value.strip()) >= 8
+                    and value in prompt
+                    for value in sensitive
+                ):
+                    raise CreativeReportError(
+                        f"Creative v3 task {task_id} leaks raw Cultural "
+                        "Signal material"
+                    )
+
+        event_ids = [
+            event.get("event_id")
+            for event in events
+        ]
+        brief_publish_indexes = [
+            index
+            for index, event_id in enumerate(event_ids)
+            if event_id == "artifact:creative-brief-r001:published"
+        ]
+        signal_start_indexes = [
+            index
+            for index, event_id in enumerate(event_ids)
+            if event_id
+            == "task:creative-c1w-cultural-signal-scan-01:started"
+        ]
+        signal_terminal_indexes = [
+            index
+            for index, event_id in enumerate(event_ids)
+            if event_id
+            in {
+                "task:creative-c1w-cultural-signal-scan-01:finished",
+                "task:creative-c1w-cultural-signal-scan-01:invalidated",
+            }
+        ]
+        snapshot_publish_indexes = [
+            index
+            for index, event_id in enumerate(event_ids)
+            if event_id
+            == (
+                "artifact:creative-cultural-signal-snapshot-r001:"
+                "published"
+            )
+        ]
+        c2_start_indexes = [
+            index
+            for index, event in enumerate(events)
+            if event.get("kind") == "task.started"
+            and isinstance(event.get("data"), Mapping)
+            and event["data"].get("stage")
+            == "creative-territory-explore"
+        ]
+        if (
+            len(brief_publish_indexes) != 1
+            or len(signal_start_indexes) != 1
+            or brief_publish_indexes[0] >= signal_start_indexes[0]
+        ):
+            raise CreativeReportError(
+                "Creative v3 C1W must start after C1 is published"
+            )
+        if (
+            not signal_terminal_indexes
+            or len(snapshot_publish_indexes) != 1
+            or max(signal_terminal_indexes)
+            >= snapshot_publish_indexes[0]
+            or (
+                c2_start_indexes
+                and snapshot_publish_indexes[0]
+                >= min(c2_start_indexes)
+            )
+        ):
+            raise CreativeReportError(
+                "Creative v3 Signal Snapshot must publish after C1W and "
+                "before C2"
+            )
+
+        platform_kinds = tuple(
+            sorted(
+                {
+                    str(item["kind"])
+                    for item in snapshot.coverage[
+                        "platforms_attempted"
+                    ]
+                }
+            )
+        )
+        return CulturalSignalUseProjection(
+            status=snapshot.status,
+            snapshot_ref=artifact.artifact_id,
+            snapshot_sha256=artifact.sha256,
+            as_of_utc=snapshot.window.as_of_utc,
+            start_utc=snapshot.window.start_utc,
+            end_utc=snapshot.window.end_utc,
+            lookback_days=snapshot.window.lookback_days,
+            signal_count=len(snapshot.signals),
+            platform_kinds=platform_kinds,
+            diagnostic_ref=snapshot.diagnostic_ref,
+        )
+
+    def _task_prompt(
+        self,
+        task_id: str,
+        task: Mapping[str, Any],
+    ) -> str:
+        path = _string(
+            task.get("prompt_path"),
+            f"task {task_id} prompt_path",
+        )
+        digest = _sha256(
+            task.get("prompt_sha256"),
+            f"task {task_id} prompt_sha256",
+        )
+        try:
+            return self._read_hash_bound_file(
+                path,
+                digest,
+                label=f"task {task_id} prompt",
+            ).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise CreativeReportError(
+                f"task {task_id} prompt is not UTF-8"
+            ) from exc
 
     def _memory_projection(self) -> MemoryUseProjection:
         input_record = self.inputs["idea_memory"]

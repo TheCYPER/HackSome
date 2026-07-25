@@ -103,88 +103,120 @@ RunHub
 
 ## 4. 总体拓扑
 
-```text
-输入 Challenge + 可选 Creative Brief
-        │
-        ▼
-C0 Challenge & Constraints
-        │
-        ▼
-C1 Creative Brief + frozen Software Demo Policy
-        │
-        ▼
-C2 6 个独立 software-native Territory Explorer
-        │
-        ▼
-C3 4 个独立 Concept Synthesizer
-        │
-        ▼
-C4 每个 Concept：2 个独立 C4H + 1 个独立 C4F
-        │
-        ├── hardware/installation hard invalid ──┐
-        ├── invalid / repair 后失败 ─────────────┤
-        ├── repairable ─ 1 次修复 ────┤
-        │                             │
-        ▼                             │
-C5M 读取 run 创建时冻结的历史快照     │
-1 个 Recall + 最多 2 个 Remix          │
-        │                             │
-        ├── 0 个 challenger ─────────┤
-        └── challenger ─> 同合同 C4H'+C4F' ─────┤
-                                      │
-        合并初始与 challenger 的 pass 集
-        │
-        ▼
-C5W 每个通过 Concept 1 次联网 Novelty Scan
-        │
-        ▼
-C6a 证据驱动修订
-        │
-C6b 2 个独立 Portfolio Curator
-        │
-        ▼
-确定性 shortlist（最多 8 个）
-        │
-        ▼
-status=waiting
-本地团队评审页面
-        │
-Percy 关闭评审轮次
-        │
-        ▼
-hacksome resume
-        │
-C6c 每个保留/合并项最多 1 次反馈修订
-        │
-        ▼
-C7 控制器确定性报告 + Idea Cards + Handoff
-        └── creative-memory-record.json 供未来 run 使用
+```mermaid
+flowchart TD
+    INPUT["Challenge + 可选 Creative Brief"] --> C0["C0 Challenge & Constraints"]
+    C0 --> C1["C1 Creative Brief<br/>+ frozen Software Demo Policy"]
+    C1 --> C1W["C1W：一次联网 Cultural Signal Scan<br/>30-day deterministic window；optional"]
+    C1W --> SNAP["hash-bound Signal Snapshot<br/>ready / partial / empty / unavailable"]
+    SNAP --> SAFE["Controller safe projection<br/>去 URL / 标题 / label / surface marker"]
+    SAFE --> C2["C2：6 个独立 software-native Territory Explorer<br/>每 slot ≤2 inspire + ≤2 avoid"]
+
+    subgraph C3["C3：4 个互斥产品语法的 Concept Synthesizer"]
+        direction LR
+        G1["1 · explorer_simulator<br/>查询 / 变量 → 计算 → 比较"]
+        G2["2 · realtime_partner<br/>实时输入 → 低延迟回应 → 下一动作"]
+        G3["3 · social_game_relay<br/>真人 move → 共享状态 → 下一回合"]
+        G4["4 · creator_transformer<br/>真实素材 → 编辑 / remix → 可复用产物"]
+    end
+
+    C2 --> G1
+    C2 --> G2
+    C2 --> G3
+    C2 --> G4
+    G1 --> BASE["合并合法 base Concepts<br/>只机械去除 exact / Hook 重复"]
+    G2 --> BASE
+    G3 --> BASE
+    G4 --> BASE
+
+    BASE --> C4["C4：每个 exact revision<br/>2 × C4H Hook/Share + 1 × C4F Demo"]
+    C4 -->|repairable，最多一次| C4R["C4R 局部修复"]
+    C4R --> C4RE["fresh 2 × C4H + 1 × C4F 复审"]
+    C4 -->|pass 或 hard invalid，直接 settled| BASEGATE["初始 C4 all-settled<br/>收集 pass 集（可为空）"]
+    C4 -->|hard invalid| FATE["写 terminal disposition<br/>保留原因与 evidence"]
+    C4RE -->|pass 或 unresolved，复审 settled| BASEGATE
+    C4RE -->|仍未通过| FATE
+
+    BASEGATE --> C5M["C5M：读取 run 创建时冻结的 Idea Memory<br/>1 × Recall + 最多 2 × Remix"]
+    C5M -->|0 challenger 或 optional failure| MERGE["合并完整 C4 pass 集"]
+    C5M -->|challenger| C4M["challenger 使用同合同 C4H′ + C4F′"]
+    C4M -->|all-settled 后合并 pass sibling（可为空）| MERGE
+    C4M -->|淘汰| FATE
+
+    MERGE --> EMPTY4{"完整 C4 pass 集为空？"}
+    EMPTY4 -->|是| EMPTYB["空 C6 batch<br/>skip waiting"]
+    EMPTY4 -->|否| C5W["C5W：每个通过 Concept<br/>1 × 联网 Novelty Scan"]
+    C5W --> C6A["C6A：证据驱动修订"]
+    C6A --> C6B["C6B：2 个独立 Red Team<br/>Meaning/Value + Hackathon Floor"]
+    C6B --> SHORT["Controller 确定性 shortlist<br/>最多 8 个"]
+    SHORT --> EMPTYS{"shortlist 为空？"}
+    EMPTYS -->|是| EMPTYB
+    EMPTYS -->|否| WAIT["status=waiting<br/>本地单卡团队评审页"]
+    WAIT --> CLOSE["Percy 关闭评审轮次"]
+    CLOSE --> RESUME["hacksome resume"]
+    RESUME --> C6C["C6C：revise / merge 最多一次<br/>keep 不调用模型"]
+    C6C --> C7["C7：Controller 确定性发布<br/>Report + Idea Cards + JSON Handoff"]
+    EMPTYB --> C7
+    FATE -.-> C7
+    C7 --> MEMORY["creative-memory-record.json<br/>供未来 run 的 C5M 使用"]
+    C7 -.-> APPROVAL["共享 Idea→Build Approval（route 外）<br/>operator 选择 0..N 卡并复核 hash"]
+    APPROVAL -->|批准| BUILD["Build stage：创建 Team 并消费 exact handoff"]
+    APPROVAL -->|不批准| DONE["Idea run 保持 completed"]
+
+    subgraph HARNESS["共享 Harness（不决定 Creative 产品语义）"]
+        direction LR
+        HUB["RunHub / 原子状态 / JSONL ledger"]
+        EXEC["AgentTaskExecutor"]
+        CODEX["CodexRunner"]
+        FREEZE["PromptCatalog + run-frozen Prompt/Schema"]
+        VALIDATE["CreativeRunContract / hash / lineage validation"]
+    end
+
+    HUB --- EXEC
+    EXEC --- CODEX
+    EXEC --- FREEZE
+    HUB --- VALIDATE
+
+    classDef human fill:#fff2cc,stroke:#b7791f,color:#5f370e;
+    classDef agent fill:#e8f1ff,stroke:#3973ac,color:#17324d;
+    classDef controller fill:#e8f7ee,stroke:#2f855a,color:#173d2a;
+    classDef failure fill:#fdecec,stroke:#c53030,color:#742a2a;
+    class WAIT,CLOSE,APPROVAL human;
+    class C0,C1,C1W,C2,G1,G2,G3,G4,C4,C4R,C4RE,C5M,C4M,C5W,C6A,C6B,C6C agent;
+    class INPUT,SNAP,SAFE,BASE,BASEGATE,MERGE,EMPTY4,SHORT,EMPTYS,EMPTYB,RESUME,C7,MEMORY,BUILD,DONE,HUB,EXEC,CODEX,FREEZE,VALIDATE controller;
+    class FATE failure;
 ```
 
-初始 C4 后没有合格 Concept 不会立刻丢弃历史：若 frozen memory snapshot 与当前 Atom 可产生 challenger，C5M 仍有一次、最多两个的新分支机会。只有初始与 challenger 均无完整 C4H+C4F pass，或 C6B shortlist 为空时，控制器才发布 `concept_refs=[]`、`status=skipped_empty`、带精确 `skip_reason` 的空 C6 batch，不进入人工等待，直接产出零 Idea 报告。software-first v2 的前一种情况使用 `all_candidates_failed_concept_screen`；旧 v1 run 仍按冻结合同保留 `all_candidates_failed_hook`。空 batch 只是状态机的“没有待审对象”证明；所有 Concept、Hook/Feasibility Review、修复与淘汰原因仍进入 C7。
+C6 是 Creative Idea route 内唯一的 Human-in-the-loop gate；共享 Build
+Approval 是 C7 完成后的 post-card 边界，不参与 Creative shortlist、评审或
+质量判决，也不会反写已完成的 Idea run。
+
+初始 C4 后没有合格 Concept 不会立刻丢弃历史：若 frozen memory snapshot 与当前 Atom 可产生 challenger，C5M 仍有一次、最多两个的新分支机会。只有初始与 challenger 均无完整 C4H+C4F pass，或 C6B shortlist 为空时，控制器才发布 `concept_refs=[]`、`status=skipped_empty`、带精确 `skip_reason` 的空 C6 batch，不进入人工等待，直接产出零 Idea 报告。software-first v2/v3 的前一种情况使用 `all_candidates_failed_concept_screen`；旧 v1 run 仍按冻结合同保留 `all_candidates_failed_hook`。空 batch 只是状态机的“没有待审对象”证明；所有 Concept、Hook/Feasibility Review、修复与淘汰原因仍进入 C7，淘汰原因还能作为未来 Idea Memory 的有界反模式线索，但不能直接复活旧 Concept。
 
 ## 5. Route 与 Run 状态合同
 
 ### 5.1 `run.json` 版本
 
-新运行继续写入 Hub `schema_version=2`；software-first 是 Creative route contract 的 v2，不是 Hub schema v3。`RunHub` 同时读取：
+新运行继续写入 Hub `schema_version=2`；C1W 属于 Creative route contract
+v3，不是 Hub schema v3。software-first v2 与 legacy v1 继续按各自冻结资源
+读取；新 run 使用 contract/prompt/stage/report policy v3。`RunHub` 同时读取：
 
 - v1：解释为当前 `useful` route，只允许 `status/validate` 和现有 Useful 行为；
 - v2：必须显式包含 route metadata。
 
 读取 v1 时只做内存投影，不自动重写用户已有 run。被 Weston 更早架构淘汰的旧 S0-S11 run 不在兼容范围内。
 
-### 5.2 v2 顶层新增字段
+### 5.2 Hub v2 顶层字段与 Creative route v3
 
 ```json
 {
   "schema_version": 2,
   "route": {
     "id": "creative",
-    "contract_version": "2",
-    "prompt_policy_version": "2",
-    "stage_policy_version": "2",
-    "report_policy_version": "2"
+    "contract_version": "3",
+    "prompt_policy_version": "3",
+    "stage_policy_version": "3",
+    "report_policy_version": "3"
   },
   "config_hashes": {
     "codex_config_sha256": "...",
@@ -233,13 +265,22 @@ C7 控制器确定性报告 + Idea Cards + Handoff
 
 - 新 Useful run 也写 v2 与 `route.id=useful`。
 - v1 的 `input` 在只读投影中映射为 `inputs.challenge`；Creative Brief 与 Idea Memory Snapshot 的 path/hash/source/mode 是 v2 正式登记资源，不只是在磁盘上留下未登记文件。Snapshot 的正文放在 controller-owned `state/creative-memory/`，而不是容易被误解为每个 Agent 输入的 `input/`。
-- 新 Creative run 的 route `contract/prompt/stage/report policy version` 全部使用 v2，并正式登记 controller-owned `SoftwareDemoPolicy` 的 path/hash/version；对应 C1/C2/C3/C4H/C4F/C5M Remix/C6A/C6B Prompt 资源也必须提升 template version。不能在任何 version `"1"` 资源下静默加入新 stage、reason enum 或 review receipt shape。
-- 已存在的 Creative v1 `waiting` run（包括 `creative-hack-the-rest-20260724-04`）继续使用 run 创建时冻结的 v1 Prompt/Schema、双 Hook C4、review payload 和 `all_candidates_failed_hook`。`open/status/validate/review/resume` 必须按 persisted contract 分派，禁止拿 v2 默认值或 schema 重解释 v1 字节；未知/不支持版本 fail closed。
+- 新 Creative run 的 route `contract/prompt/stage/report policy version` 全部使用
+  v3，并正式登记 controller-owned `SoftwareDemoPolicy` 的 path/hash/version。
+  v3 在 software-first v2 上增加 C1W 与 C2/C3 safe palette；旧 v1/v2 run
+  继续按自身 frozen catalog 加载。不能在任一旧版本资源下静默加入新 stage、
+  reason enum、palette 或 review receipt shape。
+- 已存在的 Creative v1/v2 `waiting` run 继续使用 run 创建时冻结的
+  Prompt/Schema、review payload 与 zero-reason 合同。
+  `open/status/validate/review/resume` 必须按 persisted contract 分派，禁止拿
+  v3 默认值或 schema 重解释旧字节；未知/不支持版本 fail closed。
 - Creative memory discovery 在新 run 目录创建前完成，验证过的 record bytes 被复制进 snapshot；绝对本地 `runs_dir` 不进入报告或 Prompt。之后源 run 新增、删除或改变都不会改变当前 run。
 - Useful 继续维护 `idea_card_ids`，其 CLI 默认和输出格式不变。
 - 共享层新增 `result_artifact_ids`，Creative 不伪装成 Useful Idea Card 集合。
 - `status` 与 `validate` 先读取 route，再分派到对应 `RunContract`。
-- v2 进入 `failed` 时必须持久化首个 controller-level `terminal_error={kind,message,stage,task_id,event_id,at}`；该首因不可覆盖。后续 partial-report 等错误只追加到 `secondary_errors`。
+- v2/v3 进入 `failed` 时必须持久化首个 controller-level
+  `terminal_error={kind,message,stage,task_id,event_id,at}`；该首因不可覆盖。
+  后续 partial-report 等错误只追加到 `secondary_errors`。
 
 ### 5.3 Creative 状态机
 
@@ -406,7 +447,8 @@ v1 兼容是严格只读：
 - failed task 默认是 fatal；completed run 只允许显式 `failure_policy=optional_branch` 的 C5M Recall/Remix failed task，并要求存在一一对应的 `optional_memory_stage_failed` event/diagnostic；
 - C4 repair 次数、每个 revision 的 `ConceptDisposition`、稳定 reason codes 和 gate decision refs；
 - memory challenger 最多两个、只有一代、同时引用当前 Atom 与跨 run 复合 memory ref，并重新走 C4；
-- C5W 仅出现在初始或 challenger 的完整 C4H+C4F-pass Concept 上，且它是 Creative 唯一联网任务；
+- C5W 仅出现在初始或 challenger 的完整 C4H+C4F-pass Concept 上；v3 的联网
+stage 只能是 optional C1W 与 fatal C5W，v1/v2 仍只能是 C5W；
 - shortlist 上限、territory 与排除理由；
 - wait → round artifact/hash → review ledger → resolution 的闭包；
 - human review 的 supersedes 链无环且只在 round 关闭前追加；
@@ -439,7 +481,8 @@ useful_prompt_catalog
 creative_prompt_catalog
 ```
 
-创建 v2 run 时，catalog 必须一次性冻结整条 route 的资源，包括条件式 C5M 和尚未执行的 C6C：
+创建 v3 run 时，catalog 必须一次性冻结整条 route 的资源，包括 optional C1W、
+条件式 C5M 和尚未执行的 C6C；v1/v2 resume 继续读取自身 frozen catalog：
 
 ```text
 RUN_DIR/resources/
@@ -482,14 +525,22 @@ Resume 前必须验证：
 fatal | optional_branch
 ```
 
-Useful 和除 C5M 外的 Creative task 始终使用 `fatal`。只有 route policy 明确 allowlist 的 `creative-memory-recall` / `creative-memory-remix` 可以使用 `optional_branch`；Executor 仍持久化真实的 failed/invalidated task，Controller 通过 typed all-settled result 决定跳过该分支。它不能把失败改写成合法空输出，也不能让任意新 stage 自行声明 optional。
+Useful task 始终使用 `fatal`。Creative v3 只有 route policy 明确 allowlist 的
+`creative-cultural-signal-scan`、`creative-memory-recall` 与
+`creative-memory-remix` 可以使用 `optional_branch`；v1/v2 只允许其冻结合同
+已经定义的 C5M optional branch。Executor 仍持久化真实的 failed/invalidated
+task，Controller 通过 typed all-settled result 决定跳过该分支，并写唯一、
+类型匹配的 diagnostic/event。它不能把失败改写成合法空输出，也不能让任意
+新 stage 自行声明 optional。
 
 ### 6.3 Session 与工具策略
 
 - 每个逻辑任务使用 fresh Session。
 - 只有同一逻辑任务的基础设施重试可以 resume 原 Session。
-- C5W Novelty Scan 是 Creative 唯一允许 `web_search=True` 的 stage。
-- C0-C4、C5M、C6、C7 不允许网络、浏览器、apps、skills、多 Agent 自动扩散或图像生成。
+- v3 只有 C1W Cultural Signal Scan 与 C5W Novelty Scan 允许
+  `web_search=True`；v1/v2 仍只有 C5W。
+- C0、C1、C2-C4、C5M、C6、C7 不允许网络、浏览器、apps、skills、多 Agent
+  自动扩散或图像生成。
 - model、reasoning effort、timeout、并发和 retry 次数写入 run。
 - 新建与 resume 都使用同一个 config serializer/decoder，确保禁用功能、sandbox 和 approval policy 不因 JSON round-trip 漂移。
 - C7 不启动 Codex Session。
@@ -566,7 +617,7 @@ creative-concept-s01-01-r003
   "schema_version": 2,
   "finalization_id": "creative-finalization-001",
   "source_projection_sha256": "...",
-  "report_policy_version": "2",
+  "report_policy_version": "3",
   "outputs": [
     {
       "artifact_id": "...",
@@ -606,6 +657,7 @@ RUN_DIR/
 │   └── creative/
 │       ├── challenge/
 │       ├── brief/
+│       ├── cultural-signals/
 │       ├── territories/
 │       ├── atoms/
 │       ├── concepts/
@@ -668,23 +720,42 @@ CreativeWorkflowSettings(
 
 旧的纯 spatial/embodied/performance 与 wildcard cross-media lens 不进入 v2 默认列表；这些表现形式只有在软件真实读取输入、执行转换并产生可验证输出时才可作为某个 software-native lens 的呈现方式。
 
+四个默认 C3 slot 不再使用可重叠的“更易懂 / 更反转 / 更可分享 / 更神秘”软
+lens，而按稳定顺序承担四种 primary product-loop responsibility：
+
+1. `explorer_simulator`：查询或显式变量 → 可检查的模型/路径/情景 →
+  比较并改变下一次查询；
+2. `realtime_partner`：连续或快速输入 → 本轮结束前的 bounded-latency 回应 →
+  用户据此改变下一动作；
+3. `social_game_relay`：一位真人的 move → Controller-owned shared state →
+  另一位真人受规则约束的下一回合；
+4. `creator_transformer`：真实素材 + 至少两个有意义的编辑选择 → 可预览、
+  可继续修改或导出的产物。
+
+分类轴是“软件回应后，为获得下一单位价值必须发生的 primary next action”，
+不是题材、视觉、输入传感器或分享格式。次要能力可以跨 grammar，但删除次要
+能力不能摧毁 primary loop；如果两个 grammar 都不可删除，C3 必须先缩小为一个。
+无可用 Atom 组合时该 slot 合法返回空集合，不得用抽象地图、过程收据、卡片、
+粒子或换皮叙事填满上限。`concept_synthesizers < 4` 的测试/低成本设置只执行
+前 N 个稳定 assignment；默认 4 才覆盖完整四类。
+
 当 C0 没有给出团队、时长和运行环境时，C3/C4/C6 Prompt 使用下列保守
 `Reference Implementation Budget`，但不新增 v2 JSON 字段：
 
 - 最多 2 人，在 24 小时内完成可现场运行的最小 cut；
 - 只承诺一个主要浏览器/设备切片，例如普通 laptop 的一个现代浏览器，或一台
-  普通手机的一个浏览器；跨浏览器、跨桌面/手机和双设备同步都不是默认免费能力；
+普通手机的一个浏览器；跨浏览器、跨桌面/手机和双设备同步都不是默认免费能力；
 - 最多一个简单 backend：一个可部署进程中的轻量状态、生成或实时 endpoint，
-  不包含多服务编排、复杂账号系统、异步数据管线或专门运维；
+不包含多服务编排、复杂账号系统、异步数据管线或专门运维；
 - 关键路径最多三个独立子系统。这里的“子系统”指需要分别实现、配置、部署或
-  调试，且可以独立让 Demo 失败的边界；同一 backend 内的 route 不重复计数，
-  browser client、backend、外部模型/API 或第二设备协同分别计数；
+调试，且可以独立让 Demo 失败的边界；同一 backend 内的 route 不重复计数，
+browser client、backend、外部模型/API 或第二设备协同分别计数；
 - 必须指出一个最危险技术假设，以及能在开工前两小时内给出可证伪结果的最小
-  probe；还必须给出该假设失败后的降级切片。降级切片可以降低效果质量，但仍要
-  保留真实 input → executable transformation → observable output 和核心 reveal；
+probe；还必须给出该假设失败后的降级切片。降级切片可以降低效果质量，但仍要
+保留真实 input → executable transformation → observable output 和核心 reveal；
 - 必须枚举预置状态及成本：账号/权限、房间和种子数据、模型下载或预热、第二设备
-  配对、预先录制/整理内容、部署和现场人工动作。自动脚本也要计入准备时间，
-  人工隐藏劳动不能记作零成本。
+配对、预先录制/整理内容、部署和现场人工动作。自动脚本也要计入准备时间，
+人工隐藏劳动不能记作零成本。
 
 C0 的显式硬约束优先于该 fallback：更紧的预算必须收紧，明确且可信的更大团队/
 更长赛时可以替换参考数字，但 Creative Brief 不能单独放宽它。这个 block 只收紧
@@ -715,6 +786,18 @@ Concept 漏掉最后的 `Parent Atoms` H2，Controller 正确 fail-closed。修�
 allowlist；Prompt 逐对写出七个 `dimension → reason_code`，测试从代码常量生成
 同一映射断言。Schema、validator 与失败 run 均不修改。
 
+第三次真实 smoke 证明 C6B 能正确识别“抽象地图”和“过程收据”两组近重复，
+但也证明 C3 v5 的四个 synthesis lens 只是互相重叠的审美强调。修复只把
+`creative-concept-synthesize` 前进到 v6，并把 v5 加入兼容 allowlist：
+
+- v6 Controller 按 slot 注入 exact grammar ID/label；
+- v6 Concept 在既有 `Recognizable product grammar:` 行中回显 exact assigned
+  ID，第二次 semantic validation 与该 task 的 expected ID 精确绑定；
+- v2–v5 frozen C3 继续收到旧 `SYNTHESIS_LENS` shape，不注入 assignment，也
+  不要求新 marker；
+- C3 JSON Schema、十二个 H2、software-first v2 policy、C2、C4、C6B 与
+  deterministic shortlist 均不改变。
+
 ## 9. C0-C7 阶段合同
 
 ### 9.1 统一输出 Envelope
@@ -730,22 +813,27 @@ Agent 只返回小型 JSON envelope；长文本放在 `markdown` 字段，稳定
 | --------------------------------------- | --------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------- | ----------------- |
 | C0 `creative-challenge-parse`           | 1                                 | 原始 Challenge                                                       | Challenge Brief + Constraint View               | 两份文档均合法才继续        |
 | C1 `creative-brief-normalize`           | 1                                 | Challenge、C0、Brief input/default、Software Demo Policy              | Creative Brief；Policy 由 Controller 另行发布       | 不暂停；合法即继续         |
-| C2 `creative-territory-explore`         | 6                                 | C0、C1、Software Demo Policy、单个 software-native lens                 | Territory + ≤3 Atoms                            | 保留所有合法输出          |
-| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、Software Demo Policy、Controller 生成且显式含 Atom→Territory ref 的全部 Atom index、单个 synthesis lens | 每 Session ≤3 Concepts + primary territory refs  | 合并并稳定去重           |
+| C1W `creative-cultural-signal-scan`     | 1                                 | C0、C1、固定 30-day UTC window；仅本 stage 联网                         | 唯一 Signal Snapshot，四态可降级                    | optional；失败仍继续      |
+| C2 `creative-territory-explore`         | 6                                 | C0、C1、Software Demo Policy、单个 software-native lens、slot-bound safe palette | Territory + ≤3 Atoms                            | 保留所有合法输出          |
+| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、Policy、Atom index、单个 stable product grammar、slot-bound safe palette | 每 Session ≤3 Concepts + primary territory refs；v7 绑定 exact grammar ID | 合并并稳定去重           |
 | C4H `creative-cheap-hook-review`        | 每 Concept 2                       | C0 Constraint、C1、Software Demo Policy、精确 Concept revision          | Hook/分享触发 categorical review                  | 与 C4F 聚合              |
 | C4F `creative-software-demo-review`     | 每 Concept 1                       | 与 sibling C4H 相同，但看不到其结果                                      | Feasibility categorical review                  | 与 C4H 聚合              |
 | C4R `creative-cheap-hook-repair`        | 最多每 Concept 1                     | 原 Concept + 两份 C4H + 一份 C4F + C0/C1/Policy                         | 新 Concept revision                              | 再做 fresh 2+1 review |
 | C5M-R `creative-memory-recall`          | 0 或 1                             | C0/C1、Atom index、base Concept disposition index、冻结 memory snapshot | ≤8 Inspiration Cues + current relations         | 无历史/disabled 时不调用 |
 | C5M-X `creative-memory-remix`           | 最多 2                              | C0/C1、Software Demo Policy、指定当前 Atom、指定 cues                      | 每 Session ≤1 challenger + primary territory ref | 总数 ≤2，不递归         |
 | C4H'/C4F'                               | 每 challenger 同 C4H+C4F            | 与普通 C4 完全相同；不含 memory                                            | 3 reviews + 可选 revision                        | 与普通 Concept 同矩阵   |
-| C5W `creative-novelty-scan`             | 每通过 Concept 1                     | C0、C1、精确 Concept revision                                          | Novelty Scan + sources                          | 唯一联网任务；只提供证据      |
+| C5W `creative-novelty-scan`             | 每通过 Concept 1                     | C0、C1、精确 Concept revision                                          | Novelty Scan + sources                          | fatal 联网查重；只提供证据    |
 | C6A `creative-evidence-revise`          | 每通过 Concept 1                     | Concept、Hook、Feasibility、Novelty、相关 Memory cues、C0/C1/Policy       | 新 Concept revision                              | 全部进入自动策展池         |
 | C6B `creative-portfolio-curate`         | 2                                 | 所有 C6A Concept + Hook/Feasibility/Novelty 摘要 + Policy                | categorical dimensions + include/hold/exclude   | 控制器确定性 shortlist  |
 | C6C `creative-feedback-revise`          | 每个 `revise/merge` 结果 1；`keep` 为 0 | 精确来源、批准反馈、C0/C1、必要证据                                               | Final Creative Idea                             | 最多一次              |
 | C7                                      | 0                                 | 已验证 Hub 数据                                                         | 报告、Idea Cards、JSON handoff、Memory Record        | 控制器确定性完成          |
 
 
-这张表中的三个 revision stage 分别消费上一节定义的独立预算。C5M 是唯一允许在第一轮 C4 之后新增 Concept ID 的分支，但只能运行一次且最多两个 challenger；challenger 的 C4H'/C4F' 不能回到 C5M。C4R 之后只能复审，C6A 之后只能进入 shortlist，C6C 之后只能进入 C7。C1–C5 没有人工等待；C6 始终是唯一 Human-in-the-loop gate。
+这张表中的三个 revision stage 分别消费上一节定义的独立预算。C1W 只提供灵感，
+不产生 route decision；C5M 是唯一允许在第一轮 C4 之后新增 Concept ID 的分支，
+但只能运行一次且最多两个 challenger；challenger 的 C4H'/C4F' 不能回到 C5M。
+C4R 之后只能复审，C6A 之后只能进入 shortlist，C6C 之后只能进入 C7。
+C1–C5 没有人工等待；C6 始终是唯一 Human-in-the-loop gate。
 
 ### 9.3 C0 输出协议
 
@@ -817,6 +905,80 @@ Arduino、机器人、专用传感器、焊接、实体制作、设备搬运/校
 投影/显示器可以是输出出口，但不能代替软件机制。C1 只规范化 Brief，不发明
 Percy 没有表达的强品味结论，也不暂停等待批准。
 
+### 9.4.1 C1W 文化信号协议（Creative v3）
+
+C1W 固定标识如下：
+
+```text
+stage: creative-cultural-signal-scan
+task: creative-c1w-cultural-signal-scan-01
+artifact: creative-cultural-signal-snapshot-r001
+artifact_type: creative_cultural_signal_snapshot
+window: [run.created_at - 30 days, run.created_at]
+max_signals: 12
+max_sources_per_signal: 4
+```
+
+Agent envelope 只有 `coverage/signals/no_signal_reason`。每个 signal 记录
+`kind=trend|meme|controversy|counter_signal`、`creative_role`、中立摘要、三个
+可迁移抽象字段、不得复制的 surface markers、安全标签、confidence 与来源。
+Controller 负责稳定 `signal_id`、`retrieved_at_utc`、window、status、task 与
+diagnostic binding。
+
+时间语义是确定性的：`as_of_utc=end_utc=run.created_at`。页面有发布时间时使用
+`published_at`；没有发布时间且确实是 live platform trend surface 时，才允许
+`observed_at=as_of_utc`。Agent 不能把浏览完成时的 wall clock 写成
+`observed_at`；真实完成时刻由 Controller 写入 source `retrieved_at_utc`。
+所有非 null 时间必须使用带 seconds 与显式 `Z` 或数字 offset 的完整 RFC3339，
+可包含 fractional seconds；date-only 不能直接进入 Agent envelope。若页面只
+给出某日，Agent 必须写 `YYYY-MM-DDT00:00:00Z` 并保留
+`time_precision=day`，其中 UTC midnight 只是确定性的 precision anchor，
+不是虚构的分钟级发布时间。分钟级时间若没有明确时区不可用，Controller 与
+Agent 都不能猜测 UTC 或浏览器本地时区。`month/unknown` 不放宽 timestamp、
+timezone 或 window，也不授权补写缺失日期/时间。Controller 只可把已显式带
+offset 的 `published_at` 等价换算为 UTC；`observed_at` 必须与 supplied
+`as_of_utc` 文本完全相同，不能用等价 offset 替代。
+
+Agent Schema 的 `published_at` 与 `observed_at` 必须通过同一个 `$defs` timestamp
+pattern 引用，先在 structured-output 边界拒绝 date-only 与 offsetless minute；
+Python lexical gate 必须与该 pattern 使用同一 exact regex，再由 semantic
+validator 负责真实日历、timezone、互斥、day UTC-midnight anchor、live
+surface exact anchor 与 UTC window 比较。两个边界都 fail closed，不对缺失
+时间信息做静默修复。
+
+Source URL 唯一性是 snapshot 级语义合同，而不是单个 source 的 Schema 合同。
+同一 canonical URL 在整个 `signals[]` 最多出现一次，包括同 signal 内与跨
+signal；canonical key 忽略 host 大小写和 fragment，但不把相同 publisher
+视为重复。JSON Schema 无法表达跨嵌套数组的全局唯一性，因此 Python validator
+使用 run-wide `seen_urls` fail closed。Controller 不静默 dedupe；Agent 必须
+把共享页面只分配给证据最强的 signal，并为其他 signal 找独立 URL 或省略。
+Source count 不作为 coverage 指标。
+
+四种状态必须机械区分：
+
+| status | 合同 |
+| --- | --- |
+| `ready` | task succeeded；至少一个 signal；无 limitations |
+| `partial` | task succeeded；至少一个 signal；limitations 非空 |
+| `empty` | task succeeded；signals 为空；`no_signal_reason` 非空 |
+| `unavailable` | task failed/invalidated；signals 为空；唯一 diagnostic；不得用 `no_signal_reason` 冒充成功搜索 |
+
+C2/C3 永不读取 raw snapshot。Controller 按 task slot 确定性投影同 shape 的
+`CULTURAL_SIGNAL_PALETTE`：C2 最多 2 inspire + 2 avoid，C3 最多 2 inspire；
+`context_only` 和高风险 controversy 永不进入 palette。Projection 删除 URL、
+title、publisher、platform、label、neutral summary、source evidence 与 surface
+marker，并拒绝 URL、handle、hashtag、Markdown link、code fence 或这些 marker
+的 normalized copy。
+
+Palette block 自带不可覆盖的使用说明：它可完全忽略；不能证明 demand、
+virality、novelty、feasibility、安全或质量；只能借用抽象 pattern/tension/
+participation shape；Concept 在热点过时后仍须靠真实 software input/output、
+repeatable product loop 与 share artifact 成立。C0/C1/Software Demo Policy
+优先级更高。
+
+v1/v2 catalog 不含 C1W，也不向旧 C2/C3 Prompt 注入 palette。v3 只有 C1W 与
+C5W 的 `web_search=true`；C1W optional/fail-open，C5W fatal/fail-closed。
+
 ### 9.5 C2 输出协议
 
 每个 Territory 输出：
@@ -886,32 +1048,33 @@ Concept 必需 H2：
 Concept 还必须在既有 section 中呈现两段不增加 Schema/H2 的可读性合同：
 
 - `Audience Action`、`Software Core and Runtime` 与
-  `Why It Is Unexpected Yet Legible` 合起来必须能抽取三句朴素描述：
-  “用户做什么”“软件立刻做出什么可观察回应”“为什么用户会再试或分享”。
-  只写隐喻、情绪、世界观、氛围或技术名词不满足合同。
+`Why It Is Unexpected Yet Legible` 合起来必须能抽取三句朴素描述：
+“用户做什么”“软件立刻做出什么可观察回应”“为什么用户会再试或分享”。
+只写隐喻、情绪、世界观、氛围或技术名词不满足合同。
 - `Why It Is Unexpected Yet Legible` 必须指出一个人们已经理解的
-  recognizable product grammar，并说明本 Concept 保留了哪种熟悉入口、对核心
-  机制做了什么变化。允许引用“关系路径探索器”“实时音乐搭档”“可分享生成
-  玩具”“多人挑战”“创作工具”等产品家族，不要求或允许编造具体产品、URL 或
-  研究事实。
+recognizable product grammar，并说明本 Concept 保留了哪种熟悉入口、对核心
+机制做了什么变化。允许引用“关系路径探索器”“实时音乐搭档”“可分享生成
+玩具”“多人挑战”“创作工具”等产品家族，不要求或允许编造具体产品、URL 或
+研究事实。
 
 Prompt 内提供两个只用于校准质量形状的正例：任意人物的六度关系路径探索器，
 以及根据真人演奏实时回应的 Jam 搭档。它们共同证明“熟悉入口 + 真实输入 +
 即时软件反馈 + 可重复玩法 + 自然分享物”是什么样子；Prompt 明确禁止复制
 六度关系或 AI 乐手的表面题材。它们属于静态 Prompt rubric，不作为当前 run
-的外部证据，也不改变 C3 只读取 C0-C2 data blocks 的 Harness 合同。
+的外部证据。v1/v2 的 C3 只读取 C0-C2 data blocks；v3 也不读取 raw signal
+snapshot，只额外接收 Controller 生成的 safe palette。
 
 `Minimum Hackathon Demo` 必须给出比赛时间内的最小 build cut，并按固定顺序写清：
 
 1. 从打开 URL/运行入口开始，到首个有感受输出为止的冷启动步骤与总时长；必要
-   permission prompt、首个真实 input、模型 warm-up、room join 和设备 pairing
+  permission prompt、首个真实 input、模型 warm-up、room join 和设备 pairing
    都在约 30 秒时钟内；
 2. 关键路径子系统列表与 `subsystem_count`；无 C0 明示预算时按第 8 节的最多三个
-   子系统、一个简单 backend、一个主要浏览器/设备切片判断；
+  子系统、一个简单 backend、一个主要浏览器/设备切片判断；
 3. 唯一 `riskiest_technical_assumption`、两小时内的 falsification probe、成功
-   证据和失败后的 degraded slice；
+  证据和失败后的 degraded slice；
 4. 每项预置状态、自动/人工动作和分钟成本；部署前准备可以列在 30 秒时钟之外，
-   但仍计入 build/operation budget，不能从 Concept 中省略；
+  但仍计入 build/operation budget，不能从 Concept 中省略；
 5. 现场验收证据。
 
 提到 `getUserMedia`、MediaRecorder、Web Audio、WebSocket、Canvas 或模型 SDK
@@ -919,9 +1082,34 @@ Prompt 内提供两个只用于校准质量形状的正例：任意人物的六�
 permission/user-gesture 要求、预期延迟、输入质量边界和失败路径。不能用 Figma、
 预录视频、人工选择或 mock API 代替核心机制。
 
-每个 Concept envelope 还必须返回 `primary_territory_ref`。四个 synthesizer 都能看到完整 Atom index，但各自收到不同、持久化的 synthesis lens。模型不能自行创建稳定 ID；semantic validator 要求 `primary_territory_ref` 对应至少一个 Parent Atom 的 Territory。它一经发布就属于 Concept identity metadata，后续 reviewer/curator 不能改写。
+每个 Concept envelope 还必须返回 `primary_territory_ref`。四个 synthesizer 都能看到完整 Atom index，但 v6 各自收到一个由 Controller 按 slot 指定、持久化的 product grammar assignment。模型不能自行创建稳定 ID；semantic validator 要求 `primary_territory_ref` 对应至少一个 Parent Atom 的 Territory。它一经发布就属于 Concept identity metadata，后续 reviewer/curator 不能改写。
 
-这四个任务的 parent refs、registered context 与最终 Prompt 必须只包含 C0-C2；即使 controller-owned Snapshot 已在 run 创建时冻结，也不能在 C3 前注入。`CreativeRunContract` 将任何提前出现的 memory block/ref 视为合同错误。
+v6 的 `Recognizable product grammar:` 必须使用：
+
+```text
+Recognizable product grammar: <assigned_product_grammar_id> — <plain explanation>
+```
+
+exact ID 只能是 `explorer_simulator`、`realtime_partner`、
+`social_game_relay` 或 `creator_transformer` 中被当前 slot 分配的那一个。
+Controller 在 publish 前的 context-aware semantic validation 中提供 expected
+ID；marker 缺失、未知或与当前 slot 不一致都使 task output invalidated，而不是
+把候选路由为 reject。每类 acceptance / exclusion 规则属于 frozen v6 Prompt，
+Python assignment registry 只拥有 stable ID、label 和 slot，避免复制两套规则。
+
+这项新检查严格按 frozen C3 template version 开关。v2–v5 使用原
+`SYNTHESIS_LENS` block 和旧语义校验，不要求 marker，也不能在恢复时被补写
+`assigned_product_grammar_id`；v6 才使用 assignment block 与 expected-ID
+context。任何没有显式注册 context semantics 的未来 C3 template version
+fail closed，不能静默退回 legacy lens。这样已经完成或等待中的旧 run 不会被
+事后重解释成执行过四类责任。
+
+这四个任务的 registered context 与最终 Prompt 不得出现 Idea Memory。v1/v2
+的 parent refs 只包含 C0-C2；v3 必须在相同父引用之外恰好增加一个 C1W signal
+snapshot parent，并且只能把它投影成 safe palette，不能注入 raw snapshot。
+run 创建时冻结的 Idea Memory Snapshot 在 C3 前仍不得注入；
+`CreativeRunContract` 将任何提前出现的 memory block/ref，或错误数量的 signal
+parent/palette，视为合同错误。
 
 这是 Harness 可验证的上下文隔离，不是主机文件系统保密边界：当前 `CodexRunner` 的 `read-only` sandbox 不是 chroot。C2/C3/初始 C4 的 task policy 还必须明确禁止主动扫描 run 历史，但当前 Creative contracts 不声称能抵御恶意 Session 猜路径读取。若未来要提供该级别保证，需要独立容器/进程级文件系统 allowlist，不在本 PRD 范围内。
 
@@ -1075,7 +1263,7 @@ state/creative-memory/idea-memory-snapshot.json
     {
       "source_run_id": "...",
       "source_route_id": "creative",
-      "source_contract_version": "1|2",
+      "source_contract_version": "1|2|3",
       "source_memory_record_artifact_id": "...",
       "source_memory_record_sha256": "..."
     }
@@ -1094,7 +1282,7 @@ Snapshot 内每个 capsule 的跨 run 身份固定为：
 {
   "source_run_id": "...",
   "source_route_id": "creative",
-  "source_contract_version": "1|2",
+  "source_contract_version": "1|2|3",
   "source_artifact_id": "...",
   "source_artifact_sha256": "...",
   "source_memory_record_artifact_id": "...",
@@ -1112,7 +1300,7 @@ Snapshot 内每个 capsule 的跨 run 身份固定为：
 - C0/C1；
 - 当前 Atom 的精简 index；
 - 第一批 Concept 的 Hook/Feasibility 摘要、parent refs、C4 terminal
-  outcome/reason codes；
+outcome/reason codes；
 - frozen capsule。
 
 禁止输入旧完整 Idea Card、旧 Prompt/任务日志、reviewer ID/name、原始评论或未批准反馈。
@@ -1192,7 +1380,10 @@ Recall 或任一 optional sibling 失败即为 `status=optional_failed`，即使
 
 #### 9.8.4 C5W Novelty Scan
 
-C5W 是唯一联网阶段，对 base 与 memory challenger 中每个通过完整 C4H+C4F screen 的 Concept 使用一个 fresh Session。C5W task 数必须严格等于该 pass 集数量；硬件/装置/不可运行项在这里之前已经终态淘汰。输出：
+C5W 是唯一 fatal 的联网研究阶段；v3 另有一次 optional/fail-open 的 C1W。
+C5W 对 base 与 memory challenger 中每个通过完整 C4H+C4F screen 的 Concept
+使用一个 fresh Session。C5W task 数必须严格等于该 pass 集数量；硬件/装置/
+不可运行项在这里之前已经终态淘汰。输出：
 
 ```json
 {
@@ -1408,7 +1599,7 @@ artifacts/creative/report/creative-partial-report.json
 
 在 finalization manifest 生成前，partial report 只读取失败发生前已验证并持久化的数据，包含 terminal error/task/log refs，但不得生成 Idea Card、handoff 或 `completed` event。Manifest 生成后的普通 publish/process 中断不转成 fatal，而是保留可恢复的 `creative-finalization`；只有 staged/existing bytes 篡改等不可安全重放的问题才 fail closed，此时 plan-linked 文件/record 也不得进入 `result_artifact_ids` 或被解释成有效 Final 输出。若 partial render 本身失败，保留原始 run failure，并追加一个 report-render error；不能覆盖最初错误。
 
-正常报告包含所有生成、临时基础设施重试、修复、淘汰、shortlist、人工反馈、合并、分歧和最终项，并固定包含 `Candidate Fate Ledger`、`Idea Memory Used` 与 `Memory-derived Branches`。C4 fate 必须分别列出 Hook 与 Feasibility review refs、维度 reason codes 和证据；零 Idea 时再包含 `Zero-Idea Explanation`，逐项列出 terminal stage、reason codes、decision/evidence refs 和空 C6 batch 的 `skip_reason`。这些段落由控制器投影，不调用模型做事后归因。
+正常报告包含所有生成、临时基础设施重试、修复、淘汰、shortlist、人工反馈、合并、分歧和最终项，并固定包含 `Candidate Fate Ledger`、`Idea Memory Used` 与 `Memory-derived Branches`。Creative v3 还在 Brief 与 Territories 之间披露 `Cultural Signal Scan`，只包含 snapshot ref/hash、status、deterministic window、signal count、platform kind 与 optional diagnostic；不复制 raw trend。C4 fate 必须分别列出 Hook 与 Feasibility review refs、维度 reason codes 和证据；零 Idea 时再包含 `Zero-Idea Explanation`，逐项列出 terminal stage、reason codes、decision/evidence refs 和空 C6 batch 的 `skip_reason`。这些段落由控制器投影，不调用模型做事后归因；过去淘汰原因进入 Memory Record 时只作为带来源的反模式/风险线索，不能直接复活旧 Concept。
 
 重复渲染相同 Hub 数据必须得到字节完全相同的报告；动态时间戳只能来自已持久化事件，不在 render 时调用当前时间。
 
@@ -1446,11 +1637,25 @@ record 与 handoff 中，不能嵌回文件造成循环 hash。
 ```json
 {
   "schema_version": 2,
-  "route": {"id": "creative", "contract_version": "2"},
+  "route": {"id": "creative", "contract_version": "3"},
   "run_id": "...",
   "status": "completed",
   "challenge_ref": "...",
   "creative_brief_ref": "...",
+  "cultural_signal_scan": {
+    "status": "ready|partial|empty|unavailable",
+    "snapshot_ref": "creative-cultural-signal-snapshot-r001",
+    "snapshot_sha256": "...",
+    "window": {
+      "as_of_utc": "...",
+      "start_utc": "...",
+      "end_utc": "...",
+      "lookback_days": 30
+    },
+    "signal_count": 0,
+    "platform_kinds": [],
+    "diagnostic_ref": null
+  },
   "idea_memory": {
     "mode": "auto|off",
     "snapshot_ref": "...",
@@ -1486,9 +1691,13 @@ record 与 handoff 中，不能嵌回文件造成循环 hash。
   "final_idea_card_ids": [],
   "handoff_refs": [],
   "memory_record_ref": "...",
-  "report_policy_version": "2"
+  "report_policy_version": "3"
 }
 ```
+
+`cultural_signal_scan` 只存在于 v3 report，且字段集合必须与上例完全一致。它
+披露确定性窗口、来源平台种类和 snapshot hash，但不复制 raw signal、URL、
+capture wall clock 或 palette `use_limit`；Memory Record 也不得复制该字段。
 
 零 Idea 成功运行必须显式写 `final_idea_card_ids=[]`、`handoff_refs=[]`，并且 `zero_reason_code` 只能是：
 
@@ -1498,8 +1707,8 @@ record 与 handoff 中，不能嵌回文件造成循环 hash。
 - `all_human_rejected`
 
 非零 Idea 时该字段必须为 `null`。v1 report loader 仍接受
-`all_candidates_failed_hook`，但只对 persisted contract v1；v2 renderer 不能
-生成它。partial JSON 使用 `status=failed`、`terminal_error`、
+`all_candidates_failed_hook`，但只对 persisted contract v1；v2/v3 renderer
+不能生成它。partial JSON 使用 `status=failed`、`terminal_error`、
 `completed_stage_ids`，并禁止 final card/handoff/memory-record 字段出现非空值。
 
 #### Idea Memory Record
@@ -1512,7 +1721,7 @@ Memory Record 与 report 使用同一份已验证 Hub projection 确定性生成
 {
   "memory_schema_version": 2,
   "source_run_id": "...",
-  "source_route": {"id": "creative", "contract_version": "2"},
+  "source_route": {"id": "creative", "contract_version": "3"},
   "source_report_artifact_id": "...",
   "source_report_sha256": "...",
   "created_at": "persisted-run-time",
@@ -1687,9 +1896,9 @@ Creative 质量 reject。
 - 首次提交前看不到其他人的原文或结果，首次记录标为 `pre_reveal`；提交后可以看到 team wall，之后的 superseding edit 标为 `post_reveal`。Benchmark 的独立复述/分享指标只使用首份 `pre_reveal` receipt。
 - 评审内容绑定精确 round、revision 和 hash；过期内容返回 409。
 - `share_impulse=immediate` 时 `share_target` 必须非空；`maybe|no` 可以为空。
-  `demo_confidence` 的问题固定为“看完最小 Demo 路径后，你相信团队能在比赛
-  时间内跑起来吗？”，它与 `share_impulse` 都进入 feedback fragment canonical
-  hash，但只是人工信号，不自动重开 C4F。
+`demo_confidence` 的问题固定为“看完最小 Demo 路径后，你相信团队能在比赛
+时间内跑起来吗？”，它与 `share_impulse` 都进入 feedback fragment canonical
+hash，但只是人工信号，不自动重开 C4F。
 - concept evaluation、pair answer 和 overall comment 各有稳定 `feedback_ref`；`feedback_sha256` 对排除 hash 字段本身后的 canonical fragment 计算，避免 self-reference。
 - shortlist 按 Concept ID 排序后，controller 生成一个连通但有界的相邻 pair 集：
   - 0/1 个候选：0 pair；
@@ -1698,7 +1907,7 @@ Creative 质量 reject。
 - `pair_id` 和 canonical 两端由 controller 固定；UI 可以依据 reviewer ID hash 交换左右显示以降低位置偏差，但提交必须还原 canonical refs/hash。
 - Reviewer 可以回答零个到全部已提供 pair；不得提交自比较、未知 pair、重复 pair 或不属于精确 round 的 revision。
 - pairwise 文案固定比较“更想立刻点开、转发或让别人试哪一个？为什么？”，
-  但仍可全部跳过。
+但仍可全部跳过。
 - 在 round 关闭前，人类可以主动追加 superseding edit；这是人工编辑历史，不是自动 Agent loop。round 一旦关闭，所有新 review/edit 都返回 409，且只有每个 reviewer 的最新非 superseded 版本进入 resolution。
 
 ### 10.3 Percy 决议
@@ -2151,7 +2360,11 @@ Importer 验证 benchmark ID、packet hash、case 完整性、每个 blind Idea 
 
 - 合法 Concept 数；
 - 机制不同的 Territory/Atom 数；
-- C3 software-first 合格率与端到端 Demo path 完整率；
+- C1W `ready|partial|empty|unavailable` 分布、30-day window 命中率、
+  snapshot/source 完整率，以及 raw URL/title/marker 泄漏到 palette 的次数；
+- C3 四种 assigned product grammar 的覆盖率、exact marker/slot 绑定通过率、
+  software-first 合格率、端到端 Demo path 完整率，以及跨 grammar 的核心
+  input/transformation/reveal/share artifact 重复率；
 - C3 冷启动 30 秒路径、关键子系统计数、最高风险假设/两小时 probe、降级切片和
   预置状态成本的完整率；
 - C4H/C4F `pass|repairable|invalid`、修复、淘汰矩阵和七类 feasibility reason 分布；
@@ -2204,12 +2417,15 @@ Demo cut 缺失、标准 Web API 兼容/权限陷阱、预置状态超预算、�
 | C4 修复后仍不一致                            | `c4_unresolved_after_repair`                               | 继续                                               |
 | 自动 history 发现单个坏/未知来源                 | snapshot diagnostic，不注入该来源                                 | 继续                                               |
 | 冻结后的 snapshot/hash 被篡改                | validation error + deterministic partial report            | `failed`                                         |
+| C1W 成功但无合格 signal                      | `status=empty` + 非空 `no_signal_reason`                    | 注入显式空 palette，继续                                  |
+| C1W 网络/输出/时间语义失败                       | optional failed/invalidated task + diagnostic + unavailable snapshot | 注入显式空 palette，继续，不伪称“没有热点”                        |
+| C1W snapshot、palette、parent 或版本被篡改     | route/report validation error                              | fail closed；不得发布成功报告                              |
 | 无历史或 `idea-memory=off`                | 合法空 snapshot                                               | 不调用 C5M，继续                                       |
 | C5M Recall 失败                         | allowlisted optional task + `optional_memory_stage_failed` | 不启动 Remix；base 分支继续                              |
 | 两个 C5M Remix 一成一败                     | 保留成功 challenger；失败 sibling 写 task/event/diagnostic         | all-settled 后让成功 challenger 进入 C4                |
-| v2 base 与 challenger 均无完整 C4 screen pass | 完整 disposition + 空 review batch                         | 跳过等待，C7 以 `all_candidates_failed_concept_screen` 完成 |
+| v2/v3 base 与 challenger 均无完整 C4 screen pass | 完整 disposition + 空 review batch                         | 跳过等待，C7 以 `all_candidates_failed_concept_screen` 完成 |
 | frozen v1 run 无 Hook pass               | 按 v1 bytes/schema 解释                                      | 保留 `all_candidates_failed_hook`，不迁移                 |
-| C5W 网络失败                              | task failed + deterministic partial report                 | `failed`，绝不写“无先例”                                |
+| C5W 网络失败                              | task failed + deterministic partial report                 | `failed`，绝不写“无先例”；不得按 C1W 降级                      |
 | 自动 shortlist 为空                       | 带 `shortlist_empty` 的空 review batch                        | 跳过等待，C7 完成                                       |
 | Review 提交 hash 过期                     | 不写 ledger，HTTP 409                                         | 仍 `waiting`                                      |
 | Review body/schema 非法                 | 不写 ledger，HTTP 4xx                                         | 仍 `waiting`                                      |
@@ -2238,55 +2454,64 @@ Demo cut 缺失、标准 Web API 兼容/权限陷阱、预置状态超预算、�
 
 ## 17. 模块与文件责任
 
-建议目标结构：
+当前 canonical 结构：
 
 ```text
 src/hacksome/
-├── cli.py                         # 公共命令与 route dispatch
-├── codex.py                       # 不改语义
-├── hub.py                         # v1/v2、route metadata、generic decision
-├── state.py                       # 原子原语 + run lease
-├── prompting.py                   # RenderedPrompt / PromptSpec / PromptCatalog
-├── task_executor.py               # 共享 AgentTaskExecutor
-├── workflow.py                    # Useful route owner
-├── routes.py                      # route registry + RunContract protocol
-├── creative/
-│   ├── __init__.py
-│   ├── artifacts.py               # Creative headings/composer/semantic checks
-│   ├── contracts.py               # settings、DTO、stage constants
-│   ├── prompting.py               # Creative PromptCatalog
-│   ├── workflow.py                # C0-C7 orchestration
-│   ├── report.py                  # deterministic report/handoff
-│   ├── memory.py                  # 跨 run 发现、snapshot、capsule/ref 验证
-│   ├── review.py                  # snapshot、ledger、resolution validation
-│   └── review_server.py           # stdlib HTTP server
-├── prompts/
-│   └── creative/*.md
-├── schemas/
-│   └── creative/*.schema.json
-└── review_ui/
-    ├── index.html
-    ├── styles.css
-    └── app.js
+├── cli.py                                      # 公共命令与 stage/route dispatch
+├── core/
+│   ├── codex.py                                # CodexRunner + structured-output preflight
+│   ├── hub.py                                  # v1/v2、route metadata、generic decision
+│   ├── state.py                                # 原子原语 + run lease
+│   ├── prompting.py                            # RenderedPrompt / PromptSpec / PromptCatalog
+│   ├── task_executor.py                        # 共享 AgentTaskExecutor
+│   └── routes.py                               # route registry + RunContract protocol
+├── contracts/
+│   └── idea_to_build.py                        # 共享 Build Approval handoff
+└── stages/
+    └── ideation/
+        ├── useful/                             # Useful route owner
+        └── creative/
+            ├── artifacts.py                    # headings/composer/semantic checks
+            ├── contracts.py                    # settings、DTO、stage constants
+            ├── prompting.py                    # Creative PromptCatalog
+            ├── workflow.py                     # C0-C7 orchestration
+            ├── report.py                       # deterministic report + shared handoff
+            ├── report_projection.py
+            ├── signals.py                      # C1W snapshot/source/time/safe palette
+            ├── memory.py                       # 跨 run snapshot、capsule/ref 验证
+            ├── review.py                       # snapshot、ledger、resolution validation
+            ├── review_server.py                # stdlib HTTP server
+            ├── prompts/*.md
+            ├── schemas/*.schema.json
+            └── review_ui/
+                ├── index.html
+                ├── styles.css
+                └── app.js
 ```
 
-`pyproject.toml` 的 package data 必须加入嵌套 Prompt、Schema 和 review UI 资产；测试要验证 wheel/resource 可读取，避免只在 editable install 工作。
+根级 `hacksome.creative.*`、`hacksome.codex` 等文件只作为兼容 import shim；
+新实现、文档和测试必须指向 `hacksome.stages.ideation.creative.*` 与
+`hacksome.core.*`，不能把 shim 当作第二份实现。`pyproject.toml` 的 package
+data 必须包含 stage 下的 Prompt、Schema 和 review UI 资产；测试要验证
+wheel/resource 可读取，避免只在 editable install 工作。
 
 测试按责任拆分：
 
 ```text
-tests/test_hub.py
-tests/test_prompting.py
-tests/test_task_executor.py
-tests/test_workflow.py                 # Useful 回归
-tests/test_routes.py
-tests/creative/test_contracts.py
-tests/creative/test_workflow.py
-tests/creative/test_memory.py
-tests/creative/test_review.py
-tests/creative/test_review_server.py
-tests/creative/test_report.py
-tests/test_cli.py
+tests/core/test_hub.py
+tests/core/test_prompting.py
+tests/core/test_task_executor.py
+tests/core/test_routes.py
+tests/core/test_cli.py
+tests/stages/ideation/useful/test_workflow.py
+tests/stages/ideation/creative/test_creative_contracts.py
+tests/stages/ideation/creative/test_creative_workflow.py
+tests/stages/ideation/creative/test_creative_signals.py
+tests/stages/ideation/creative/test_creative_memory.py
+tests/stages/ideation/creative/test_creative_review.py
+tests/stages/ideation/creative/test_creative_review_server.py
+tests/stages/ideation/creative/test_creative_report.py
 ```
 
 ## 18. 测试与验收映射
@@ -2311,21 +2536,28 @@ tests/test_cli.py
 - fake runner 完整执行 C0-C7；
 - 稳定 ID 与并发完成顺序无关；
 - Software Demo Policy 在允许阶段使用同一 exact hash，C2 lens 不含纯
-  spatial/performance/cross-media 目标；
+spatial/performance/cross-media 目标；
+- 新 v3 run 使用 C3 v7：它继承 v6 的互斥产品语法，并增加 signal snapshot
+parent 与 safe palette block；默认四个 task 按稳定 slot 一一收到
+`explorer_simulator`、`realtime_partner`、`social_game_relay`、
+`creator_transformer`，exact marker/expected ID 匹配才通过。Creative v2
+继续按 frozen C3 v6 字节运行且没有 palette；frozen C3 v2–v5 继续使用旧
+lens block 且不要求 marker；
 - C3 缺 `Software Core and Runtime`、`Share Trigger and Artifact` 或可执行
-  Demo 信息时 invalidated；
+Demo 信息时 invalidated；
 - 每个 initial/repaired revision 恰好 2 个 C4H + 1 个 C4F fresh task，三者互
-  不读取 sibling；C4H/C4F 判断矩阵与七类 feasibility reason 逐项覆盖；
+不读取 sibling；C4H/C4F 判断矩阵与七类 feasibility reason 逐项覆盖；
 - custom hardware 与 pure installation fixture 终态淘汰且 C5W task=0；合法
-  laptop/phone/browser/camera/mic fixture 不被误杀；缺 Demo detail 只 repair
-  一次并重跑 2+1；
+laptop/phone/browser/camera/mic fixture 不被误杀；缺 Demo detail 只 repair
+一次并重跑 2+1；
 - 每个 C4/C6 terminal branch 都有稳定 disposition reason codes 与 evidence/decision refs；
 - 每个 Concept 的 C4H/C4F 共享最多一次 Hook repair；
 - 每个 base Concept/memory challenger 的 lineage 最多包含一次 C4 repair；每个进入 C6A 的 C4-pass Concept 恰好包含一次 evidence revision，最终最多再包含一次 C6C feedback revision；重试不新增 revision，三类预算互不借用；
-- C5W task 数严格等于完整 C4 screen pass 数，且只有 C5W 设置 web search；
+- C5W task 数严格等于完整 C4 screen pass 数；v3 只有 C1W/C5W 设置 web
+search，v1/v2 仍只有 C5W；
 - C5W 失败不会变成“无撞车”；
 - C6B 五个 categorical dimension 与 include/hold/exclude 机械关系、上限和
-  Territory round-robin 确定；
+Territory round-robin 确定；
 - 空 shortlist 发布带 skip reason 的空 batch，不等待；
 - 非空 shortlist 精确进入 `waiting`；
 - 未关闭 round 不 resume；
@@ -2338,7 +2570,10 @@ tests/test_cli.py
 
 ### 18.3 Idea Memory
 
-- C2/C3 与初始 C4 Prompt/parent refs/registered context/stage input 不含 snapshot、capsule 或历史 disposition；测试明确验证的是 Harness 上下文隔离而不是 OS chroot；
+- C2/C3 与初始 C4 Prompt/registered context/stage input 不含 Idea Memory
+snapshot、capsule 或历史 disposition；v3 的 C2/C3 parent refs 只额外允许并
+要求唯一 C1W signal snapshot，且 Prompt 只接收 safe palette。测试明确验证
+的是 Harness 上下文隔离而不是 OS chroot；
 - history discovery 只扫描显式 runs root 直接子目录，顺序不依赖文件系统枚举；
 - completed zero-Idea Creative 可贡献 caution；Useful、failed、waiting、fixture、未知版本、hash 损坏和 symlink 逃逸均排除并有 diagnostics；
 - `off`、无历史、无当前 Atom、无 relevant cue 都形成不同的合法空状态，且不调用不需要的 Agent；
@@ -2352,8 +2587,8 @@ tests/test_cli.py
 - memory record 从 report projection 确定性生成，不含身份、原始人类评论、Prompt、log、Session 或绝对路径；
 - memory classification 对两种 curator-support caution、两种 portfolio capacity、C4 caution、human subjective、merge transformed 和 final positive 全覆盖；
 - v2 `no_concepts_generated`、`all_candidates_failed_concept_screen`、
-  `shortlist_empty`、`all_human_rejected` 与非零 `null` 的互斥合同逐项覆盖；
-  legacy v1 `all_candidates_failed_hook` 只在 v1 validator 分支合法。
+`shortlist_empty`、`all_human_rejected` 与非零 `null` 的互斥合同逐项覆盖；
+legacy v1 `all_candidates_failed_hook` 只在 v1 validator 分支合法。
 
 ### 18.4 Review API
 
@@ -2363,15 +2598,15 @@ tests/test_cli.py
 - CSP、no-store、no-referrer、nosniff、字段上限和 approved feedback context budget；
 - reviewer name 与自由文本正确保留 Unicode；
 - `share_impulse` / `demo_confidence` exact enum、request/fragment hash、
-  persist/reload/supersede；`immediate` + 空 share target 返回 4xx；
+persist/reload/supersede；`immediate` + 空 share target 返回 4xx；
 - concept/round hash 过期返回 409；
 - retry 幂等、冲突提交 409；
 - supersedes 不覆写旧记录；
 - pair 生成有界，未知/重复/stale pair 拒绝；
 - 非 curator token 无法关闭；
 - pre-submit reviewer snapshot 含原始 software/demo/share sections 但不含 peer
-  原文或 C4F verdict；post-submit team wall 只读；curator snapshot 才包含完整
-  feasibility evidence、原始人工信号和 resolution controls；
+原文或 C4F verdict；post-submit team wall 只读；curator snapshot 才包含完整
+feasibility evidence、原始人工信号和 resolution controls；
 - coverage 不足必须 override reason；
 - merge group 不重叠，approved fragment exact hash 在 resume 前复核；
 - revise/merge 必须有 approved fragment 或 curator instruction，latest receipt set hash 可复算；
@@ -2398,7 +2633,7 @@ tests/test_cli.py
 - worksheet 的 benchmark/packet/case/hash 不匹配时拒绝；
 - worksheet 重试幂等、冲突 ID 拒绝；
 - benchmark 报告 hardware/install false-pass、software false-reject、C5W cost、
-  `share_impulse`、retell 与 `demo_confidence`，并标明人工字段只是代理信号；
+`share_impulse`、retell 与 `demo_confidence`，并标明人工字段只是代理信号；
 - live 缺少完整 worksheet 时保持 pending；
 - fixture producer 永不进入真人指标。
 - workflow-vs-one-shot 固定 memory off；memory ablation 的 auto/off arm 共享同一 benchmark-level snapshot/hash，arm 输出不反向污染来源；
@@ -2422,12 +2657,16 @@ git diff --check
 
 - 第一切片先加入 v1/v2 read compatibility 和 route metadata，再接入 Creative。
 - software-first 变更提升 Creative contract、Prompt policy、stage policy、
-  report/memory policy 和 review payload/snapshot schema 至 v2；所有新 run 使用
-  v2。旧 `creative-hack-the-rest-20260724-04` 等 v1 waiting run 继续按冻结
-  resource allowlist inspect/review/resume，不回填 Software Demo Policy、不补跑
-  C4F，也不把旧 `all_candidates_failed_hook` 改名。
+report/memory policy 和 review payload/snapshot schema 至 v2；所有新 run 使用
+v2（历史迁移节点）。旧 `creative-hack-the-rest-20260724-04` 等 v1 waiting
+run 继续按冻结
+resource allowlist inspect/review/resume，不回填 Software Demo Policy、不补跑
+C4F，也不把旧 `all_candidates_failed_hook` 改名。
+- C1W 变更再把 Creative contract/prompt/stage/report policy 提升至 v3；新 run
+使用 v3，v1/v2 run 不补跑 C1W、不注入 palette，也不改写既有 memory/report
+bytes。
 - loader 先按 persisted Creative contract version 分派，再验证相应
-  Prompt/Schema/reason/receipt/report；不能用当前 package 默认值解释旧 run。
+Prompt/Schema/reason/receipt/report；不能用当前 package 默认值解释旧 run。
 - Useful Prompt 与行为先迁到新的 `PromptCatalog/AgentTaskExecutor`，以现有测试证明等价。
 - Creative 文件使用独立目录和 stage namespace，减少与 Weston 的冲突。
 - 保留现有公开入口与默认语义：
@@ -2446,8 +2685,10 @@ git diff --check
 - Idea Memory 可以通过 `--idea-memory off` 独立关闭；没有兼容历史时流程自然退化为原先的 base C2-C7，不要求迁移旧 run。
 - Review UI/Server 可以独立撤回，不改变已有 Creative run 的 C0-C5 产物。
 - software-first v2 可以停止创建新 run，但不能删除 v1 loader 或让已经 waiting
-  的 v1 run 失去只读 inspect/review/resume 能力；真正移除旧版本需另做显式迁移
-  决策和数据保留说明。
+的 v1 run 失去只读 inspect/review/resume 能力；真正移除旧版本需另做显式迁移
+决策和数据保留说明。
+- C1W 可通过停止创建 v3 run 回滚，但不能用删除 stage 或修改 frozen catalog 的
+方式破坏已经创建的 v3 run；v2 compatibility 仍须保留。
 - v2 读取支持是 additive；回滚 Creative route 时仍可明确报告“不支持该 route”，不应误读为 Useful。
 
 ### 19.3 与 Weston 并行开发
@@ -2471,6 +2712,6 @@ git diff --check
 7. 离线质量门、HTTP 测试和浏览器 QA 均通过；
 8. PR 明确列出共享契约变化、Useful 回归证据、Creative 演示步骤和未运行的在线 benchmark。
 9. software-first v2 的硬件/装置反例、普通设备 I/O 正例、新 zero reason、旧
-   v1 waiting compatibility、C6 人工新字段和至少一次新真实 route smoke 都有
+  v1 waiting compatibility、C6 人工新字段和至少一次新真实 route smoke 都有
    可复核证据；旧 v1 的五个诗性装置 shortlist 只作为问题基线，不得冒充 v2
    benchmark 成果。

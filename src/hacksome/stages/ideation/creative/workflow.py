@@ -34,6 +34,7 @@ from hacksome.core.config import (
 from hacksome.stages.ideation.creative.contracts import (
     C0_CHALLENGE_PARSE,
     C1_BRIEF_NORMALIZE,
+    C1W_CULTURAL_SIGNAL_SCAN,
     C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -49,6 +50,7 @@ from hacksome.stages.ideation.creative.contracts import (
     CREATIVE_PROMPT_POLICY_VERSION,
     CREATIVE_REPORT_POLICY_VERSION,
     CREATIVE_STAGE_POLICY_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
     CreativeWorkflowSettings,
     DEFAULT_CREATIVE_BRIEF,
     DEFAULT_TERRITORY_LENSES,
@@ -62,6 +64,7 @@ from hacksome.stages.ideation.creative.contracts import (
     concept_revision_ref,
     memory_concept_id,
     territory_id,
+    creative_optional_stages_for_contract,
 )
 from hacksome.stages.ideation.creative.artifacts import CreativeValidationContext
 from hacksome.stages.ideation.creative.memory import (
@@ -75,6 +78,17 @@ from hacksome.stages.ideation.creative.prompting import (
     creative_prompt_catalog,
     creative_prompt_catalog_for_contract,
     validate_creative_output,
+)
+from hacksome.stages.ideation.creative.signals import (
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+    CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+    CulturalSignalError,
+    CulturalSignalSnapshot,
+    build_cultural_signal_snapshot,
+    cultural_signal_window_prompt,
+    render_cultural_signal_palette,
+    unavailable_cultural_signal_snapshot,
 )
 from hacksome.stages.ideation.creative.review import (
     ConceptBinding,
@@ -102,12 +116,49 @@ INTERNAL_C6_EMPTY_COMPLETE_STAGE = "creative-c6-empty-complete-internal"
 CREATIVE_HUMAN_REVIEW_STAGE = "creative-human-review"
 DEFAULT_RUN_TIMEOUT_SECONDS = 6 * 60 * 60
 
-SYNTHESIS_LENSES = (
+LEGACY_SYNTHESIS_LENSES = (
     "Combine atoms through a legible interaction loop",
     "Combine atoms around a sharp reversal and reveal",
     "Combine atoms around a software-native share, replay, or remix artifact",
     "Combine atoms through software-visible hidden state or a surprising technical mechanism",
 )
+
+C3_LEGACY_SYNTHESIS_TEMPLATE_VERSIONS = frozenset({"1", "2", "3", "4", "5"})
+C3_PRODUCT_GRAMMAR_TEMPLATE_VERSIONS = frozenset({"6", "7"})
+C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION = "7"
+
+SYNTHESIS_LENSES = (
+    ("explorer_simulator", "Explorer / Simulator"),
+    ("realtime_partner", "Realtime Partner"),
+    ("social_game_relay", "Social Game / Relay"),
+    ("creator_transformer", "Creator / Transformer"),
+)
+
+
+def _synthesis_assignments_for_template_version(
+    template_version: str,
+) -> tuple[tuple[str, str | None], ...]:
+    if template_version in C3_PRODUCT_GRAMMAR_TEMPLATE_VERSIONS:
+        return tuple(
+            (
+                _json_text(
+                    {
+                        "assigned_product_grammar_id": grammar_id,
+                        "assigned_product_grammar_label": grammar_label,
+                    }
+                ),
+                grammar_id,
+            )
+            for grammar_id, grammar_label in SYNTHESIS_LENSES
+        )
+    if template_version in C3_LEGACY_SYNTHESIS_TEMPLATE_VERSIONS:
+        return tuple((legacy_lens, None) for legacy_lens in LEGACY_SYNTHESIS_LENSES)
+    raise CreativeWorkflowError(
+        "unsupported C3 synthesis template semantics for version "
+        f"{template_version!r}; assign an explicit context contract before "
+        "advancing the C3 template"
+    )
+
 
 _PORTFOLIO_CURATOR_LENSES = (
     (
@@ -139,6 +190,7 @@ _HARD_SOFTWARE_DEMO_REASON_CODES = frozenset(
     }
 )
 _CONCEPT_SCREEN_MATRIX_VERSION = "1"
+
 
 class CreativeWorkflowError(RuntimeError):
     """The Creative C0-C5 prefix cannot safely continue."""
@@ -223,6 +275,7 @@ class CreativeC0C5Outcome:
     challenge_brief_ref: str
     constraint_view_ref: str
     creative_brief_ref: str
+    cultural_signal_snapshot_ref: str | None
     territory_refs: tuple[str, ...]
     atom_refs: tuple[str, ...]
     base_concept_refs: tuple[str, ...]
@@ -282,7 +335,9 @@ class CreativeIdeaWorkflow:
             prompt_catalog,
             task_timeout_seconds=self.task_timeout_seconds,
             semantic_validator=semantic_validator,
-            optional_branch_stages=(C5M_MEMORY_RECALL, C5M_MEMORY_REMIX),
+            optional_branch_stages=creative_optional_stages_for_contract(
+                contract_version
+            ),
         )
 
     @property
@@ -314,6 +369,7 @@ class CreativeIdeaWorkflow:
             build_memory_snapshot,
             persist_memory_snapshot,
         )
+
         selected_settings = settings or CreativeWorkflowSettings()
         selected_config = codex_config or CodexConfig()
         selected_builder = snapshot_builder or cast(
@@ -539,10 +595,28 @@ class CreativeIdeaWorkflow:
                 self.hub.set_run_status("running", stage=stage)
                 brief_ref = await self._run_c1(challenge_ref, constraint_ref)
 
+                cultural_signal_snapshot_ref: str | None = None
+                cultural_signal_snapshot: CulturalSignalSnapshot | None = None
+                if self.contract_version == CREATIVE_CONTRACT_VERSION:
+                    stage = C1W_CULTURAL_SIGNAL_SCAN
+                    self.hub.set_run_status("running", stage=stage)
+                    (
+                        cultural_signal_snapshot_ref,
+                        cultural_signal_snapshot,
+                    ) = await self._run_c1w(
+                        challenge_ref,
+                        constraint_ref,
+                        brief_ref,
+                    )
+
                 stage = C2_TERRITORY_EXPLORE
                 self.hub.set_run_status("running", stage=stage)
                 territory_refs, atom_refs = await self._run_c2(
-                    challenge_ref, constraint_ref, brief_ref
+                    challenge_ref,
+                    constraint_ref,
+                    brief_ref,
+                    cultural_signal_snapshot_ref=cultural_signal_snapshot_ref,
+                    cultural_signal_snapshot=cultural_signal_snapshot,
                 )
 
                 stage = C3_CONCEPT_SYNTHESIZE
@@ -552,6 +626,8 @@ class CreativeIdeaWorkflow:
                     constraint_ref,
                     brief_ref,
                     atom_refs,
+                    cultural_signal_snapshot_ref=cultural_signal_snapshot_ref,
+                    cultural_signal_snapshot=cultural_signal_snapshot,
                 )
 
                 stage = C4_CHEAP_HOOK_REVIEW
@@ -623,6 +699,7 @@ class CreativeIdeaWorkflow:
             challenge_brief_ref=challenge_ref,
             constraint_view_ref=constraint_ref,
             creative_brief_ref=brief_ref,
+            cultural_signal_snapshot_ref=cultural_signal_snapshot_ref,
             territory_refs=territory_refs,
             atom_refs=atom_refs,
             base_concept_refs=tuple(
@@ -753,11 +830,7 @@ class CreativeIdeaWorkflow:
                 "Creative C6 workflow exceeded run timeout"
             ) from exc
         except Exception as exc:
-            task_id = (
-                exc.task_id
-                if isinstance(exc, AgentTaskExecutionError)
-                else None
-            )
+            task_id = exc.task_id if isinstance(exc, AgentTaskExecutionError) else None
             self.hub.set_run_status(
                 "failed",
                 stage=stage,
@@ -949,7 +1022,9 @@ class CreativeIdeaWorkflow:
     ) -> None:
         """Best-effort partial report without replacing the terminal cause."""
 
-        from hacksome.stages.ideation.creative.partial_report import publish_partial_report
+        from hacksome.stages.ideation.creative.partial_report import (
+            publish_partial_report,
+        )
 
         try:
             publish_partial_report(self.hub)
@@ -1007,8 +1082,7 @@ class CreativeIdeaWorkflow:
             novelty_ref = self._novelty_ref_for(concept.artifact_ref)
             relevant_cues, cue_source_ref = self._relevant_memory_cues(concept)
             task_id = (
-                f"creative-c6a-evidence-{concept.concept_id}-"
-                f"r{concept.revision:03d}"
+                f"creative-c6a-evidence-{concept.concept_id}-r{concept.revision:03d}"
             )
             parent_refs = (
                 challenge_ref,
@@ -1114,8 +1188,7 @@ class CreativeIdeaWorkflow:
                 },
             )
             decision_id = (
-                f"creative-decision-c6a-{concept.concept_id}-"
-                f"r{concept.revision:03d}"
+                f"creative-decision-c6a-{concept.concept_id}-r{concept.revision:03d}"
             )
             self.hub.append_decision(
                 {
@@ -1247,9 +1320,7 @@ class CreativeIdeaWorkflow:
                 output=output,
                 context={"allowed_concept_refs": allowed_refs},
             )
-            artifact_ref = (
-                f"creative-portfolio-curation-r001-v{slot:02d}"
-            )
+            artifact_ref = f"creative-portfolio-curation-r001-v{slot:02d}"
             metadata: dict[str, Any] = {
                 "curator_slot": slot,
                 "concept_refs": sorted(allowed_refs),
@@ -1259,10 +1330,7 @@ class CreativeIdeaWorkflow:
             self.hub.publish_artifact(
                 artifact_id=artifact_ref,
                 artifact_type="creative_portfolio_curation",
-                relative_path=(
-                    "artifacts/creative/curation/"
-                    f"{artifact_ref}.json"
-                ),
+                relative_path=(f"artifacts/creative/curation/{artifact_ref}.json"),
                 content=_json_text(output),
                 task_id=task_id,
                 source_refs=tuple(
@@ -1380,8 +1448,7 @@ class CreativeIdeaWorkflow:
             artifact_id="creative-review-batch-r001",
             artifact_type="creative_human_review_batch",
             relative_path=(
-                "artifacts/creative/curation/"
-                "creative-review-batch-r001.json"
+                "artifacts/creative/curation/creative-review-batch-r001.json"
             ),
             content=_json_text(batch.to_dict()),
             task_id=None,
@@ -1590,9 +1657,7 @@ class CreativeIdeaWorkflow:
             ) from exc
 
         inputs = state.get("inputs")
-        memory_record = (
-            inputs.get("idea_memory") if isinstance(inputs, dict) else None
-        )
+        memory_record = inputs.get("idea_memory") if isinstance(inputs, dict) else None
         if not isinstance(memory_record, dict):
             raise CreativeWorkflowError(
                 "Creative execution preflight requires Idea Memory input"
@@ -1618,7 +1683,7 @@ class CreativeIdeaWorkflow:
             raise CreativeWorkflowError(
                 "Creative Idea Memory Snapshot differs from the frozen run input"
             )
-        if contract_version == CREATIVE_CONTRACT_VERSION:
+        if contract_version != LEGACY_CREATIVE_CONTRACT_VERSION:
             policy_record = (
                 inputs.get("software_demo_policy")
                 if isinstance(inputs, dict)
@@ -1626,7 +1691,7 @@ class CreativeIdeaWorkflow:
             )
             if not isinstance(policy_record, dict):
                 raise CreativeWorkflowError(
-                    "Creative v2 run requires a frozen Software Demo Policy"
+                    "Creative software-first run requires a frozen Software Demo Policy"
                 )
             if (
                 policy_record.get("policy_version")
@@ -1656,8 +1721,7 @@ class CreativeIdeaWorkflow:
             artifact_id="creative-challenge-brief-r001",
             artifact_type="creative_challenge_brief",
             relative_path=(
-                "artifacts/creative/challenge/"
-                "creative-challenge-brief-r001.md"
+                "artifacts/creative/challenge/creative-challenge-brief-r001.md"
             ),
             content=challenge_markdown,
             task_id=task_id,
@@ -1666,8 +1730,7 @@ class CreativeIdeaWorkflow:
             artifact_id="creative-constraint-view-r001",
             artifact_type="creative_constraint_view",
             relative_path=(
-                "artifacts/creative/challenge/"
-                "creative-constraint-view-r001.md"
+                "artifacts/creative/challenge/creative-constraint-view-r001.md"
             ),
             content=constraint_markdown,
             task_id=task_id,
@@ -1706,12 +1769,116 @@ class CreativeIdeaWorkflow:
             source_refs=(challenge_ref, constraint_ref),
         )
 
+    async def _run_c1w(
+        self,
+        challenge_ref: str,
+        constraint_ref: str,
+        brief_ref: str,
+    ) -> tuple[str, CulturalSignalSnapshot]:
+        task_id = "creative-c1w-cultural-signal-scan-01"
+        state = self.hub.load_state()
+        run_created_at = _required_text(state, "created_at")
+        diagnostic_ref: str | None = None
+        try:
+            output = await self._execute(
+                stage=C1W_CULTURAL_SIGNAL_SCAN,
+                task_id=task_id,
+                blocks=(
+                    (
+                        "CHALLENGE_BRIEF",
+                        self.hub.read_artifact(challenge_ref),
+                    ),
+                    (
+                        "CONSTRAINT_VIEW",
+                        self.hub.read_artifact(constraint_ref),
+                    ),
+                    ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    (
+                        "SCAN_WINDOW",
+                        cultural_signal_window_prompt(run_created_at),
+                    ),
+                ),
+                parent_refs=(
+                    challenge_ref,
+                    constraint_ref,
+                    brief_ref,
+                ),
+                failure_policy=OPTIONAL_BRANCH_FAILURE_POLICY,
+            )
+            captured_at = _task_finished_at(self.hub, task_id)
+            try:
+                snapshot = build_cultural_signal_snapshot(
+                    output,
+                    run_created_at=run_created_at,
+                    captured_at=captured_at,
+                    task_ref=task_id,
+                )
+            except CulturalSignalError as exc:
+                invalidated = self._invalidate_optional_task(
+                    task_id,
+                    C1W_CULTURAL_SIGNAL_SCAN,
+                    exc,
+                )
+                diagnostic_ref = self._record_cultural_signal_failure(invalidated)
+                snapshot = unavailable_cultural_signal_snapshot(
+                    run_created_at=run_created_at,
+                    captured_at=captured_at,
+                    task_ref=task_id,
+                    diagnostic_ref=diagnostic_ref,
+                    failure_kind=type(exc).__name__,
+                )
+        except AgentTaskExecutionError as exc:
+            captured_at = _task_finished_at(self.hub, task_id)
+            diagnostic_ref = self._record_cultural_signal_failure(exc)
+            snapshot = unavailable_cultural_signal_snapshot(
+                run_created_at=run_created_at,
+                captured_at=captured_at,
+                task_ref=task_id,
+                diagnostic_ref=diagnostic_ref,
+                failure_kind=_optional_failure_kind(exc),
+            )
+
+        snapshot_ref = self.hub.publish_artifact(
+            artifact_id=CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+            artifact_type=CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+            relative_path=CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+            content=_json_text(snapshot.to_dict()),
+            task_id=(
+                task_id if snapshot.status in {"ready", "partial", "empty"} else None
+            ),
+            source_refs=(challenge_ref, constraint_ref, brief_ref),
+            metadata={
+                "status": snapshot.status,
+                "task_ref": snapshot.task_ref,
+                "diagnostic_ref": diagnostic_ref,
+                "signal_count": len(snapshot.signals),
+                "window": snapshot.window.to_dict(),
+            },
+        )
+        return snapshot_ref, snapshot
+
     async def _run_c2(
         self,
         challenge_ref: str,
         constraint_ref: str,
         brief_ref: str,
+        *,
+        cultural_signal_snapshot_ref: str | None = None,
+        cultural_signal_snapshot: CulturalSignalSnapshot | None = None,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        if self.contract_version != CREATIVE_CONTRACT_VERSION and (
+            cultural_signal_snapshot_ref is not None
+            or cultural_signal_snapshot is not None
+        ):
+            raise CreativeWorkflowError(
+                "Creative v1/v2 C2 cannot receive Cultural Signal context"
+            )
+        if self.contract_version == CREATIVE_CONTRACT_VERSION and (
+            cultural_signal_snapshot_ref is None or cultural_signal_snapshot is None
+        ):
+            raise CreativeWorkflowError(
+                "Creative v3 C2 requires the Cultural Signal Snapshot"
+            )
         assignments = tuple(
             (slot, territory_id(slot), lens)
             for slot, lens in enumerate(
@@ -1729,6 +1896,23 @@ class CreativeIdeaWorkflow:
             lens: str,
         ) -> tuple[int, str, dict[str, Any], str]:
             task_id = f"creative-c2-territory-{slot:02d}"
+            signal_blocks: tuple[tuple[str, str], ...] = ()
+            signal_parents: tuple[str, ...] = ()
+            if cultural_signal_snapshot is not None:
+                signal_blocks = (
+                    (
+                        "CULTURAL_SIGNAL_PALETTE",
+                        render_cultural_signal_palette(
+                            cultural_signal_snapshot,
+                            slot=slot,
+                            purpose="c2",
+                        ),
+                    ),
+                )
+                signal_parents = cast(
+                    tuple[str, ...],
+                    (cultural_signal_snapshot_ref,),
+                )
             output = await self._execute(
                 stage=C2_TERRITORY_EXPLORE,
                 task_id=task_id,
@@ -1737,11 +1921,11 @@ class CreativeIdeaWorkflow:
                     ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
                     ("SOFTWARE_DEMO_POLICY", software_policy),
+                    *signal_blocks,
                     ("TERRITORY_LENS", lens),
                     (
                         "LIMITS",
-                        "At most "
-                        f"{int(self.settings.max_atoms_per_territory)} atoms.",
+                        f"At most {int(self.settings.max_atoms_per_territory)} atoms.",
                     ),
                 ),
                 parent_refs=(
@@ -1749,6 +1933,7 @@ class CreativeIdeaWorkflow:
                     constraint_ref,
                     brief_ref,
                     "input:software_demo_policy",
+                    *signal_parents,
                 ),
             )
             return slot, territory_ref_id, output, task_id
@@ -1816,14 +2001,55 @@ class CreativeIdeaWorkflow:
         constraint_ref: str,
         brief_ref: str,
         atom_refs: Sequence[str],
+        *,
+        cultural_signal_snapshot_ref: str | None = None,
+        cultural_signal_snapshot: CulturalSignalSnapshot | None = None,
     ) -> tuple[CreativeConcept, ...]:
+        if self.contract_version != CREATIVE_CONTRACT_VERSION and (
+            cultural_signal_snapshot_ref is not None
+            or cultural_signal_snapshot is not None
+        ):
+            raise CreativeWorkflowError(
+                "Creative v1/v2 C3 cannot receive Cultural Signal context"
+            )
+        if self.contract_version == CREATIVE_CONTRACT_VERSION and (
+            cultural_signal_snapshot_ref is None or cultural_signal_snapshot is None
+        ):
+            raise CreativeWorkflowError(
+                "Creative v3 C3 requires the Cultural Signal Snapshot"
+            )
         if not atom_refs:
             return ()
         atom_index = _atom_index(self.hub, atom_refs)
         software_policy = _input_text(self.hub, "software_demo_policy")
+        c3_template_version = self.prompt_catalog[C3_CONCEPT_SYNTHESIZE].version
+        synthesis_assignments = _synthesis_assignments_for_template_version(
+            c3_template_version
+        )
 
-        async def synthesize(slot: int, lens: str) -> tuple[int, dict[str, Any], str]:
+        async def synthesize(
+            slot: int,
+            lens: str,
+            expected_product_grammar_id: str | None,
+        ) -> tuple[int, dict[str, Any], str, str | None]:
             task_id = f"creative-c3-synthesis-{slot:02d}"
+            signal_blocks: tuple[tuple[str, str], ...] = ()
+            signal_parents: tuple[str, ...] = ()
+            if cultural_signal_snapshot is not None:
+                signal_blocks = (
+                    (
+                        "CULTURAL_SIGNAL_PALETTE",
+                        render_cultural_signal_palette(
+                            cultural_signal_snapshot,
+                            slot=slot,
+                            purpose="c3",
+                        ),
+                    ),
+                )
+                signal_parents = cast(
+                    tuple[str, ...],
+                    (cultural_signal_snapshot_ref,),
+                )
             output = await self._execute(
                 stage=C3_CONCEPT_SYNTHESIZE,
                 task_id=task_id,
@@ -1832,6 +2058,7 @@ class CreativeIdeaWorkflow:
                     ("CONSTRAINT_VIEW", self.hub.read_artifact(constraint_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
                     ("SOFTWARE_DEMO_POLICY", software_policy),
+                    *signal_blocks,
                     ("CURRENT_ATOM_INDEX", atom_index),
                     ("SYNTHESIS_LENS", lens),
                     (
@@ -1845,18 +2072,20 @@ class CreativeIdeaWorkflow:
                     constraint_ref,
                     brief_ref,
                     "input:software_demo_policy",
+                    *signal_parents,
                     *atom_refs,
                 ),
             )
-            return slot, output, task_id
+            return slot, output, task_id, expected_product_grammar_id
 
         completed = await asyncio.gather(
             *(
-                synthesize(slot, lens)
-                for slot, lens in enumerate(
-                    SYNTHESIS_LENSES[
-                        : int(self.settings.concept_synthesizers)
-                    ],
+                synthesize(slot, lens, expected_product_grammar_id)
+                for slot, (
+                    lens,
+                    expected_product_grammar_id,
+                ) in enumerate(
+                    synthesis_assignments[: int(self.settings.concept_synthesizers)],
                     start=1,
                 )
             )
@@ -1865,12 +2094,24 @@ class CreativeIdeaWorkflow:
         seen_markdown: set[str] = set()
         seen_hooks: set[str] = set()
         atom_set = set(atom_refs)
-        for synth_slot, output, task_id in sorted(completed):
+        for (
+            synth_slot,
+            output,
+            task_id,
+            expected_product_grammar_id,
+        ) in sorted(completed):
+            validation_context: CreativeValidationContext = {
+                "allowed_atom_refs": atom_set
+            }
+            if expected_product_grammar_id is not None:
+                validation_context["expected_product_grammar_id"] = (
+                    expected_product_grammar_id
+                )
             output = self._validate_completed_output(
                 task_id=task_id,
                 stage=C3_CONCEPT_SYNTHESIZE,
                 output=output,
-                context={"allowed_atom_refs": atom_set},
+                context=validation_context,
             )
             candidates = _object_list(output, "concepts")
             if len(candidates) > int(self.settings.max_concepts_per_synthesizer):
@@ -2040,11 +2281,8 @@ class CreativeIdeaWorkflow:
             )
             return HookGateOutcome((concept,), (disposition_ref,), (concept,))
 
-        hard_feasibility_failure = (
-            feasibility_decision == "invalid"
-            and bool(
-                _HARD_SOFTWARE_DEMO_REASON_CODES.intersection(reason_codes)
-            )
+        hard_feasibility_failure = feasibility_decision == "invalid" and bool(
+            _HARD_SOFTWARE_DEMO_REASON_CODES.intersection(reason_codes)
         )
         if hard_feasibility_failure or hook_decisions == ("invalid", "invalid"):
             terminal_reason = (
@@ -2249,8 +2487,7 @@ class CreativeIdeaWorkflow:
                 artifact_id=artifact_ref,
                 artifact_type="creative_cheap_hook_review",
                 relative_path=(
-                    "artifacts/creative/cheap-hook-reviews/"
-                    f"{artifact_ref}.json"
+                    f"artifacts/creative/cheap-hook-reviews/{artifact_ref}.json"
                 ),
                 content=_json_text(output),
                 task_id=task_id,
@@ -2304,8 +2541,7 @@ class CreativeIdeaWorkflow:
             artifact_id=artifact_ref,
             artifact_type="creative_software_demo_review",
             relative_path=(
-                "artifacts/creative/software-demo-reviews/"
-                f"{artifact_ref}.json"
+                f"artifacts/creative/software-demo-reviews/{artifact_ref}.json"
             ),
             content=_json_text(output),
             task_id=task_id,
@@ -2477,10 +2713,7 @@ class CreativeIdeaWorkflow:
         return self.hub.publish_artifact(
             artifact_id=disposition_id,
             artifact_type="creative_concept_disposition",
-            relative_path=(
-                "artifacts/creative/dispositions/"
-                f"{disposition_id}.json"
-            ),
+            relative_path=(f"artifacts/creative/dispositions/{disposition_id}.json"),
             content=_json_text(payload),
             task_id=None,
             source_refs=(
@@ -2560,7 +2793,10 @@ class CreativeIdeaWorkflow:
                             self.hub, base_concepts, base_gate.disposition_refs
                         ),
                     ),
-                    ("IDEA_MEMORY_SNAPSHOT", _snapshot_prompt_text(self.memory_snapshot)),
+                    (
+                        "IDEA_MEMORY_SNAPSHOT",
+                        _snapshot_prompt_text(self.memory_snapshot),
+                    ),
                 ),
                 parent_refs=(
                     challenge_ref,
@@ -2636,8 +2872,7 @@ class CreativeIdeaWorkflow:
             artifact_id="creative-memory-inspiration-packet-r001",
             artifact_type="creative_memory_inspiration_packet",
             relative_path=(
-                "artifacts/creative/memory/"
-                "creative-memory-inspiration-packet-r001.json"
+                "artifacts/creative/memory/creative-memory-inspiration-packet-r001.json"
             ),
             content=_json_text(recall_output),
             task_id=recall_task,
@@ -2906,6 +3141,25 @@ class CreativeIdeaWorkflow:
         )
         return event_id
 
+    def _record_cultural_signal_failure(
+        self,
+        error: AgentTaskExecutionError,
+    ) -> str:
+        event_id = f"optional-cultural-signal-stage-failed:{error.task_id}"
+        self.hub.append_ledger_record(
+            "events",
+            {
+                "event_id": event_id,
+                "kind": "optional_cultural_signal_stage_failed",
+                "data": {
+                    "task_ref": error.task_id,
+                    "stage": error.stage,
+                    "failure_kind": _optional_failure_kind(error),
+                },
+            },
+        )
+        return event_id
+
     def _publish_memory_summary(
         self,
         *,
@@ -2926,8 +3180,7 @@ class CreativeIdeaWorkflow:
             artifact_id="creative-memory-stage-summary-r001",
             artifact_type="creative_memory_stage_summary",
             relative_path=(
-                "artifacts/creative/memory/"
-                "creative-memory-stage-summary-r001.json"
+                "artifacts/creative/memory/creative-memory-stage-summary-r001.json"
             ),
             content=_json_text(payload),
             task_id=None,
@@ -2958,7 +3211,9 @@ class CreativeIdeaWorkflow:
         brief_ref: str,
     ) -> tuple[str, ...]:
         async def scan(concept: CreativeConcept) -> tuple[str, str]:
-            task_id = f"creative-c5w-novelty-{concept.concept_id}-r{concept.revision:03d}"
+            task_id = (
+                f"creative-c5w-novelty-{concept.concept_id}-r{concept.revision:03d}"
+            )
             output = await self._execute(
                 stage=C5W_NOVELTY_SCAN,
                 task_id=task_id,
@@ -2969,14 +3224,13 @@ class CreativeIdeaWorkflow:
                 ),
                 parent_refs=(challenge_ref, brief_ref, concept.artifact_ref),
             )
-            artifact_ref = f"creative-novelty-{concept.concept_id}-r{concept.revision:03d}"
+            artifact_ref = (
+                f"creative-novelty-{concept.concept_id}-r{concept.revision:03d}"
+            )
             self.hub.publish_artifact(
                 artifact_id=artifact_ref,
                 artifact_type="creative_novelty_scan",
-                relative_path=(
-                    "artifacts/creative/novelty-scans/"
-                    f"{artifact_ref}.md"
-                ),
+                relative_path=(f"artifacts/creative/novelty-scans/{artifact_ref}.md"),
                 content=_required_text(output, "markdown"),
                 task_id=task_id,
                 source_refs=(concept.artifact_ref,),
@@ -3085,11 +3339,7 @@ def _optional_string_sequence(value: object) -> tuple[str, ...]:
 
 
 def _positive_timeout(value: object, name: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or value <= 0
-    ):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise ValueError(f"{name} must be positive")
     return float(value)
 
@@ -3111,13 +3361,16 @@ def _string_list(value: Mapping[str, Any], key: str) -> list[str]:
 
 
 def _json_text(value: Mapping[str, Any]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        indent=2,
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def _artifact_record(hub: RunHub, artifact_ref: str) -> dict[str, Any]:
@@ -3128,6 +3381,24 @@ def _artifact_record(hub: RunHub, artifact_ref: str) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise CreativeWorkflowError(f"artifact is not registered: {artifact_ref}")
     return record
+
+
+def _task_finished_at(hub: RunHub, task_id: str) -> str:
+    path = hub.task_paths(task_id).result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CreativeWorkflowError(
+            f"task result cannot supply capture time: {task_id}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise CreativeWorkflowError(f"task result is not an object: {task_id}")
+    return _required_text(payload, "finished_at")
+
+
+def _optional_failure_kind(error: AgentTaskExecutionError) -> str:
+    cause = error.__cause__
+    return type(cause).__name__ if cause is not None else type(error).__name__
 
 
 def _artifact_metadata(hub: RunHub, artifact_ref: str) -> dict[str, Any]:
@@ -3236,9 +3507,8 @@ def _deterministic_shortlist(
     reasons: dict[str, str] = {}
     for reference in sorted(by_ref):
         votes = tuple(classification_by_ref[reference])
-        if (
-            len(votes) != 2
-            or any(vote not in {"include", "hold", "exclude"} for vote in votes)
+        if len(votes) != 2 or any(
+            vote not in {"include", "hold", "exclude"} for vote in votes
         ):
             raise CreativeWorkflowError(
                 f"{reference} requires two valid curator classifications"
@@ -3278,9 +3548,7 @@ def _deterministic_shortlist(
         if overflow:
             capacity_tier = tier
             for concept in overflow:
-                reasons[concept.artifact_ref] = (
-                    "territory_round_robin_capacity"
-                )
+                reasons[concept.artifact_ref] = "territory_round_robin_capacity"
         if len(selected) == limit:
             for later_tier in range(tier + 1, 3):
                 for concept in tiers[later_tier]:
@@ -3298,10 +3566,9 @@ def _territory_round_robin(
     groups: dict[str, list[CreativeConcept]] = {}
     for concept in sorted(concepts, key=lambda item: item.artifact_ref):
         groups.setdefault(concept.primary_territory_ref, []).append(concept)
-    territory_order = (
-        sorted(reference for reference in groups if reference not in covered)
-        + sorted(reference for reference in groups if reference in covered)
-    )
+    territory_order = sorted(
+        reference for reference in groups if reference not in covered
+    ) + sorted(reference for reference in groups if reference in covered)
     result: list[CreativeConcept] = []
     while groups:
         for territory in tuple(territory_order):

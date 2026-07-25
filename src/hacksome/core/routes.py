@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import json
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Literal, Mapping, Protocol
 
 from hacksome.core.hub import (
     LEGACY_RUN_SCHEMA_VERSION,
@@ -198,8 +198,8 @@ class CreativeRunContract:
     """Offline projection and currently implemented Creative invariants."""
 
     route_id: str = "creative"
-    contract_version: str = "2"
-    supported_contract_versions: frozenset[str] = frozenset({"1", "2"})
+    contract_version: str = "3"
+    supported_contract_versions: frozenset[str] = frozenset({"1", "2", "3"})
     supported_schema_versions: frozenset[int] = frozenset({RUN_SCHEMA_VERSION})
 
     def inspect(self, hub: RunHub, state: Mapping[str, Any]) -> dict[str, Any]:
@@ -347,6 +347,52 @@ class CreativeRunContract:
         partial_report_ref = _first_artifact_of_type(
             artifacts, "creative_partial_report_json"
         )
+        signal_ref = _first_artifact_of_type(
+            artifacts, "creative_cultural_signal_snapshot"
+        )
+        signal_projection: dict[str, Any] = {
+            "status": "not_applicable",
+            "snapshot_ref": None,
+            "snapshot_sha256": None,
+            "signal_count": 0,
+            "window": None,
+            "diagnostic_ref": None,
+        }
+        if signal_ref is not None:
+            record = artifacts.get(signal_ref)
+            metadata = (
+                record.get("metadata")
+                if isinstance(record, dict)
+                else None
+            )
+            signal_projection = {
+                "status": (
+                    metadata.get("status", "corrupt")
+                    if isinstance(metadata, dict)
+                    else "corrupt"
+                ),
+                "snapshot_ref": signal_ref,
+                "snapshot_sha256": (
+                    record.get("sha256")
+                    if isinstance(record, dict)
+                    else None
+                ),
+                "signal_count": (
+                    metadata.get("signal_count", 0)
+                    if isinstance(metadata, dict)
+                    else 0
+                ),
+                "window": (
+                    metadata.get("window")
+                    if isinstance(metadata, dict)
+                    else None
+                ),
+                "diagnostic_ref": (
+                    metadata.get("diagnostic_ref")
+                    if isinstance(metadata, dict)
+                    else None
+                ),
+            }
         return {
             "route_id": "creative",
             "run_id": core["run_id"],
@@ -377,6 +423,7 @@ class CreativeRunContract:
                 if isinstance(summary_metadata, dict)
                 else "not_started",
             },
+            "cultural_signal_scan": signal_projection,
             "review": {
                 "round_id": round_id,
                 "batch_ref": review_batch_ref,
@@ -422,6 +469,7 @@ class CreativeRunContract:
             decode_persisted_dataclass,
         )
         from hacksome.stages.ideation.creative.contracts import (
+            C1W_CULTURAL_SIGNAL_SCAN,
             C6C_FEEDBACK_REVISE,
             CreativeContractError,
             CreativeWorkflowSettings,
@@ -431,6 +479,8 @@ class CreativeRunContract:
             final_idea_id,
             territory_for_atom,
             territory_id,
+            creative_optional_stages_for_contract,
+            creative_web_stages_for_contract,
         )
         from hacksome.stages.ideation.creative.artifacts import PORTFOLIO_DIMENSIONS
         from hacksome.stages.ideation.creative.memory import (
@@ -448,6 +498,15 @@ class CreativeRunContract:
             ReviewError,
             ReviewRound,
             ReviewStore,
+        )
+        from hacksome.stages.ideation.creative.signals import (
+            CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+            CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+            CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+            CulturalSignalError,
+            CulturalSignalSnapshot,
+            cultural_signal_window,
+            render_cultural_signal_palette,
         )
 
         errors: list[str] = []
@@ -502,7 +561,7 @@ class CreativeRunContract:
                     errors.append(str(exc))
 
         software_policy_block: str | None = None
-        if contract_version == "2":
+        if contract_version != "1":
             inputs = state.get("inputs")
             policy_record = (
                 inputs.get("software_demo_policy")
@@ -511,7 +570,8 @@ class CreativeRunContract:
             )
             if not isinstance(policy_record, dict):
                 errors.append(
-                    "Creative v2 run requires a frozen Software Demo Policy"
+                    "Creative software-first run requires a frozen "
+                    "Software Demo Policy"
                 )
             else:
                 expected_policy_path = "input/software-demo-policy.json"
@@ -556,13 +616,16 @@ class CreativeRunContract:
             events = []
         optional_failure_events: dict[str, list[dict[str, Any]]] = {}
         for row in events:
-            if row.get("kind") != "optional_memory_stage_failed":
+            if row.get("kind") not in {
+                "optional_memory_stage_failed",
+                "optional_cultural_signal_stage_failed",
+            }:
                 continue
             data = row.get("data")
             task_ref = data.get("task_ref") if isinstance(data, dict) else None
             if not isinstance(task_ref, str) or not task_ref:
                 errors.append(
-                    "optional_memory_stage_failed event has no task_ref"
+                    "optional Creative failure event has no task_ref"
                 )
                 continue
             optional_failure_events.setdefault(task_ref, []).append(row)
@@ -584,12 +647,12 @@ class CreativeRunContract:
             if raw.get("web_search") is not spec.web_search:
                 errors.append(f"Creative task {task_id} web policy mismatch")
             if bool(raw.get("web_search")) != (
-                stage == "creative-novelty-scan"
+                stage in creative_web_stages_for_contract(contract_version)
             ):
                 errors.append(
-                    f"Creative task {task_id} violates novelty-only web policy"
+                    f"Creative task {task_id} violates route web policy"
                 )
-            if contract_version == "2":
+            if contract_version != "1":
                 policy_stages = {
                     "creative-brief-normalize",
                     "creative-territory-explore",
@@ -662,10 +725,13 @@ class CreativeRunContract:
                         "Policy outside the stage allowlist"
                     )
             failure_policy = raw.get("failure_policy", "fatal")
-            if failure_policy == "optional_branch" and stage not in {
-                "creative-memory-recall",
-                "creative-memory-remix",
-            }:
+            if (
+                failure_policy == "optional_branch"
+                and stage
+                not in creative_optional_stages_for_contract(
+                    contract_version
+                )
+            ):
                 errors.append(
                     f"Creative task {task_id} illegally uses optional_branch"
                 )
@@ -725,6 +791,19 @@ class CreativeRunContract:
                     "one diagnostic event"
                 )
             stage = raw_task.get("stage")
+            expected_event_kind = (
+                "optional_cultural_signal_stage_failed"
+                if stage == C1W_CULTURAL_SIGNAL_SCAN
+                else "optional_memory_stage_failed"
+            )
+            if (
+                matching_events
+                and matching_events[0].get("kind")
+                != expected_event_kind
+            ):
+                errors.append(
+                    f"optional diagnostic kind mismatch for task {task_ref}"
+                )
             data = matching_events[0].get("data") if matching_events else None
             if not isinstance(data, dict) or data.get("stage") != stage:
                 errors.append(
@@ -742,6 +821,436 @@ class CreativeRunContract:
         artifacts = state.get("artifacts")
         if not isinstance(artifacts, dict):
             return errors
+        signal_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type")
+            == CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE
+        }
+        signal_tasks = {
+            str(task_id): record
+            for task_id, record in tasks.items()
+            if isinstance(record, dict)
+            and record.get("stage") == C1W_CULTURAL_SIGNAL_SCAN
+        }
+        downstream_signal_tasks = {
+            str(task_id): record
+            for task_id, record in tasks.items()
+            if isinstance(record, dict)
+            and record.get("stage")
+            in {
+                "creative-territory-explore",
+                "creative-concept-synthesize",
+            }
+        }
+        signal_expected = bool(
+            signal_records
+            or signal_tasks
+            or downstream_signal_tasks
+        )
+        if contract_version == "3" and signal_expected:
+            if set(signal_tasks) != {
+                "creative-c1w-cultural-signal-scan-01"
+            }:
+                errors.append(
+                    "Creative v3 requires exactly one stable C1W task"
+                )
+            if set(signal_records) != {
+                CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+            }:
+                errors.append(
+                    "Creative v3 requires exactly one stable Cultural "
+                    "Signal Snapshot"
+                )
+            signal_snapshot: CulturalSignalSnapshot | None = None
+            signal_record = signal_records.get(
+                CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+            )
+            if isinstance(signal_record, dict):
+                if (
+                    signal_record.get("path")
+                    != CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH
+                ):
+                    errors.append(
+                        "Cultural Signal Snapshot path mismatch"
+                    )
+                try:
+                    raw_signal_snapshot = json.loads(
+                        hub.read_artifact(
+                            CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+                        )
+                    )
+                    if not isinstance(raw_signal_snapshot, dict):
+                        raise CulturalSignalError(
+                            "Cultural Signal Snapshot must be an object"
+                        )
+                    signal_snapshot = CulturalSignalSnapshot.from_mapping(
+                        raw_signal_snapshot
+                    )
+                except (
+                    OSError,
+                    UnicodeError,
+                    json.JSONDecodeError,
+                    StateError,
+                    CulturalSignalError,
+                ) as exc:
+                    errors.append(
+                        f"Cultural Signal Snapshot is invalid: {exc}"
+                    )
+                else:
+                    metadata = signal_record.get("metadata")
+                    expected_metadata = {
+                        "status": signal_snapshot.status,
+                        "task_ref": signal_snapshot.task_ref,
+                        "diagnostic_ref": signal_snapshot.diagnostic_ref,
+                        "signal_count": len(signal_snapshot.signals),
+                        "window": signal_snapshot.window.to_dict(),
+                    }
+                    if metadata != expected_metadata:
+                        errors.append(
+                            "Cultural Signal Snapshot metadata mismatch"
+                        )
+                    signal_task = tasks.get(signal_snapshot.task_ref)
+                    if not isinstance(signal_task, dict):
+                        errors.append(
+                            "Cultural Signal Snapshot references unknown task"
+                        )
+                    else:
+                        expected_context_refs = tuple(
+                            ref
+                            for ref in (
+                                _first_artifact_of_type(
+                                    artifacts,
+                                    "creative_challenge_brief",
+                                ),
+                                _first_artifact_of_type(
+                                    artifacts,
+                                    "creative_constraint_view",
+                                ),
+                                _first_artifact_of_type(
+                                    artifacts,
+                                    "creative_brief",
+                                ),
+                            )
+                            if ref is not None
+                        )
+                        if len(expected_context_refs) != 3:
+                            errors.append(
+                                "Cultural Signal Snapshot context artifacts "
+                                "are incomplete"
+                            )
+                        signal_task_parents = signal_task.get(
+                            "parent_refs"
+                        )
+                        if (
+                            not isinstance(signal_task_parents, list)
+                            or tuple(signal_task_parents)
+                            != expected_context_refs
+                        ):
+                            errors.append(
+                                "C1W task parent refs do not match its exact "
+                                "C0/C1 context"
+                            )
+                        signal_source_refs = signal_record.get("source_refs")
+                        if (
+                            not isinstance(signal_source_refs, list)
+                            or tuple(signal_source_refs)
+                            != expected_context_refs
+                        ):
+                            errors.append(
+                                "Cultural Signal Snapshot source refs do not "
+                                "match its exact C0/C1 context"
+                            )
+                        if (
+                            signal_task.get("failure_policy")
+                            != "optional_branch"
+                        ):
+                            errors.append(
+                                "C1W task must use optional_branch failure "
+                                "policy"
+                            )
+                        result_path = signal_task.get("result_path")
+                        try:
+                            result_payload = json.loads(
+                                hub.run_dir.joinpath(
+                                    *Path(str(result_path)).parts
+                                ).read_text(encoding="utf-8")
+                            )
+                            task_finished_at = result_payload["finished_at"]
+                            expected_window = cultural_signal_window(
+                                str(state.get("created_at")),
+                                captured_at=str(task_finished_at),
+                            )
+                        except (
+                            OSError,
+                            UnicodeError,
+                            json.JSONDecodeError,
+                            KeyError,
+                            TypeError,
+                            CulturalSignalError,
+                        ) as exc:
+                            errors.append(
+                                "C1W task result cannot close snapshot time: "
+                                f"{exc}"
+                            )
+                        else:
+                            if signal_snapshot.window != expected_window:
+                                errors.append(
+                                    "Cultural Signal Snapshot time does not "
+                                    "match run.created_at and task finished_at"
+                                )
+                        task_status = signal_task.get("status")
+                        matching_events = optional_failure_events.get(
+                            signal_snapshot.task_ref,
+                            [],
+                        )
+                        if signal_snapshot.status == "unavailable":
+                            if task_status not in {"failed", "invalidated"}:
+                                errors.append(
+                                    "unavailable Cultural Signal Snapshot "
+                                    "requires a failed/invalidated task"
+                                )
+                            if signal_record.get("task_id") is not None:
+                                errors.append(
+                                    "unavailable Cultural Signal Snapshot "
+                                    "must be controller-authored"
+                                )
+                            if (
+                                len(matching_events) != 1
+                                or matching_events[0].get("event_id")
+                                != signal_snapshot.diagnostic_ref
+                                or matching_events[0].get("kind")
+                                != "optional_cultural_signal_stage_failed"
+                            ):
+                                errors.append(
+                                    "unavailable Cultural Signal Snapshot "
+                                    "diagnostic binding mismatch"
+                                )
+                        else:
+                            if task_status != "succeeded":
+                                errors.append(
+                                    "successful Cultural Signal Snapshot "
+                                    "requires a succeeded task"
+                                )
+                            if (
+                                signal_record.get("task_id")
+                                != signal_snapshot.task_ref
+                            ):
+                                errors.append(
+                                    "successful Cultural Signal Snapshot "
+                                    "task binding mismatch"
+                                )
+                            if matching_events:
+                                errors.append(
+                                    "successful Cultural Signal Snapshot "
+                                    "must not have a failure diagnostic"
+                                )
+
+            for any_task_id, any_task_record in tasks.items():
+                if not isinstance(any_task_record, dict):
+                    continue
+                any_parent_refs = any_task_record.get("parent_refs")
+                signal_parent_count = (
+                    any_parent_refs.count(
+                        CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID
+                    )
+                    if isinstance(any_parent_refs, list)
+                    else 0
+                )
+                is_palette_stage = any_task_record.get("stage") in {
+                    "creative-territory-explore",
+                    "creative-concept-synthesize",
+                }
+                if is_palette_stage and signal_parent_count != 1:
+                    errors.append(
+                        f"Creative v3 task {any_task_id} requires exactly one "
+                        "Cultural Signal Snapshot parent"
+                    )
+                if not is_palette_stage and signal_parent_count:
+                    errors.append(
+                        f"Creative v3 task {any_task_id} illegally receives "
+                        "the Cultural Signal Snapshot"
+                    )
+
+            for signal_task_id, signal_task_record in (
+                downstream_signal_tasks.items()
+            ):
+                parent_refs = signal_task_record.get("parent_refs")
+                if not isinstance(parent_refs, list):
+                    parent_refs = []
+                prompt_path = signal_task_record.get("prompt_path")
+                try:
+                    prompt = (
+                        hub.run_dir.joinpath(*Path(str(prompt_path)).parts)
+                        .read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeError):
+                    prompt = ""
+                if signal_snapshot is None:
+                    continue
+                try:
+                    signal_slot = int(signal_task_id.rsplit("-", 1)[1])
+                    signal_purpose: Literal["c2", "c3"] = (
+                        "c2"
+                        if signal_task_record.get("stage")
+                        == "creative-territory-explore"
+                        else "c3"
+                    )
+                    palette = render_cultural_signal_palette(
+                        signal_snapshot,
+                        slot=signal_slot,
+                        purpose=signal_purpose,
+                    )
+                except (ValueError, CulturalSignalError):
+                    errors.append(
+                        f"Creative v3 task {signal_task_id} has invalid signal slot"
+                    )
+                    continue
+                digest = sha256_text(palette)[:12]
+                exact_block = (
+                    f"<BEGIN_CULTURAL_SIGNAL_PALETTE_{digest}>\n"
+                    f"{palette}\n"
+                    f"<END_CULTURAL_SIGNAL_PALETTE_{digest}>"
+                )
+                if (
+                    prompt.count(exact_block) != 1
+                    or prompt.count(
+                        "<BEGIN_CULTURAL_SIGNAL_PALETTE_"
+                    )
+                    != 1
+                    or prompt.count(
+                        "<END_CULTURAL_SIGNAL_PALETTE_"
+                    )
+                    != 1
+                ):
+                    errors.append(
+                        f"Creative v3 task {signal_task_id} has a missing or "
+                        "non-deterministic Cultural Signal Palette"
+                    )
+                for signal in signal_snapshot.signals:
+                    sensitive_values = [
+                        signal["label"],
+                        signal["neutral_summary"],
+                        *signal["surface_markers_to_avoid"],
+                    ]
+                    for source in signal["sources"]:
+                        sensitive_values.extend(
+                            [
+                                source["url"],
+                                source["title"],
+                                source["evidence_summary"],
+                            ]
+                        )
+                    if any(
+                        isinstance(value, str)
+                        and len(value.strip()) >= 8
+                        and value in prompt
+                        for value in sensitive_values
+                    ):
+                        errors.append(
+                            f"Creative v3 task {signal_task_id} leaks raw Cultural "
+                            "Signal material"
+                        )
+                        break
+
+            signal_terminal_indexes = [
+                index
+                for index, event in enumerate(events)
+                if event.get("event_id")
+                in {
+                    "task:creative-c1w-cultural-signal-scan-01:finished",
+                    "task:creative-c1w-cultural-signal-scan-01:invalidated",
+                }
+            ]
+            c2_start_indexes = [
+                index
+                for index, event in enumerate(events)
+                if event.get("kind") == "task.started"
+                and isinstance(event.get("data"), dict)
+                and event["data"].get("stage")
+                == "creative-territory-explore"
+            ]
+            if c2_start_indexes and (
+                not signal_terminal_indexes
+                or max(signal_terminal_indexes) >= min(c2_start_indexes)
+            ):
+                errors.append(
+                    "Creative v3 C1W must finish before C2 fanout starts"
+                )
+            brief_publish_indexes = [
+                index
+                for index, event in enumerate(events)
+                if event.get("event_id")
+                == "artifact:creative-brief-r001:published"
+            ]
+            signal_start_indexes = [
+                index
+                for index, event in enumerate(events)
+                if event.get("event_id")
+                == "task:creative-c1w-cultural-signal-scan-01:started"
+            ]
+            snapshot_publish_indexes = [
+                index
+                for index, event in enumerate(events)
+                if event.get("event_id")
+                == (
+                    "artifact:creative-cultural-signal-snapshot-r001:"
+                    "published"
+                )
+            ]
+            if (
+                len(brief_publish_indexes) != 1
+                or len(signal_start_indexes) != 1
+                or brief_publish_indexes[0] >= signal_start_indexes[0]
+            ):
+                errors.append(
+                    "Creative v3 C1W must start after C1 is published"
+                )
+            if (
+                len(snapshot_publish_indexes) != 1
+                or not signal_terminal_indexes
+                or max(signal_terminal_indexes)
+                >= snapshot_publish_indexes[0]
+                or (
+                    c2_start_indexes
+                    and snapshot_publish_indexes[0]
+                    >= min(c2_start_indexes)
+                )
+            ):
+                errors.append(
+                    "Creative v3 Signal Snapshot must publish after C1W and "
+                    "before C2"
+                )
+        elif contract_version != "3":
+            if signal_records or signal_tasks:
+                errors.append(
+                    "Creative v1/v2 must not contain C1W task or snapshot"
+                )
+            for signal_task_id, signal_task_record in tasks.items():
+                if not isinstance(signal_task_record, dict):
+                    continue
+                parent_refs = signal_task_record.get("parent_refs")
+                if (
+                    isinstance(parent_refs, list)
+                    and CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID in parent_refs
+                ):
+                    errors.append(
+                        f"Creative v1/v2 task {signal_task_id} has a v3 signal parent"
+                    )
+                prompt_path = signal_task_record.get("prompt_path")
+                if isinstance(prompt_path, str):
+                    try:
+                        prompt = hub.run_dir.joinpath(
+                            *Path(prompt_path).parts
+                        ).read_text(encoding="utf-8")
+                    except (OSError, UnicodeError):
+                        prompt = ""
+                    if "<BEGIN_CULTURAL_SIGNAL_PALETTE_" in prompt:
+                        errors.append(
+                            f"Creative v1/v2 task {signal_task_id} has a v3 "
+                            "signal palette"
+                        )
         concepts = {
             str(artifact_id): record
             for artifact_id, record in artifacts.items()
@@ -1186,7 +1695,7 @@ class CreativeRunContract:
             if isinstance(record, dict)
             and record.get("artifact_type") == "creative_software_demo_review"
         }
-        if contract_version == "2":
+        if contract_version != "1":
             all_review_refs = set(hook_review_records) | set(
                 feasibility_review_records
             )
@@ -1486,7 +1995,7 @@ class CreativeRunContract:
                 errors.append(
                     f"C6A Concept {artifact_id} has no bound source Novelty Scan"
                 )
-            if contract_version == "2":
+            if contract_version != "1":
                 c6a_feasibility_ref = metadata.get(
                     "software_demo_review_ref"
                 )
@@ -1576,7 +2085,7 @@ class CreativeRunContract:
                     errors.append(
                         f"Portfolio curation {artifact_id} has invalid decision"
                     )
-                if contract_version == "2":
+                if contract_version != "1":
                     dimensions = row.get("dimensions")
                     if not isinstance(dimensions, list):
                         errors.append(
@@ -1817,7 +2326,7 @@ class CreativeRunContract:
                     if base_count + memory_count == 0
                     else (
                         "all_candidates_failed_concept_screen"
-                        if contract_version == "2"
+                        if contract_version != "1"
                         else "all_candidates_failed_hook"
                     )
                     if not hook_passed
@@ -2096,6 +2605,8 @@ class CreativeRunContract:
                     for rows in optional_failure_events.values()
                     for row in rows
                     if isinstance(row.get("event_id"), str)
+                    and row.get("kind")
+                    == "optional_memory_stage_failed"
                 }
                 if referenced_diagnostics != event_ids:
                     errors.append(
@@ -3201,9 +3712,14 @@ def _validate_success_report_payload(
         "memory_record_ref",
         "report_policy_version",
     }
+    route = state.get("route")
+    if (
+        isinstance(route, dict)
+        and route.get("contract_version") == "3"
+    ):
+        expected_keys.add("cultural_signal_scan")
     if set(report) != expected_keys:
         errors.append("Creative success report JSON has invalid top-level fields")
-    route = state.get("route")
     report_route = report.get("route")
     if (
         report.get("schema_version") != 1
@@ -3225,6 +3741,76 @@ def _validate_success_report_payload(
         errors.append("Creative success report handoff refs are not exact")
     if report.get("memory_record_ref") != "creative-memory-record":
         errors.append("Creative success report has an invalid Memory Record ref")
+    if (
+        isinstance(route, dict)
+        and route.get("contract_version") == "3"
+    ):
+        artifacts = state.get("artifacts")
+        signal_record = (
+            artifacts.get("creative-cultural-signal-snapshot-r001")
+            if isinstance(artifacts, dict)
+            else None
+        )
+        try:
+            signal_snapshot = json.loads(
+                hub.read_artifact(
+                    "creative-cultural-signal-snapshot-r001"
+                )
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError, StateError):
+            signal_snapshot = None
+        if not isinstance(signal_record, dict) or not isinstance(
+            signal_snapshot, dict
+        ):
+            errors.append(
+                "Creative success report has no Cultural Signal Snapshot"
+            )
+        else:
+            coverage = signal_snapshot.get("coverage")
+            attempted = (
+                coverage.get("platforms_attempted")
+                if isinstance(coverage, dict)
+                else None
+            )
+            platform_kinds = sorted(
+                {
+                    str(item.get("kind"))
+                    for item in attempted
+                    if isinstance(item, dict)
+                    and isinstance(item.get("kind"), str)
+                }
+            ) if isinstance(attempted, list) else []
+            signals = signal_snapshot.get("signals")
+            expected_signal_projection = {
+                "status": signal_snapshot.get("status"),
+                "snapshot_ref": (
+                    "creative-cultural-signal-snapshot-r001"
+                ),
+                "snapshot_sha256": signal_record.get("sha256"),
+                "window": {
+                    key: signal_snapshot.get("window", {}).get(key)
+                    for key in (
+                        "as_of_utc",
+                        "start_utc",
+                        "end_utc",
+                        "lookback_days",
+                    )
+                }
+                if isinstance(signal_snapshot.get("window"), dict)
+                else None,
+                "signal_count": (
+                    len(signals) if isinstance(signals, list) else -1
+                ),
+                "platform_kinds": platform_kinds,
+                "diagnostic_ref": signal_snapshot.get("diagnostic_ref"),
+            }
+            if (
+                report.get("cultural_signal_scan")
+                != expected_signal_projection
+            ):
+                errors.append(
+                    "Creative success report Cultural Signal binding is stale"
+                )
 
     zero_reason = report.get("zero_reason_code")
     if expected_card_ids:

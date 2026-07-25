@@ -14,11 +14,14 @@ from hacksome.stages.ideation.creative.artifacts import (
     SOFTWARE_DEMO_REASON_BY_DIMENSION,
 )
 from hacksome.stages.ideation.creative.contracts import (
+    C1W_CULTURAL_SIGNAL_SCAN,
+    C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
     C4_CHEAP_HOOK_REVIEW,
     C4_SOFTWARE_DEMO_REVIEW,
     C5M_MEMORY_RECALL,
+    C5M_MEMORY_REMIX,
     C5W_NOVELTY_SCAN,
     C6A_EVIDENCE_REVISE,
     C6B_PORTFOLIO_CURATE,
@@ -26,29 +29,40 @@ from hacksome.stages.ideation.creative.contracts import (
     CREATIVE_CONTRACT_VERSION,
     CREATIVE_PROMPT_POLICY_VERSION,
     CREATIVE_STAGE_POLICY_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_STAGES,
 )
-from hacksome.stages.ideation.creative.prompting import creative_prompt_catalog
+from hacksome.stages.ideation.creative.prompting import (
+    creative_prompt_catalog,
+    creative_prompt_catalog_for_contract,
+)
+from hacksome.core.codex import validate_output_schema
 from hacksome.core.prompting import PromptCatalog, PromptSpec
 
 
 class CreativePromptCatalogTests(unittest.TestCase):
-    def test_catalog_has_every_stage_in_policy_order_and_only_c5w_has_web(
+    def test_catalog_has_every_stage_and_only_c1w_c5w_have_web(
         self,
     ) -> None:
         self.assertEqual(creative_prompt_catalog.stages(), CREATIVE_STAGES)
+        self.assertTrue(
+            creative_prompt_catalog[C1W_CULTURAL_SIGNAL_SCAN].web_search
+        )
         self.assertTrue(creative_prompt_catalog[C5W_NOVELTY_SCAN].web_search)
         self.assertTrue(
             all(
                 not creative_prompt_catalog[stage].web_search
                 for stage in CREATIVE_STAGES
-                if stage != C5W_NOVELTY_SCAN
+                if stage
+                not in {
+                    C1W_CULTURAL_SIGNAL_SCAN,
+                    C5W_NOVELTY_SCAN,
+                }
             )
         )
 
     def test_every_versioned_resource_exists_and_schema_is_valid(self) -> None:
-        version_five_stages = {
-            C3_CONCEPT_SYNTHESIZE,
-        }
         version_four_stages = {
             C4_SOFTWARE_DEMO_REVIEW,
             C6A_EVIDENCE_REVISE,
@@ -64,12 +78,18 @@ class CreativePromptCatalogTests(unittest.TestCase):
                 self.assertEqual(
                     spec.version,
                     (
-                        "5"
-                        if stage in version_five_stages
+                        "7"
+                        if stage == C3_CONCEPT_SYNTHESIZE
                         else "4"
                         if stage in version_four_stages
                         else "3"
-                        if stage in version_three_stages
+                        if stage
+                        in {
+                            *version_three_stages,
+                            C2_TERRITORY_EXPLORE,
+                        }
+                        else "1"
+                        if stage == C1W_CULTURAL_SIGNAL_SCAN
                         else "2"
                     ),
                 )
@@ -82,6 +102,68 @@ class CreativePromptCatalogTests(unittest.TestCase):
                 Draft202012Validator.check_schema(
                     json.loads(spec.schema_path.read_text(encoding="utf-8"))
                 )
+
+    def test_v1_v2_v3_catalogs_preserve_stage_and_web_boundaries(self) -> None:
+        legacy = creative_prompt_catalog_for_contract(
+            LEGACY_CREATIVE_CONTRACT_VERSION
+        )
+        software_first = creative_prompt_catalog_for_contract(
+            SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION
+        )
+        current = creative_prompt_catalog_for_contract(
+            CREATIVE_CONTRACT_VERSION
+        )
+
+        self.assertEqual(software_first.stages(), SOFTWARE_FIRST_CREATIVE_STAGES)
+        self.assertNotIn(C1W_CULTURAL_SIGNAL_SCAN, legacy)
+        self.assertNotIn(C1W_CULTURAL_SIGNAL_SCAN, software_first)
+        self.assertIn(C1W_CULTURAL_SIGNAL_SCAN, current)
+        self.assertEqual(
+            tuple(
+                stage
+                for stage in software_first
+                if software_first[stage].web_search
+            ),
+            (C5W_NOVELTY_SCAN,),
+        )
+        self.assertEqual(
+            tuple(stage for stage in current if current[stage].web_search),
+            (C1W_CULTURAL_SIGNAL_SCAN, C5W_NOVELTY_SCAN),
+        )
+        self.assertEqual(software_first[C2_TERRITORY_EXPLORE].version, "2")
+        self.assertEqual(current[C2_TERRITORY_EXPLORE].version, "3")
+        self.assertEqual(software_first[C3_CONCEPT_SYNTHESIZE].version, "6")
+        self.assertEqual(current[C3_CONCEPT_SYNTHESIZE].version, "7")
+        for stage in (C5M_MEMORY_RECALL, C5M_MEMORY_REMIX):
+            self.assertNotEqual(
+                software_first[stage].schema_path,
+                current[stage].schema_path,
+            )
+
+    def test_all_contract_catalogs_freeze_codex_compatible_schemas(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for contract_version in (
+                LEGACY_CREATIVE_CONTRACT_VERSION,
+                SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+                CREATIVE_CONTRACT_VERSION,
+            ):
+                catalog = creative_prompt_catalog_for_contract(contract_version)
+                for stage in catalog:
+                    validate_output_schema(catalog[stage].schema_path)
+                run_dir = root / f"creative-v{contract_version}"
+                run_dir.mkdir()
+                frozen = catalog.freeze(
+                    run_dir,
+                    route_id="creative",
+                    contract_version=contract_version,
+                    prompt_policy_version=contract_version,
+                    stage_policy_version=contract_version,
+                )
+                for stage in frozen.catalog:
+                    validate_output_schema(
+                        frozen.catalog[stage].schema_path
+                    )
 
     def test_catalog_freezes_all_conditional_and_resume_resources(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -336,6 +418,14 @@ class CreativePromptCatalogTests(unittest.TestCase):
             "`primary_territory_ref` belongs to at least one of those Parent Atoms",
             "does not replace the Markdown\n`## Parent Atoms` section",
             "Return fewer Concepts when necessary",
+            "hard product-loop responsibility",
+            "`explorer_simulator` — Explorer / Simulator",
+            "`realtime_partner` — Realtime Partner",
+            "`social_game_relay` — Social Game / Relay",
+            "`creator_transformer` — Creator / Transformer",
+            "return zero Concepts instead of relabeling a decorative map",
+            "Recognizable product grammar: <assigned_product_grammar_id> —",
+            "Copy the exact stable ID from `SYNTHESIS_LENS`",
         ):
             with self.subTest(prompt="c3", marker=marker):
                 self.assertIn(marker, c3)
@@ -349,6 +439,52 @@ class CreativePromptCatalogTests(unittest.TestCase):
         ):
             with self.subTest(prompt="c6a", marker=marker):
                 self.assertIn(marker, normalized_evidence)
+
+    def test_c3_product_grammars_have_distinct_removal_tests(self) -> None:
+        template = creative_prompt_catalog[
+            C3_CONCEPT_SYNTHESIZE
+        ].template_path.read_text(encoding="utf-8")
+        expected = (
+            (
+                "`explorer_simulator` — Explorer / Simulator",
+                "asks a query or changes explicit parameters",
+                "ambient mood map",
+            ),
+            (
+                "`realtime_partner` — Realtime Partner",
+                "bounded-latency",
+                "later batch processing",
+            ),
+            (
+                "`social_game_relay` — Social Game / Relay",
+                "another named participant",
+                "solo generator with a",
+            ),
+            (
+                "`creator_transformer` — Creator / Transformer",
+                "at least two deliberate edits",
+                "automatic behavior receipt",
+            ),
+        )
+        contract = template[
+            template.index(
+                "The controller assigns exactly one of these mutually "
+                "exclusive grammars:"
+            ) : template.index(
+                "Use this removal test when a Concept appears mixed:"
+            )
+        ]
+        for index, (marker, positive, negative) in enumerate(expected):
+            start = contract.index(marker)
+            end = (
+                contract.index(expected[index + 1][0])
+                if index + 1 < len(expected)
+                else len(contract)
+            )
+            grammar = contract[start:end]
+            with self.subTest(marker=marker):
+                self.assertIn(positive, grammar)
+                self.assertIn(negative, grammar)
 
     def test_curator_prompt_defines_two_red_teams_without_new_scoring(self) -> None:
         template = creative_prompt_catalog[

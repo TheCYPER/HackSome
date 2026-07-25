@@ -10,6 +10,7 @@ from hacksome.stages.ideation.useful.artifacts import ArtifactError, title_of
 from hacksome.stages.ideation.creative.contracts import (
     CREATIVE_CONTRACT_VERSION,
     LEGACY_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
     SUPPORTED_CREATIVE_CONTRACT_VERSIONS,
 )
 from hacksome.core.hub import RUN_SCHEMA_VERSION, RunHub
@@ -271,6 +272,10 @@ _PROVIDERS: dict[tuple[str, str], PostCardProvider] = {
         "creative",
         LEGACY_CREATIVE_CONTRACT_VERSION,
     ): CreativePostCardProvider(LEGACY_CREATIVE_CONTRACT_VERSION),
+    (
+        "creative",
+        SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    ): CreativePostCardProvider(SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION),
     (
         "creative",
         CREATIVE_CONTRACT_VERSION,

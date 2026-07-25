@@ -46,7 +46,8 @@ project_post_card_catalog(run_dir: str | Path) -> PostCardCatalogV1
 
 它只接受 schema v2、`completed`、`validate_run()` 无错误且
 `route.id + contract_version` 已注册的 run。当前 allowlist 是 Useful contract
-v1，以及 Creative 的 frozen v1 与 main 当前 v2；未知或未来版本 fail closed。
+v1，以及 Creative 的 frozen v1、frozen v2 与 main 当前 v3；未知或未来版本
+fail closed。
 Useful 适配器从权威
 `idea_card_ids` 与 `challenge-brief` 投影；Creative 适配器从 C7 success report
 读取最终 Card/handoff 列表，并采用已冻结的 handoff bytes。共享层不得读取

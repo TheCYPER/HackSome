@@ -16,17 +16,27 @@ LEGACY_CREATIVE_PROMPT_POLICY_VERSION = "1"
 LEGACY_CREATIVE_STAGE_POLICY_VERSION = "1"
 LEGACY_CREATIVE_REPORT_POLICY_VERSION = "1"
 
-CREATIVE_CONTRACT_VERSION = "2"
-CREATIVE_PROMPT_POLICY_VERSION = "2"
-CREATIVE_STAGE_POLICY_VERSION = "2"
-CREATIVE_REPORT_POLICY_VERSION = "2"
+SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION = "2"
+SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION = "2"
+SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION = "2"
+SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION = "2"
+
+CREATIVE_CONTRACT_VERSION = "3"
+CREATIVE_PROMPT_POLICY_VERSION = "3"
+CREATIVE_STAGE_POLICY_VERSION = "3"
+CREATIVE_REPORT_POLICY_VERSION = "3"
 SOFTWARE_DEMO_POLICY_VERSION = "2"
 SUPPORTED_CREATIVE_CONTRACT_VERSIONS = frozenset(
-    {LEGACY_CREATIVE_CONTRACT_VERSION, CREATIVE_CONTRACT_VERSION}
+    {
+        LEGACY_CREATIVE_CONTRACT_VERSION,
+        SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+        CREATIVE_CONTRACT_VERSION,
+    }
 )
 
 C0_CHALLENGE_PARSE = "creative-challenge-parse"
 C1_BRIEF_NORMALIZE = "creative-brief-normalize"
+C1W_CULTURAL_SIGNAL_SCAN = "creative-cultural-signal-scan"
 C2_TERRITORY_EXPLORE = "creative-territory-explore"
 C3_CONCEPT_SYNTHESIZE = "creative-concept-synthesize"
 C4_CHEAP_HOOK_REVIEW = "creative-cheap-hook-review"
@@ -39,7 +49,7 @@ C6A_EVIDENCE_REVISE = "creative-evidence-revise"
 C6B_PORTFOLIO_CURATE = "creative-portfolio-curate"
 C6C_FEEDBACK_REVISE = "creative-feedback-revise"
 
-CREATIVE_STAGES = (
+SOFTWARE_FIRST_CREATIVE_STAGES = (
     C0_CHALLENGE_PARSE,
     C1_BRIEF_NORMALIZE,
     C2_TERRITORY_EXPLORE,
@@ -55,8 +65,66 @@ CREATIVE_STAGES = (
     C6C_FEEDBACK_REVISE,
 )
 
+CREATIVE_STAGES = (
+    C0_CHALLENGE_PARSE,
+    C1_BRIEF_NORMALIZE,
+    C1W_CULTURAL_SIGNAL_SCAN,
+    *SOFTWARE_FIRST_CREATIVE_STAGES[2:],
+)
+
 OPTIONAL_MEMORY_STAGES = frozenset({C5M_MEMORY_RECALL, C5M_MEMORY_REMIX})
-WEB_SEARCH_STAGES = frozenset({C5W_NOVELTY_SCAN})
+OPTIONAL_CULTURAL_SIGNAL_STAGES = frozenset({C1W_CULTURAL_SIGNAL_SCAN})
+OPTIONAL_CREATIVE_STAGES = frozenset(
+    {*OPTIONAL_MEMORY_STAGES, *OPTIONAL_CULTURAL_SIGNAL_STAGES}
+)
+WEB_SEARCH_STAGES = frozenset(
+    {C1W_CULTURAL_SIGNAL_SCAN, C5W_NOVELTY_SCAN}
+)
+SOFTWARE_FIRST_WEB_SEARCH_STAGES = frozenset({C5W_NOVELTY_SCAN})
+
+
+def creative_stages_for_contract(contract_version: str) -> tuple[str, ...]:
+    if contract_version == LEGACY_CREATIVE_CONTRACT_VERSION:
+        return tuple(
+            stage
+            for stage in SOFTWARE_FIRST_CREATIVE_STAGES
+            if stage != C4_SOFTWARE_DEMO_REVIEW
+        )
+    if contract_version == SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION:
+        return SOFTWARE_FIRST_CREATIVE_STAGES
+    if contract_version == CREATIVE_CONTRACT_VERSION:
+        return CREATIVE_STAGES
+    raise CreativeContractError(
+        f"unsupported Creative contract version: {contract_version!r}"
+    )
+
+
+def creative_web_stages_for_contract(contract_version: str) -> frozenset[str]:
+    if contract_version in {
+        LEGACY_CREATIVE_CONTRACT_VERSION,
+        SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    }:
+        return SOFTWARE_FIRST_WEB_SEARCH_STAGES
+    if contract_version == CREATIVE_CONTRACT_VERSION:
+        return WEB_SEARCH_STAGES
+    raise CreativeContractError(
+        f"unsupported Creative contract version: {contract_version!r}"
+    )
+
+
+def creative_optional_stages_for_contract(
+    contract_version: str,
+) -> frozenset[str]:
+    if contract_version in {
+        LEGACY_CREATIVE_CONTRACT_VERSION,
+        SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    }:
+        return OPTIONAL_MEMORY_STAGES
+    if contract_version == CREATIVE_CONTRACT_VERSION:
+        return OPTIONAL_CREATIVE_STAGES
+    raise CreativeContractError(
+        f"unsupported Creative contract version: {contract_version!r}"
+    )
 
 DEFAULT_TERRITORY_LENSES = (
     "Direct manipulation and unusual software interaction",
@@ -821,6 +889,7 @@ def _validate_reference_tuple(refs: tuple[str, ...], *, label: str) -> None:
 __all__ = [
     "C0_CHALLENGE_PARSE",
     "C1_BRIEF_NORMALIZE",
+    "C1W_CULTURAL_SIGNAL_SCAN",
     "C2_TERRITORY_EXPLORE",
     "C3_CONCEPT_SYNTHESIZE",
     "C4_CHEAP_HOOK_REPAIR",
@@ -853,17 +922,28 @@ __all__ = [
     "DispositionOutcome",
     "DispositionStage",
     "OPTIONAL_MEMORY_STAGES",
+    "OPTIONAL_CULTURAL_SIGNAL_STAGES",
+    "OPTIONAL_CREATIVE_STAGES",
     "RevisionBudget",
     "RevisionReason",
     "StableReasonCode",
     "SOFTWARE_DEMO_POLICY",
     "SOFTWARE_DEMO_POLICY_VERSION",
+    "SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION",
+    "SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION",
+    "SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION",
+    "SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION",
+    "SOFTWARE_FIRST_CREATIVE_STAGES",
+    "SOFTWARE_FIRST_WEB_SEARCH_STAGES",
     "SUPPORTED_CREATIVE_CONTRACT_VERSIONS",
     "WEB_SEARCH_STAGES",
     "ZeroReasonCode",
     "atom_id",
     "base_concept_id",
     "concept_revision_ref",
+    "creative_optional_stages_for_contract",
+    "creative_stages_for_contract",
+    "creative_web_stages_for_contract",
     "final_idea_id",
     "memory_concept_id",
     "memory_cue_id",
