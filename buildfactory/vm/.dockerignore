@@ -1,7 +1,0 @@
-# never bake secrets or large/transient artifacts into the image
-.env.local
-.env
-*.png
-shot.png
-__pycache__/
-*.pyc

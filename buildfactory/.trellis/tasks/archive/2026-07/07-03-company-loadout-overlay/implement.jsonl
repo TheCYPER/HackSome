@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/07-03-company-loadout-overlay/prd.md", "reason": "需求、约束、验收标准"}
-{"file": ".trellis/tasks/07-03-company-loadout-overlay/design.md", "reason": "overlay schema、四个消费点、reconcile 记账、容错口径——实现照此执行"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "外设层 IME/adapter 契约：adapters 白名单过滤不得破坏 5 字段信封与 ingest 语义"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "常驻 agent 启动/唤醒契约：loadout 永不 brick agent 的既有约定"}
-{"file": "aiworkforce/SOP-adding-roles-and-skills.md", "reason": "声明式扩展哲学：role YAML=全量基线不动，overlay 只做差异选择；state/<company>/ 挂载依赖见 prd 约束节"}

@@ -1,2 +1,0 @@
-{"file": ".trellis/tasks/06-26-vm-layer/design.md", "reason": "回归校验基线：Agent 层重构 broker 后不得破坏 VM 层 AC1-6 既有行为（.claude 持久化 / proxy / graceful shutdown / resume）"}
-{"file": ".trellis/tasks/06-26-orchestration-layer/research/container-orchestration.md", "reason": "校验 Agent 层边界（D4）：单 agent 能力封装不越界到编排层职责；broker 重构后职责划分一致"}

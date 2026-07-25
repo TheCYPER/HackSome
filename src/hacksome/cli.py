@@ -12,38 +12,38 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from hacksome.codex import CodexRunner
-from hacksome.config import CodexConfig
-from hacksome.creative.benchmark import (
+from hacksome.core.codex import CodexRunner
+from hacksome.core.config import CodexConfig
+from hacksome.stages.ideation.creative.benchmark import (
     BenchmarkManifest,
     BlindCaseMap,
     BlindIdeaBinding,
     BlindReviewPacket,
     import_worksheet,
 )
-from hacksome.creative.contracts import CreativeWorkflowSettings
-from hacksome.creative.finalize import CreativeFeedbackError
-from hacksome.creative.review_backend import RunReviewBackend
-from hacksome.creative.review_server import (
+from hacksome.stages.ideation.creative.contracts import CreativeWorkflowSettings
+from hacksome.stages.ideation.creative.finalize import CreativeFeedbackError
+from hacksome.stages.ideation.creative.review_backend import RunReviewBackend
+from hacksome.stages.ideation.creative.review_server import (
     CreativeReviewServer,
     ReviewServerConfig,
     ReviewServerError,
 )
-from hacksome.creative.workflow import (
+from hacksome.stages.ideation.creative.workflow import (
     CreativeIdeaWorkflow,
     CreativeRunOutcome,
     CreativeWorkflowError,
 )
-from hacksome.hub import RunHub
-from hacksome.models import CodexDoctorResult
-from hacksome.pitch import (
+from hacksome.core.hub import RunHub
+from hacksome.core.models import CodexDoctorResult
+from hacksome.stages.pitch import (
     PITCH_MODEL,
     PITCH_REASONING_EFFORT,
     PitchWorkflow,
     PitchWorkflowError,
 )
-from hacksome.state import StateError
-from hacksome.workflow import (
+from hacksome.core.state import StateError
+from hacksome.stages.ideation.useful.workflow import (
     UsefulIdeaWorkflow,
     WorkflowError,
     WorkflowSettings,

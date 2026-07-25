@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/07-03-company-loadout-overlay/prd.md", "reason": "验收标准逐条核对，特别是「回归零变化」与 reconcile 条款"}
-{"file": ".trellis/tasks/07-03-company-loadout-overlay/design.md", "reason": "检查实现与 schema/容错口径/记账规则一致，运行时与 loadout-check 共用解析器"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "通用质量门"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "容错两层语义（运行时降级 WARN vs 离线 fail-fast）须符合项目错误处理规范"}

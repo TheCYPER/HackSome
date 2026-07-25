@@ -1,2 +1,0 @@
-{"file": ".trellis/tasks/07-09-deploy-site-skill/prd.md", "reason": "Check against AC1 (three-test content review, no CLI tutorial), AC2 (README converged to pointer, 禁则 preserved verbatim in skill), AC3 (real e2e, runs later in main session)."}
-{"file": "accounts/README.md", "reason": "Verify the domain-rail section became a pointer without losing operator-facing one-time Google prep."}

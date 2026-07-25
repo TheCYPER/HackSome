@@ -1,16 +1,34 @@
 # HackSome
 
-HackSome 是一个本地运行、以 Codex Session 为执行单元的黑客松 Idea
-工作流。当前有两条彼此独立、共享同一套 Harness 的路线：
+HackSome 是一个本地运行的黑客松工作流，生产代码统一位于 `src/hacksome/`。
+产品有三个明确阶段，两段交接都由 operator 手工执行：
+
+```text
+Ideation ── IdeaToBuildHandoff JSON ──[人工选卡并初始化]──> Build
+Build ── Project + Idea Card + Challenge ──[人工调用]──> Pitch
+```
+
+| Stage | 实现与资源 | 测试 | 运行入口 |
+| --- | --- | --- | --- |
+| Ideation | `src/hacksome/stages/ideation/` | `tests/stages/ideation/` | `hacksome run ...` |
+| Build | `src/hacksome/stages/build/`、`ops/build/` | `tests/stages/build/` | `make -C ops/build init/up ...` |
+| Pitch | `src/hacksome/stages/pitch/` | `tests/stages/pitch/` | `hacksome pitch ...` |
+
+共享运行机制在 `src/hacksome/core/`，两种显式交接格式在
+`src/hacksome/contracts/`。阶段说明见
+[`Ideation`](src/hacksome/stages/ideation/README.md)、
+[`Build`](src/hacksome/stages/build/README.md) 和
+[`Pitch`](src/hacksome/stages/pitch/README.md)。
+
+Ideation 有两条共享同一套 Harness 的路线：
 
 - `useful`：寻找有真实需求与产品价值的 Idea；这是默认路线。
 - `creative`：寻找能在约 30 秒内让人惊奇、好玩、神秘并愿意转述，同时可以
-  用普通电脑或手机跑出真实软件 Demo 的 Idea；它保留所有候选的演化与淘汰
-  原因，并在唯一一次人工评审后结束。
+  用普通电脑或手机跑出真实软件 Demo 的 Idea；它保留候选的演化与淘汰原因，
+  并在唯一一次人工评审后结束。
 
-这里的 Harness 指控制器周围那层可复用基础设施：Codex 进程与超时、并发、
-Prompt/Schema 冻结、Hub 持久化、哈希绑定、日志、状态检查和失败处理。两条
-路线共享 Harness，但不强行共享“什么是好 Idea”的判断标准。
+这里的 Harness 指控制器周围的可复用基础设施：Codex 进程与超时、并发、
+Prompt/Schema 冻结、Hub 持久化、哈希绑定、日志、状态检查和失败处理。
 
 ## 安装
 
@@ -199,14 +217,33 @@ Creative 的最终 Build handoff 只包含：
 }
 ```
 
-其中两个 Markdown 字段有意对齐 BuildFactory 的 `TeamLayout.bootstrap()` 输入。
+其中两个 Markdown 字段有意对齐 Build Stage 的 `TeamLayout.bootstrap()` 输入。
 当前没有自动消费 handoff 或启动容器：Build gate 必须先选择一张卡、复核
 `idea_card_sha256`，再由未来的顶层 adapter 初始化 Team。Team 身份也不能只用
 可能跨 run 重复的 `idea_card_id`，至少要绑定 `source_run_id + idea_card_id +
 idea_card_sha256`。
 
-Idea 工作流到此结束。Build 侧可以再选零张或多张卡；未选择不等于 Creative
-质量 reject。本仓库当前不把 Build、GitHub 发布或 Pitch 偷塞进 Idea 阶段。
+选择卡片后，由 operator 显式初始化并启动 Build：
+
+```bash
+make -C ops/build init TEAM=my-team \
+  CHALLENGE_FILE=/absolute/path/challenge.md \
+  IDEA_CARD_FILE=/absolute/path/idea-card.md
+make -C ops/build up TEAM=my-team
+```
+
+Build 完成后，operator 再显式调用 Pitch；它不会扫描 Team state：
+
+```bash
+hacksome pitch \
+  --project /absolute/path/to/completed-project \
+  --idea-card /absolute/path/idea-card.md \
+  --challenge /absolute/path/challenge.md \
+  --output-root /absolute/path/to/pitch-output
+```
+
+Idea 工作流到 handoff 为止。Build 侧可以再选零张或多张卡；未选择不等于
+Creative 质量 reject。两处人工边界都是当前产品合同，不是已自动接通的流程。
 
 ## 测试
 
@@ -218,5 +255,8 @@ Idea 工作流到此结束。Build 侧可以再选零张或多张卡；未选择
 .venv/bin/python -m compileall -q src tests
 CODEX_HOME=/private/tmp/hacksome-test-codex-home \
   .venv/bin/python -m unittest discover -s tests -v
+PYTHONPATH=src .venv/bin/python -m pytest tests/stages/build -q
+make -C ops/build validate
+node --check src/hacksome/stages/ideation/creative/review_ui/app.js
 git diff --check
 ```

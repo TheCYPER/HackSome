@@ -5,10 +5,20 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .coverage
-build/
+/build/
 dist/
 .hacksome/
 runs/
+
+# Build operator state and account credentials
+/ops/build/accounts/
+/ops/build/state/
+/ops/build/.env
+/ops/build/.env.*
+
+# Preserve pre-migration local Build data without tracking or moving it.
+/buildfactory/accounts/
+/buildfactory/state/
 
 # Local browser snapshots and generated visual artifacts
 /.playwright-cli/

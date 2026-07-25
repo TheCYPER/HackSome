@@ -1,3 +1,0 @@
-{"file": "agents/assets/skills/decide-direction/SKILL.md", "reason": "Downstream seam + style reference: find-opportunity generates candidates and hands each to THIS skill; match its imperative/progressive-disclosure voice; do not duplicate its judging role"}
-{"file": "agents/assets/skills/send-goal/SKILL.md", "reason": "Style + mechanism reference — how a CEO skill is written and how it invokes `messaging send` (the general signal-grounding step reuses this to dispatch a research Goal to researcher)"}
-{"file": "agents/assets/ceo-charter.md", "reason": "CEO identity + the existing 'How you decide what to pursue' section to append to; departments roster (researcher) for the research Goal"}

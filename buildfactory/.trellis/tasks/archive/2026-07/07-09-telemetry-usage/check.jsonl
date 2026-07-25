@@ -1,2 +1,0 @@
-{"file": ".trellis/tasks/07-09-telemetry-usage/prd.md", "reason": "Check against AC1 (codex rows carry non-empty usage, claude rows keep cost_usd and gain usage), AC2 (timeout/fallback usage=None, no throw), AC3 (tests cover all three paths, suite green)."}
-{"file": "orchestration/agent_loop.py", "reason": "Verify telemetry stays RECORDING ONLY (no thresholds/alerts added) and _record_wake keeps its never-brick try/except envelope."}

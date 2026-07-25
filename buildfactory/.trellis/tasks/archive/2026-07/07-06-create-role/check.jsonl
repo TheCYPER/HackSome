@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/07-06-create-role/prd.md", "reason": "AC1-AC7 验收清单与 v1 定调（无试用期、PASS/FAIL 统一、不编限制）——check 的对照基准"}
-{"file": ".trellis/tasks/07-06-create-role/design.md", "reason": "契约细节：CLI 子命令表/lint 清单/registry schema/防漂移单测要求/tradeoffs 弃项（防止 check 时把砍掉的东西当缺陷补回来）"}
-{"file": ".trellis/tasks/07-06-create-role/research/codebase-map.md", "reason": "file:line 级现状引用，核对集成点是否都接上"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "项目质量红线"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "不得破坏的常驻 agent 契约"}
-{"file": ".trellis/spec/backend/agent-handbook-contracts.md", "reason": "不得破坏的 Goal 协议/可见性矩阵"}

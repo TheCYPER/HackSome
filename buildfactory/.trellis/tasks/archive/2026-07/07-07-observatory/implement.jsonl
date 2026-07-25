@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "goal ledger / hub semantics, sessions layout, wake telemetry schema — what the observer reads and how to point it there"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "IME 5-field envelope and FileInbox JSONL format — parsing hub.jsonl / verifier.jsonl pointers in prompts"}
-{"file": ".trellis/spec/backend/agent-handbook-contracts.md", "reason": "verifier-only --accept criteria hiding (ACCEPT_DELIM in DISPATCH body) — where acceptance criteria live for independent re-verification"}
-{"file": ".trellis/spec/backend/company-state-contracts.md", "reason": "company/ shared memory layout (MAP.md, OVERVIEW.md) — the artifact plane the observer audits"}

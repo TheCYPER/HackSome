@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Verify image auth behavior and no credential regressions."}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "Verify compose/resident startup still tolerates missing account credentials."}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "Verify no loadout overlay behavior changed."}

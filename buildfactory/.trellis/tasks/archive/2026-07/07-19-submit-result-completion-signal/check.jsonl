@@ -1,4 +1,0 @@
-{"file":".trellis/spec/backend/three-layer-agent-company-contracts.md","reason":"复核状态机、review payload、同 Worker 返工和 Verifier 最小权限没有漂移。"}
-{"file":".trellis/spec/backend/company-state-contracts.md","reason":"复核完成声明不再强制 Company State 文件或引用。"}
-{"file":".trellis/spec/backend/account-package-contracts.md","reason":"复核 Verifier 与 Worker 账户包对齐且未记录真实 secret。"}
-{"file":".trellis/spec/backend/agent-execution-contracts.md","reason":"复核 AgentSpec 最小 Skill 集和临时 home materialization 一致。"}

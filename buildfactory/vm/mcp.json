@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "cua-founder": {
-      "command": "/Users/weston/dev/BuildFactory/.venv-cua/bin/python",
-      "args": ["/Users/weston/dev/BuildFactory/vm/cua_mcp.py"]
-    }
-  }
-}

@@ -1,7 +1,0 @@
-{"file": ".trellis/tasks/07-08-agent-email/design.md", "reason": "本任务技术设计：链路/组件/契约/skill 骨架，实现的直接依据"}
-{"file": ".trellis/tasks/07-08-agent-email/research/inbound-channel-options.md", "reason": "通道调研：R2/Worker/Email Routing 的限制、API 端点、部署命令、风险，M3/M4/M6 的事实来源"}
-{"file": ".trellis/tasks/07-08-agent-email/research/v5-email-stack.md", "reason": "v5 参考：localpart 校验正则、保留名单、claim 幂等/上限语义、踩坑清单（M1 直接搬）"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "外设层契约：ingest/adapter/IME 形状，M2 adapter 升级与 M3 poller 投递必须遵守"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "常驻 agent/inbox/receive 契约：M1 peek 模式不得破坏 poll_one/游标语义"}
-{"file": ".trellis/spec/backend/company-state-contracts.md", "reason": "company state 目录纪律：注册表落 state/<company>/mailboxes/ 的形态约束"}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "新模块 peripheral/email/ 与新文件落点的目录规范"}

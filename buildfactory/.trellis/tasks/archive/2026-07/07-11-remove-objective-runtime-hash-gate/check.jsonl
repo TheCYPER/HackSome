@@ -1,6 +1,0 @@
-{"file":".trellis/spec/backend/resident-agent-contracts.md","reason":"复核最终行为与 Objective/Agent loop 契约一致"}
-{"file":".trellis/spec/backend/company-state-contracts.md","reason":"复核路径所有权、company store 快照和回滚未被削弱"}
-{"file":".trellis/spec/backend/error-handling.md","reason":"复核事务恢复失败仍阻断注入且不会杀死 loop"}
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"复核测试、静态检查和改动聚焦度"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核提案、裁决、生效、唤醒和重启后的端到端数据流"}
-{"file":".trellis/tasks/07-10-thirdtest-opus-longrun/research/observations.md","reason":"对照原始失效现场，确认未通过改写 thirdtest 状态规避问题"}

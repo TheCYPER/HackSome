@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "agent_loop instances (key/charter/session), wake prompt building and compose wiring — the exact seam this task extends with objective injection."}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "IME envelope + FileInbox poll semantics rendered by build_wake_prompt; injection must not disturb event rendering."}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "Containerized headless claude invocation contracts — objective.py spawns a fresh `claude -p` reviewer the same way."}
-{"file": ".trellis/spec/backend/agent-handbook-contracts.md", "reason": "Charter→skill reference conventions and verifier VERDICT-line precedent that review-objective/set-objective must follow."}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "This task must stay orthogonal to the loadout overlay (charter/mcp swaps); objective injection happens at the prompt layer."}
-{"file": ".trellis/tasks/07-03-standing-objective/design.md", "reason": "Authoritative technical design: storage/mount, agent_loop changes, objective CLI flow, judgment three-way split (set-objective / review-objective / mechanics)."}

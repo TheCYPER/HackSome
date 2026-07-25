@@ -1,6 +1,0 @@
-{"file":".trellis/spec/backend/resident-agent-contracts.md","reason":"Objective 注入、Verifier 审核、事务恢复和 resident loop 的现行契约"}
-{"file":".trellis/spec/backend/company-state-contracts.md","reason":"完整 Objective leaf 的路径所有权、锁和事务写入约束"}
-{"file":".trellis/spec/backend/error-handling.md","reason":"恢复失败时 fail-closed、普通内容读取异常时不击穿常驻循环"}
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"改动范围、回归覆盖与代码可读性要求"}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 CLI、resident loop、持久状态与部署重启之间的完整链路"}
-{"file":".trellis/tasks/07-10-thirdtest-opus-longrun/research/observations.md","reason":"thirdtest 哈希失效的现场证据和旧运行日志"}

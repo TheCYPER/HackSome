@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/07-10-email-send-resend/design.md", "reason": "本任务技术设计：CLI 契约、三道门、账本锁序、Resend 调用、skill 要点，实现的直接依据"}
-{"file": ".trellis/tasks/archive/2026-07/07-08-agent-email/research/v5-email-stack.md", "reason": "v5 发件参考：三道门语义、RESERVE 先于 HTTP、配额默认 30/15、deliverability 连坐坑（#4）"}
-{"file": ".trellis/tasks/archive/2026-07/07-08-agent-email/design.md", "reason": "收件 v1 设计：注册表/poller/IME 链路与模块边界，发件必须零改动挂接的既有面"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "外设层契约：收件链路不得被 DNS/模块改动破坏"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "常驻 agent 契约：AGENT_KEY 身份、skill 可见面、容器 env 注入的既有约定"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "fail-closed / 退出码 / 错误即指引的项目惯例"}

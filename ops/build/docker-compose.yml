@@ -1,0 +1,121 @@
+# One autonomous HackSome Build Team: resident Lead, one Worker, fresh Verifiers.
+# Handoffs into and out of this runtime remain explicit operator actions.
+
+name: ${TEAM:-hackathon-team}
+
+x-agent: &agent
+  image: foundagent/cua-agent:latest
+  restart: unless-stopped
+  env_file:
+    - path: ${BUILD_OPS_ROOT}/accounts/${ACCOUNT:-foundagent}/secrets.env
+      required: false
+  volumes:
+    - ${HACKSOME_ROOT}/src/hacksome:/opt/hacksome/hacksome:ro
+    - ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}/project:/project
+    - ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}/sessions/lead:/home/kasm-user/.claude
+    - ${BUILD_OPS_ROOT}/accounts/${ACCOUNT:-foundagent}:/account:ro
+    - ${BUILD_OPS_ROOT}/docker/agent_startup.sh:/dockerstartup/custom_startup.sh:ro
+  depends_on:
+    hub:
+      condition: service_healthy
+
+x-manager: &manager
+  build:
+    context: ${BUILD_OPS_ROOT}/docker
+    dockerfile: control.Dockerfile
+  image: foundagent/control-plane:latest
+  working_dir: ${HACKSOME_ROOT}
+  restart: unless-stopped
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ${HACKSOME_ROOT}:${HACKSOME_ROOT}
+  environment: &manager-env
+    PYTHONPATH: ${HACKSOME_ROOT}/src
+    FOUNDAGENT_HOST_REPO: ${HACKSOME_ROOT}
+    TEAM_MODE: "1"
+    TEAM: ${TEAM:-hackathon-team}
+    ACCOUNT: ${ACCOUNT:-foundagent}
+    TEAM_STATE_ROOT: ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}
+    TEAM_NETWORK: ${TEAM:-hackathon-team}_default
+    HUB_URL: http://hub:8910
+  depends_on:
+    hub:
+      condition: service_healthy
+
+services:
+  hub:
+    build:
+      context: ${BUILD_OPS_ROOT}/docker
+      dockerfile: control.Dockerfile
+    image: foundagent/control-plane:latest
+    container_name: ${TEAM:-hackathon-team}-hub
+    working_dir: /opt/hacksome
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - python3 -m hacksome.stages.build.control.team_hub 2>&1 | tee -a /state/telemetry/services/hub.log
+    environment:
+      PYTHONPATH: /opt/hacksome
+      TEAM: ${TEAM:-hackathon-team}
+      TEAM_STATE_ROOT: /state
+      HUB_PORT: "8910"
+      HUB_TICK_SECS: ${HUB_TICK_SECS:-0.5}
+    volumes:
+      - ${HACKSOME_ROOT}/src/hacksome:/opt/hacksome/hacksome:ro
+      - ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}:/state
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8910/health', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+
+  lead:
+    <<: *agent
+    container_name: ${TEAM:-hackathon-team}-lead
+    labels:
+      hacksome.team: ${TEAM:-hackathon-team}
+      hacksome.kind: lead
+    environment:
+      PYTHONPATH: /opt/hacksome
+      AGENTS_DIR: /opt/hacksome/hacksome/stages/build/assets/agents
+      AGENT_KEY: lead
+      AGENT_KIND: lead
+      AGENT_SPEC: /opt/hacksome/hacksome/stages/build/assets/agents/lead.yaml
+      AGENT_LOOP_MODULE: hacksome.stages.build.control.lead_loop
+      AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-60}
+      AGENT_CLAUDE_TIMEOUT: ${AGENT_CLAUDE_TIMEOUT:-3600}
+      HUB_URL: http://hub:8910
+      CLAUDE_CONFIG_DIR: /home/kasm-user/.claude
+      CODEX_HOME: /home/kasm-user/.claude/codex
+      AGENT_SESSION_FILE: /home/kasm-user/.claude/session_id
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1"
+
+  worker-manager:
+    <<: *manager
+    container_name: ${TEAM:-hackathon-team}-worker-manager
+    command:
+      - sh
+      - -c
+      - python3 -m hacksome.stages.build.control.worker_manager 2>&1 | tee -a ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}/telemetry/services/worker-manager.log
+    environment:
+      <<: *manager-env
+      WORKER_MAX: "1"
+      WORKER_TURN_TIMEOUT_SECS: ${WORKER_TURN_TIMEOUT_SECS:-21600}
+
+  verifier-manager:
+    <<: *manager
+    container_name: ${TEAM:-hackathon-team}-verifier-manager
+    command:
+      - sh
+      - -c
+      - python3 -m hacksome.stages.build.control.verifier_runtime 2>&1 | tee -a ${BUILD_OPS_ROOT}/state/${TEAM:-hackathon-team}/telemetry/services/verifier-manager.log
+    environment:
+      <<: *manager-env
+      VERIFIER_MAX: "1"
+      VERIFIER_TURN_TIMEOUT_SECS: ${VERIFIER_TURN_TIMEOUT_SECS:-3600}
