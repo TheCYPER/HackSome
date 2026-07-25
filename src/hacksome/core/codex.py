@@ -37,7 +37,27 @@ from hacksome.core.models import (
 
 
 _FAILURE_EVENT_TYPES = {"error", "turn.failed"}
-_CODEX_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
+_CODEX_OUTPUT_SCHEMA_KEYWORDS = frozenset(
+    {
+        "$defs",
+        "$ref",
+        "$schema",
+        "additionalProperties",
+        "anyOf",
+        "const",
+        "description",
+        "enum",
+        "items",
+        "maxItems",
+        "minItems",
+        "minLength",
+        "oneOf",
+        "pattern",
+        "properties",
+        "required",
+        "type",
+    }
+)
 _SCHEMA_MAP_CHILDREN = frozenset(
     {"$defs", "definitions", "dependentSchemas", "patternProperties", "properties"}
 )
@@ -260,24 +280,7 @@ class CodexRunner:
             raise ValueError(f"Task cwd is not an existing directory: {cwd}")
 
         schema = task.output_schema.expanduser().resolve()
-        if not schema.is_file():
-            raise ValueError(f"Output schema is not an existing file: {schema}")
-        try:
-            schema_value = json.loads(schema.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Output schema is not valid UTF-8 JSON: {schema}") from exc
-        unsupported = _find_unsupported_schema_keywords(schema_value)
-        if unsupported:
-            details = ", ".join(sorted(unsupported))
-            raise ValueError(
-                "Output schema uses keyword(s) unsupported by Codex structured "
-                f"output: {details}"
-            )
-        try:
-            Draft202012Validator.check_schema(schema_value)
-        except SchemaError as exc:
-            raise ValueError(f"Output schema is not valid JSON Schema: {exc.message}") from exc
-        schema_validator = Draft202012Validator(schema_value)
+        schema_validator = validate_output_schema(schema)
 
         if task.log_dir is None:
             log_root = cwd / ".hacksome" / "logs" / task.task_id
@@ -876,25 +879,91 @@ def _looks_like_non_retryable_request_failure(message: str | None) -> bool:
     return any(marker in normalized for marker in markers)
 
 
-def _find_unsupported_schema_keywords(value: Any, path: str = "$") -> set[str]:
-    """Locate output-schema vocabulary known to be rejected by Codex."""
+def validate_output_schema(
+    schema_path: str | Path,
+) -> Draft202012Validator:
+    """Validate one schema against JSON Schema and the Codex output subset.
+
+    ``Draft202012Validator.check_schema`` only proves that a document is valid
+    JSON Schema. Codex structured output accepts a stricter vocabulary, so
+    callers that freeze bundled resources must use this same boundary as the
+    runtime rather than relying on the offline validator alone.
+    """
+
+    schema = Path(schema_path).expanduser().resolve()
+    if not schema.is_file():
+        raise ValueError(f"Output schema is not an existing file: {schema}")
+    try:
+        schema_bytes = schema.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Output schema is not valid UTF-8 JSON: {schema}") from exc
+    return validate_output_schema_bytes(schema_bytes, source=schema)
+
+
+def validate_output_schema_bytes(
+    schema_bytes: bytes,
+    *,
+    source: str | Path = "<schema bytes>",
+) -> Draft202012Validator:
+    """Compile exact schema bytes after enforcing the Codex output subset.
+
+    Resource freezing uses this boundary so the bytes checked here are the
+    same bytes copied into a run. Path-based runtime validation delegates to
+    it, keeping one vocabulary allowlist and one JSON Schema compiler.
+    """
+
+    if not isinstance(schema_bytes, bytes):
+        raise TypeError("schema_bytes must be bytes")
+    label = str(source)
+    try:
+        schema_value = json.loads(schema_bytes.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Output schema is not valid UTF-8 JSON: {label}") from exc
+    incompatible = _find_schema_incompatibilities(schema_value)
+    if incompatible:
+        details = ", ".join(sorted(incompatible))
+        raise ValueError(
+            "Output schema uses keyword(s) or combination(s) unsupported by "
+            f"Codex structured output: {details}"
+        )
+    try:
+        Draft202012Validator.check_schema(schema_value)
+    except SchemaError as exc:
+        raise ValueError(
+            f"Output schema is not valid JSON Schema: {exc.message} ({label})"
+        ) from exc
+    return Draft202012Validator(schema_value)
+
+
+def _find_schema_incompatibilities(
+    value: Any,
+    path: str = "$",
+) -> set[str]:
+    """Locate schema constructs outside the verified Codex output subset."""
 
     found: set[str] = set()
     if not isinstance(value, dict):
         return found
     for key in value:
-        if key in _CODEX_UNSUPPORTED_SCHEMA_KEYWORDS:
+        if key not in _CODEX_OUTPUT_SCHEMA_KEYWORDS:
             found.add(f"{path}.{key}")
+    if "$ref" in value and set(value) != {"$ref"}:
+        siblings = ", ".join(sorted(set(value) - {"$ref"}))
+        found.add(
+            f"{path} ($ref must be the only keyword; siblings: {siblings})"
+        )
     for key in _SCHEMA_SINGLE_CHILDREN:
         child = value.get(key)
         if isinstance(child, dict):
-            found.update(_find_unsupported_schema_keywords(child, f"{path}.{key}"))
+            found.update(
+                _find_schema_incompatibilities(child, f"{path}.{key}")
+            )
     for key in _SCHEMA_LIST_CHILDREN:
         children = value.get(key)
         if isinstance(children, list):
             for index, child in enumerate(children):
                 found.update(
-                    _find_unsupported_schema_keywords(
+                    _find_schema_incompatibilities(
                         child,
                         f"{path}.{key}[{index}]",
                     )
@@ -904,7 +973,7 @@ def _find_unsupported_schema_keywords(value: Any, path: str = "$") -> set[str]:
         if isinstance(children, dict):
             for name, child in children.items():
                 found.update(
-                    _find_unsupported_schema_keywords(
+                    _find_schema_incompatibilities(
                         child,
                         f"{path}.{key}.{name}",
                     )
@@ -929,3 +998,10 @@ def _probe_error(
     detail = (stderr or stdout).strip()
     suffix = f": {detail}" if detail else ""
     return f"{prefix} (status {returncode}){suffix}"
+
+
+__all__ = [
+    "CodexRunner",
+    "validate_output_schema",
+    "validate_output_schema_bytes",
+]

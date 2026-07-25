@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from pathlib import PurePosixPath
+from tempfile import TemporaryDirectory
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence
 
+from hacksome.core.codex import validate_output_schema_bytes
 from hacksome.core.state import (
     atomic_write_bytes,
     atomic_write_json,
@@ -164,65 +166,104 @@ class PromptCatalog:
         root = run_root / "resources"
         if root.exists():
             raise PromptResourceError(f"resource directory already exists: {root}")
-        (root / "prompts").mkdir(parents=True)
-        (root / "schemas").mkdir()
 
-        stage_records: list[dict[str, Any]] = []
-        frozen_specs: list[PromptSpec] = []
+        source_resources: list[tuple[PromptSpec, bytes, bytes]] = []
         for spec in self._specs.values():
             template_bytes = _read_resource_bytes(
-                spec.template_path, label=f"prompt template for {spec.stage}"
+                spec.template_path,
+                label=f"prompt template for {spec.stage}",
             )
             schema_bytes = _read_resource_bytes(
-                spec.schema_path, label=f"output schema for {spec.stage}"
+                spec.schema_path,
+                label=f"output schema for {spec.stage}",
             )
-            template_relative = f"prompts/{spec.stage}.md"
-            # Keep the original basename because it is part of the persisted
-            # Useful request metadata. The stage directory avoids collisions
-            # when different route stages own same-named schemas.
-            schema_relative = f"schemas/{spec.stage}/{spec.schema_path.name}"
-            template_path = root / template_relative
-            frozen_schema_path = root / schema_relative
-            atomic_write_bytes(template_path, template_bytes)
-            atomic_write_bytes(frozen_schema_path, schema_bytes)
-            stage_records.append(
-                {
-                    "stage": spec.stage,
-                    "template_id": spec.template_id,
-                    "template_version": spec.version,
-                    "template": {
-                        "path": template_relative,
-                        "sha256": sha256_file(template_path),
-                    },
-                    "schema": {
-                        "path": schema_relative,
-                        "sha256": sha256_file(frozen_schema_path),
-                    },
-                    "web_search": spec.web_search,
-                }
-            )
-            frozen_specs.append(
-                PromptSpec(
-                    stage=spec.stage,
-                    template_id=spec.template_id,
-                    version=spec.version,
-                    template_path=template_path,
-                    schema_path=frozen_schema_path,
-                    web_search=spec.web_search,
+            try:
+                validate_output_schema_bytes(
+                    schema_bytes,
+                    source=spec.schema_path,
                 )
-            )
+            except ValueError as exc:
+                raise PromptResourceError(
+                    f"output schema for {spec.stage} is incompatible with "
+                    f"Codex structured output: {exc}"
+                ) from exc
+            source_resources.append((spec, template_bytes, schema_bytes))
 
-        manifest_path = root / "manifest.json"
-        atomic_write_json(
-            manifest_path,
-            {
-                "schema_version": 1,
-                "route": versions,
-                "stages": stage_records,
-            },
+        stage_records: list[dict[str, Any]] = []
+        frozen_paths: list[tuple[PromptSpec, str, str]] = []
+        with TemporaryDirectory(
+            prefix=".hacksome-resources-",
+            dir=run_root,
+        ) as temporary:
+            staging_root = Path(temporary)
+            (staging_root / "prompts").mkdir()
+            (staging_root / "schemas").mkdir()
+
+            for spec, template_bytes, schema_bytes in source_resources:
+                template_relative = f"prompts/{spec.stage}.md"
+                # Keep the original basename because it is part of the
+                # persisted Useful request metadata. The stage directory
+                # avoids collisions when route stages share schema basenames.
+                schema_relative = (
+                    f"schemas/{spec.stage}/{spec.schema_path.name}"
+                )
+                atomic_write_bytes(
+                    staging_root / template_relative,
+                    template_bytes,
+                )
+                atomic_write_bytes(
+                    staging_root / schema_relative,
+                    schema_bytes,
+                )
+                stage_records.append(
+                    {
+                        "stage": spec.stage,
+                        "template_id": spec.template_id,
+                        "template_version": spec.version,
+                        "template": {
+                            "path": template_relative,
+                            "sha256": sha256(template_bytes).hexdigest(),
+                        },
+                        "schema": {
+                            "path": schema_relative,
+                            "sha256": sha256(schema_bytes).hexdigest(),
+                        },
+                        "web_search": spec.web_search,
+                    },
+                )
+                frozen_paths.append(
+                    (spec, template_relative, schema_relative)
+                )
+
+            atomic_write_json(
+                staging_root / "manifest.json",
+                {
+                    "schema_version": 1,
+                    "route": versions,
+                    "stages": stage_records,
+                },
+            )
+            try:
+                staging_root.rename(root)
+            except OSError as exc:
+                raise PromptResourceError(
+                    f"could not publish frozen resource directory: {root}"
+                ) from exc
+
+        frozen_specs = tuple(
+            PromptSpec(
+                stage=spec.stage,
+                template_id=spec.template_id,
+                version=spec.version,
+                template_path=root / template_relative,
+                schema_path=root / schema_relative,
+                web_search=spec.web_search,
+            )
+            for spec, template_relative, schema_relative in frozen_paths
         )
+        manifest_path = root / "manifest.json"
         return FrozenPromptResources(
-            catalog=PromptCatalog(tuple(frozen_specs)),
+            catalog=PromptCatalog(frozen_specs),
             manifest_path=manifest_path,
             manifest_sha256=sha256_file(manifest_path),
         )
@@ -301,16 +342,26 @@ class PromptCatalog:
                 raise PromptResourceError(
                     f"web policy mismatch for stage {expected_spec.stage}"
                 )
-            template_path = _validated_frozen_file(
+            template_path, _template_bytes = _validated_frozen_file(
                 root,
                 raw.get("template"),
                 label=f"template for stage {expected_spec.stage}",
             )
-            schema_path = _validated_frozen_file(
+            schema_path, schema_bytes = _validated_frozen_file(
                 root,
                 raw.get("schema"),
                 label=f"schema for stage {expected_spec.stage}",
             )
+            try:
+                validate_output_schema_bytes(
+                    schema_bytes,
+                    source=schema_path,
+                )
+            except ValueError as exc:
+                raise PromptResourceError(
+                    f"frozen output schema for {expected_spec.stage} is "
+                    f"incompatible with Codex structured output: {exc}"
+                ) from exc
             frozen_specs.append(
                 PromptSpec(
                     stage=expected_spec.stage,
@@ -381,7 +432,7 @@ def _validated_frozen_file(
     raw: Any,
     *,
     label: str,
-) -> Path:
+) -> tuple[Path, bytes]:
     if not isinstance(raw, dict):
         raise PromptResourceError(f"{label} manifest entry must be an object")
     raw_path = raw.get("path")
@@ -409,9 +460,10 @@ def _validated_frozen_file(
         raise PromptResourceError(f"{label} path escapes the resource directory")
     if not candidate.is_file():
         raise PromptResourceError(f"{label} file is missing: {candidate}")
-    if sha256_file(candidate) != expected_sha256:
+    content = _read_resource_bytes(candidate, label=label)
+    if sha256(content).hexdigest() != expected_sha256:
         raise PromptResourceError(f"{label} hash mismatch")
-    return candidate
+    return candidate, content
 
 
 _USEFUL_ROOT = Path(__file__).resolve().parent.parent / "stages" / "ideation" / "useful"

@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
+import hacksome.core.prompting as prompting_module
+from hacksome.core.codex import validate_output_schema
 from hacksome.stages.ideation.creative.prompting import creative_prompt_catalog
 from hacksome.core.prompting import (
     PromptCatalog,
@@ -256,6 +260,22 @@ class PromptingTests(unittest.TestCase):
             self.assertEqual(len(manifest["stages"][0]["template"]["sha256"]), 64)
             self.assertEqual(len(manifest["stages"][0]["schema"]["sha256"]), 64)
             self.assertEqual(
+                frozen.catalog["stage-one"].template_path.read_bytes(),
+                b"# Original package prompt\n",
+            )
+            self.assertEqual(
+                frozen.catalog["stage-one"].schema_path.read_bytes(),
+                b'{"type":"object"}\n',
+            )
+            self.assertEqual(
+                manifest["stages"][0]["template"]["sha256"],
+                sha256(b"# Original package prompt\n").hexdigest(),
+            )
+            self.assertEqual(
+                manifest["stages"][0]["schema"]["sha256"],
+                sha256(b'{"type":"object"}\n').hexdigest(),
+            )
+            self.assertEqual(
                 frozen.catalog["stage-one"].schema_path.name,
                 supported["stage-one"].schema_path.name,
             )
@@ -283,6 +303,296 @@ class PromptingTests(unittest.TestCase):
                 loaded["stage-one"].template_path,
                 run_dir.resolve() / "resources" / "prompts" / "stage-one.md",
             )
+
+    def test_catalog_preflights_every_schema_before_writing_resources(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            valid_template = root / "valid.md"
+            invalid_template = root / "invalid.md"
+            valid_schema = root / "valid.schema.json"
+            invalid_schema = root / "invalid.schema.json"
+            valid_template.write_text("# Valid\n", encoding="utf-8")
+            invalid_template.write_text("# Invalid\n", encoding="utf-8")
+            valid_schema.write_text('{"type":"object"}\n', encoding="utf-8")
+            invalid_schema.write_text(
+                '{"type":"array","items":{"type":"string"},'
+                '"uniqueItems":true}\n',
+                encoding="utf-8",
+            )
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "valid-stage",
+                        "example.valid",
+                        "1",
+                        valid_template,
+                        valid_schema,
+                    ),
+                    PromptSpec(
+                        "invalid-stage",
+                        "example.invalid",
+                        "1",
+                        invalid_template,
+                        invalid_schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+
+            with self.assertRaisesRegex(
+                PromptResourceError,
+                r"invalid-stage.*uniqueItems",
+            ):
+                catalog.freeze(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                )
+
+            self.assertFalse((run_dir / "resources").exists())
+            self.assertEqual(
+                tuple(run_dir.glob(".hacksome-resources-*")),
+                (),
+            )
+
+    def test_catalog_validates_and_freezes_the_same_schema_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "source.md"
+            schema = root / "source.schema.json"
+            template.write_text("# Prompt\n", encoding="utf-8")
+            original_schema = b'{"type":"object","additionalProperties":false}\n'
+            schema.write_bytes(original_schema)
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        template,
+                        schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            original_reader = prompting_module._read_resource_bytes
+
+            def read_then_change_source(path: Path, *, label: str) -> bytes:
+                content = original_reader(path, label=label)
+                if Path(path) == schema:
+                    schema.write_text(
+                        '{"type":"object","futureKeyword":true}\n',
+                        encoding="utf-8",
+                    )
+                return content
+
+            with patch.object(
+                prompting_module,
+                "_read_resource_bytes",
+                side_effect=read_then_change_source,
+            ):
+                frozen = catalog.freeze(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                )
+
+            self.assertEqual(
+                frozen.catalog["stage-one"].schema_path.read_bytes(),
+                original_schema,
+            )
+            validate_output_schema(
+                frozen.catalog["stage-one"].schema_path
+            )
+
+    def test_catalog_write_failure_leaves_no_half_frozen_directory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "source.md"
+            schema = root / "source.schema.json"
+            template.write_text("# Prompt\n", encoding="utf-8")
+            schema.write_text('{"type":"object"}\n', encoding="utf-8")
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        template,
+                        schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            original_writer = prompting_module.atomic_write_bytes
+            write_count = 0
+
+            def fail_second_write(path: Path, content: bytes) -> Path:
+                nonlocal write_count
+                write_count += 1
+                if write_count == 2:
+                    raise OSError("simulated resource write failure")
+                return original_writer(path, content)
+
+            with (
+                patch.object(
+                    prompting_module,
+                    "atomic_write_bytes",
+                    side_effect=fail_second_write,
+                ),
+                self.assertRaisesRegex(
+                    OSError,
+                    "simulated resource write failure",
+                ),
+            ):
+                catalog.freeze(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                )
+
+            self.assertFalse((run_dir / "resources").exists())
+            self.assertEqual(
+                tuple(run_dir.glob(".hacksome-resources-*")),
+                (),
+            )
+
+    def test_catalog_does_not_overwrite_existing_frozen_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "source.md"
+            schema = root / "source.schema.json"
+            template.write_text("# Prompt\n", encoding="utf-8")
+            schema.write_text('{"type":"object"}\n', encoding="utf-8")
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        template,
+                        schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            frozen = catalog.freeze(
+                run_dir,
+                route_id="example",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+            before = {
+                path.relative_to(run_dir): path.read_bytes()
+                for path in (run_dir / "resources").rglob("*")
+                if path.is_file()
+            }
+
+            template.write_text("# Replacement\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                PromptResourceError,
+                "resource directory already exists",
+            ):
+                catalog.freeze(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                )
+
+            after = {
+                path.relative_to(run_dir): path.read_bytes()
+                for path in (run_dir / "resources").rglob("*")
+                if path.is_file()
+            }
+            self.assertEqual(after, before)
+            self.assertEqual(
+                frozen.manifest_sha256,
+                sha256(frozen.manifest_path.read_bytes()).hexdigest(),
+            )
+
+    def test_load_frozen_rejects_internally_hashed_incompatible_schema(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "source.md"
+            schema = root / "source.schema.json"
+            template.write_text("# Prompt\n", encoding="utf-8")
+            schema.write_text('{"type":"object"}\n', encoding="utf-8")
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        template,
+                        schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            frozen = catalog.freeze(
+                run_dir,
+                route_id="example",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+            frozen_schema = frozen.catalog["stage-one"].schema_path
+            frozen_schema.write_text(
+                '{"type":"array","items":{"type":"string"},'
+                '"uniqueItems":true}\n',
+                encoding="utf-8",
+            )
+            manifest = json.loads(
+                frozen.manifest_path.read_text(encoding="utf-8")
+            )
+            manifest["stages"][0]["schema"]["sha256"] = sha256(
+                frozen_schema.read_bytes()
+            ).hexdigest()
+            frozen.manifest_path.write_text(
+                json.dumps(
+                    manifest,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            manifest_sha = sha256(
+                frozen.manifest_path.read_bytes()
+            ).hexdigest()
+
+            with self.assertRaisesRegex(
+                PromptResourceError,
+                r"frozen output schema.*uniqueItems",
+            ):
+                catalog.load_frozen(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                    manifest_sha256=manifest_sha,
+                )
 
     def test_catalog_can_load_explicitly_allowlisted_frozen_prompt_version(
         self,
@@ -520,6 +830,154 @@ class PromptingTests(unittest.TestCase):
             path = schema_path(stage)
             self.assertTrue(path.is_file())
             Draft202012Validator.check_schema(json.loads(path.read_text(encoding="utf-8")))
+            validate_output_schema(path)
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            frozen = useful_prompt_catalog.freeze(
+                run_dir,
+                route_id="useful",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+            for stage in stages():
+                validate_output_schema(
+                    frozen.catalog[stage].schema_path
+                )
+
+    def test_schema_keyword_allowlist_is_context_aware_and_fails_closed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            property_named_like_keyword = root / "property.schema.json"
+            property_named_like_keyword.write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "$defs": {
+                            "futureKeyword": {"type": "string"},
+                        },
+                        "properties": {
+                            "futureKeyword": {
+                                "$ref": "#/$defs/futureKeyword",
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            validate_output_schema(property_named_like_keyword)
+
+            unsupported = root / "unsupported.schema.json"
+            unsupported.write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "properties": {
+                            "payload": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "futureKeyword": True,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as caught:
+                validate_output_schema(unsupported)
+
+            self.assertIn(
+                "$.properties.payload.items.futureKeyword",
+                str(caught.exception),
+            )
+
+    def test_ref_siblings_fail_before_freeze_and_pure_refs_are_valid(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "prompt.md"
+            schema = root / "schema.json"
+            template.write_text("# Prompt\n", encoding="utf-8")
+            schema_value = {
+                "type": "object",
+                "additionalProperties": False,
+                "$defs": {
+                    "nullableTimestamp": {
+                        "description": "Shared timestamp definition.",
+                        "type": ["string", "null"],
+                        "pattern": (
+                            r"^[0-9]{4}-[0-9]{2}-[0-9]{2}"
+                            r"T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                        ),
+                    },
+                },
+                "required": ["published_at"],
+                "properties": {
+                    "published_at": {
+                        "$ref": "#/$defs/nullableTimestamp",
+                        "description": "Codex rejects this $ref sibling.",
+                    },
+                },
+            }
+            schema.write_text(
+                json.dumps(schema_value),
+                encoding="utf-8",
+            )
+            catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        template,
+                        schema,
+                    ),
+                )
+            )
+            invalid_run = root / "invalid-run"
+            invalid_run.mkdir()
+
+            with self.assertRaisesRegex(
+                PromptResourceError,
+                (
+                    r"unsupported by Codex.*"
+                    r"\$\.properties\.published_at "
+                    r"\(\$ref must be the only keyword; "
+                    r"siblings: description\)"
+                ),
+            ):
+                catalog.freeze(
+                    invalid_run,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                )
+            self.assertFalse((invalid_run / "resources").exists())
+
+            del schema_value["properties"]["published_at"]["description"]
+            schema.write_text(
+                json.dumps(schema_value),
+                encoding="utf-8",
+            )
+            validate_output_schema(schema)
+            valid_run = root / "valid-run"
+            valid_run.mkdir()
+            frozen = catalog.freeze(
+                valid_run,
+                route_id="example",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+            validate_output_schema(
+                frozen.catalog["stage-one"].schema_path
+            )
 
     def test_context_is_injected_exactly_and_not_addressed_by_path(self) -> None:
         upstream = "# Research\n\nExact evidence with $(shell) and `code`.\n"
