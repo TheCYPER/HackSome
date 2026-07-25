@@ -435,3 +435,37 @@ Implemented and live-verified the four-role sol/xhigh Pitch pipeline with full P
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Reorganize HackSome by product stage
+
+**Date**: 2026-07-25
+**Task**: Reorganize HackSome by product stage
+**Branch**: `codex/reorganize-repository-by-stage`
+
+### Summary
+
+Moved HackSome into core, contracts, and Ideation/Build/Pitch stage boundaries; internalized Build ops, removed the tracked BuildFactory snapshot, preserved manual handoffs and compatibility shims, and verified the migration with full automated gates plus a real Docker/CUA Worker-to-Verifier PASS and resident Lead startup gate.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c519b64` | (see git log) |
+| `643d328` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

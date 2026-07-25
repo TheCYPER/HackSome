@@ -1,16 +1,35 @@
 # HackSome
 
-HackSome 是一个本地运行、以 Codex Session 为执行单元的黑客松 Idea
-工作流。当前有两条彼此独立、共享同一套 Harness 的路线：
+HackSome 是一个本地运行的黑客松工作流，生产代码统一位于 `src/hacksome/`。
+产品有三个明确阶段：Ideation→Build 由 operator 在共享 Approval 页面授权，
+Build→Pitch 仍由 operator 手工交接：
+
+```text
+Ideation ── IdeaToBuildHandoff JSON ──[人工批准，系统建 Team]──> Build
+Build ── Project + Idea Card + Challenge ──[人工调用]──> Pitch
+```
+
+| Stage | 实现与资源 | 测试 | 运行入口 |
+| --- | --- | --- | --- |
+| Ideation | `src/hacksome/stages/ideation/` | `tests/stages/ideation/` | `hacksome run ...` |
+| Build | `src/hacksome/stages/build/`、`ops/build/` | `tests/stages/build/` | `hacksome approve RUN`；或手工 `make -C ops/build init/up ...` |
+| Pitch | `src/hacksome/stages/pitch/` | `tests/stages/pitch/` | `hacksome pitch ...` |
+
+共享运行机制在 `src/hacksome/core/`，两种显式交接格式在
+`src/hacksome/contracts/`。阶段说明见
+[`Ideation`](src/hacksome/stages/ideation/README.md)、
+[`Build`](src/hacksome/stages/build/README.md) 和
+[`Pitch`](src/hacksome/stages/pitch/README.md)。
+
+Ideation 有两条共享同一套 Harness 的路线：
 
 - `useful`：寻找有真实需求与产品价值的 Idea；这是默认路线。
 - `creative`：寻找能在约 30 秒内让人惊奇、好玩、神秘并愿意转述，同时可以
-  用普通电脑或手机跑出真实软件 Demo 的 Idea；它保留所有候选的演化与淘汰
-  原因，并在唯一一次人工评审后结束。
+  用普通电脑或手机跑出真实软件 Demo 的 Idea；它保留候选的演化与淘汰原因，
+  并在唯一一次人工评审后结束。
 
-这里的 Harness 指控制器周围那层可复用基础设施：Codex 进程与超时、并发、
-Prompt/Schema 冻结、Hub 持久化、哈希绑定、日志、状态检查和失败处理。两条
-路线共享 Harness，但不强行共享“什么是好 Idea”的判断标准。
+这里的 Harness 指控制器周围的可复用基础设施：Codex 进程与超时、并发、
+Prompt/Schema 冻结、Hub 持久化、哈希绑定、日志、状态检查和失败处理。
 
 ## 安装
 
@@ -190,14 +209,14 @@ hacksome build-validate runs/<run-id>
 
 Approval ledger、outbox 和 receipt 默认位于
 `<runs-dir>/.hacksome/approvals/<run-id>/`；Build registry 与 Team root 默认位于
-`buildfactory/state/build-pool/`。两侧通过 fixed-argv、`shell=False` 的纯 JSON
+`ops/build/state/build-pool/`。两侧通过 fixed-argv、`shell=False` 的纯 JSON
 subprocess 边界通信。进程在 batch commit 或 Build response 后中断时，重复执行
 `build-reconcile` 会补齐 outbox/receipt，而不会创建第二个 Team。
 
 首次使用真实 Build runtime 前先确认 Docker/Compose、账户包和 Codex 登录：
 
 ```bash
-docker compose -f buildfactory/docker-compose.yml config --quiet
+make -C ops/build validate
 hacksome doctor
 ```
 
@@ -251,14 +270,26 @@ Creative 的最终 Build handoff 只包含：
 }
 ```
 
-其中两个 Markdown 字段有意对齐 BuildFactory 的 `TeamLayout.bootstrap()` 输入。
+其中两个 Markdown 字段有意对齐 Build Stage 的 `TeamLayout.bootstrap()` 输入。
 共享 Approval adapter 会先复核 `idea_card_sha256`，再把 exact handoff 交给
 Build registry。Team 身份绑定 `source_run_id + idea_card_id +
 idea_card_sha256`，不会只使用可能跨 run 重复的 `idea_card_id`。
 
 Idea 工作流到 Card 为止，Approval 是独立的 Build 资源决策。Build 侧可以选零张
 或多张卡；未选择不等于 Creative 质量 reject。Build Agent 也可以修改、继续或
-放弃初始 Card；本仓库不把 Build 忠实度、GitHub 发布或 Pitch 偷塞进 Idea 阶段。
+放弃初始 Card。Build 完成后，operator 仍需显式调用 Pitch；Pitch 不会扫描 Team
+state：
+
+```bash
+hacksome pitch \
+  --project /absolute/path/to/completed-project \
+  --idea-card /absolute/path/idea-card.md \
+  --challenge /absolute/path/challenge.md \
+  --output-root /absolute/path/to/pitch-output
+```
+
+本仓库不把 Build 忠实度、GitHub 发布或 Pitch 偷塞进 Idea 阶段；Approval 与
+Build 已连接，Build 到 Pitch 的人工边界仍然保留。
 
 ## 测试
 
@@ -270,5 +301,8 @@ Idea 工作流到 Card 为止，Approval 是独立的 Build 资源决策。Build
 .venv/bin/python -m compileall -q src tests
 CODEX_HOME=/private/tmp/hacksome-test-codex-home \
   .venv/bin/python -m unittest discover -s tests -v
+PYTHONPATH=src .venv/bin/python -m pytest tests/stages/build -q
+make -C ops/build validate
+node --check src/hacksome/stages/ideation/creative/review_ui/app.js
 git diff --check
 ```

@@ -1,1 +1,0 @@
-[provisioner] RETIRED 'listing-operator': container stopped, override regenerated (role files and registry history kept)

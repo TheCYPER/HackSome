@@ -19,7 +19,7 @@ Card 唯一授权、显式不可逆 close、默认两 active、FIFO queue。
 
 ### 1.1 Shared contract owner
 
-- [x] 新建 `src/hacksome/post_card/contracts.py`，实现 strict
+- [x] 新建 `src/hacksome/contracts/post_card/contracts.py`，实现 strict
       `PostCardCatalogV1` / candidate / exact five-field handoff decoder、canonical
       encoder 与 hash。
 - [x] 所有 mapping/list/string 都做 exact key、类型、边界与 duplicate 校验；不得让
@@ -45,9 +45,9 @@ Card 唯一授权、显式不可逆 close、默认两 active、FIFO queue。
 
 ### 1.3 Tests
 
-- [x] 新增 `tests/test_post_card_contracts.py`。
-- [x] 新增 `tests/test_post_card_useful.py` 与
-      `tests/test_post_card_creative.py`。
+- [x] 新增 `tests/contracts/test_post_card_contracts.py`。
+- [x] 新增 `tests/contracts/test_post_card_useful.py` 与
+      `tests/contracts/test_post_card_creative.py`。
 - [ ] 覆盖 stable order/hash、exact Card bytes、wrong route/raw state field、
       Creative handoff exact keys、Useful deterministic handoff、zero-card、source
       tamper。
@@ -62,7 +62,7 @@ Rollback Point 1：此时只有只读 projection/fixtures；可移除未接线�
 
 ### 2.1 Store and ledger
 
-- [x] 新建 `src/hacksome/build_approval/contracts.py`，集中解析 authorize、close、
+- [x] 新建 `src/hacksome/stages/build/approval/contracts.py`，集中解析 authorize、close、
       snapshot、receipt 与 safe error DTO。
 - [x] 新建 `store.py`，实现 control-root resolution、cross-process lock、immutable
       mutation file、atomic projection、sequence 与 offline validate。
@@ -91,10 +91,10 @@ Rollback Point 1：此时只有只读 projection/fixtures；可移除未接线�
 
 ### 2.3 Tests
 
-- [x] 新增 `tests/test_build_approval_store.py`：
+- [x] 新增 `tests/stages/build/approval/test_build_approval_store.py`：
       1/10/11、duplicate、multi-batch、close/reclose、authorize-after-close、
       authorize-close race、stale、idempotency conflict、projection rebuild。
-- [ ] 新增 `tests/test_build_approval_reconcile.py`：
+- [ ] 新增 `tests/stages/build/approval/test_build_approval_reconcile.py`：
       batch committed/outbox missing、adapter response loss、partial error、same Team
       receipt replay、restart。
 - [ ] 断言 source run tree/hash/event/state 在全部 mutation 后不变。
@@ -151,9 +151,9 @@ Rollback Point 2：可以禁用 Approval CLI；control root 保留为前向兼�
 
 ### 3.4 Tests and browser QA
 
-- [x] 新增 `tests/test_build_approval_server.py` 覆盖 auth/security/fixed route/error
+- [x] 新增 `tests/stages/build/approval/test_build_approval_server.py` 覆盖 auth/security/fixed route/error
       mapping/server restart。
-- [x] 新增 `tests/test_build_approval_cli.py` 覆盖 route-neutral lifecycle 和
+- [x] 新增 `tests/stages/build/approval/test_build_approval_cli.py` 覆盖 route-neutral lifecycle 和
       `--no-open`。
 - [x] 静态测试断言无 `innerHTML`、远程 asset、任意 URL/path endpoint。
 - [ ] 真 Browser QA：single/multi/select-next-10/clear/cancel/confirm、
@@ -171,7 +171,7 @@ Rollback Point 3：关闭新 server/CLI 即停止新 authorization；已 commit 
 
 ### 4.1 Decoder and identity
 
-- [x] 新建 `buildfactory/orchestration/handoff.py`，作为 outer envelope 与 exact
+- [x] 新建 `src/hacksome/stages/build/control/handoff.py`，作为 outer envelope 与 exact
       handoff 的唯一 strict decoder。
 - [x] 在任何 state/root 写入前验证 schema、key set、supported version、non-empty、
       UTF-8 Card SHA 与 source identity。
@@ -190,8 +190,8 @@ Rollback Point 3：关闭新 server/CLI 即停止新 authorization；已 commit 
 
 ### 4.3 Tests
 
-- [x] 新增 `buildfactory/orchestration/tests/test_handoff.py`。
-- [x] 新增 `buildfactory/orchestration/tests/test_team_registry.py`。
+- [x] 新增 `tests/stages/build/control/test_handoff.py`。
+- [x] 新增 `tests/stages/build/control/test_team_registry.py`。
 - [ ] 覆盖 malformed/extra key/SHA mismatch、exact replay、changed SHA conflict、
       cross-run same Card ID、truncated ID collision、root-before-row/row-before-root
       recovery 与 partial reference。
@@ -278,15 +278,14 @@ response 丢失后可重放，Team 数、ID、enqueue sequence 与 reference byt
 - [x] BuildFactory tests/config：
 
   ```bash
-  buildfactory/.venv-cua/bin/python -m pytest \
-    buildfactory/agent/tests buildfactory/orchestration/tests
-  docker compose -f buildfactory/docker-compose.yml config
+  PYTHONPATH=src .venv/bin/python -m pytest tests/stages/build -q
+  docker compose -f ops/build/docker-compose.yml config
   ```
 
 - [x] Static UI/diff checks：
 
   ```bash
-  node --check src/hacksome/build_approval_ui/app.js
+  node --check src/hacksome/stages/build/approval_ui/app.js
   git diff --check
   ```
 
@@ -333,7 +332,7 @@ run mutation、无 duplicate Team。
 - Root：ruff、mypy（37 source files）、compileall、Node syntax 与
   `git diff --check` 通过；`unittest discover` 285 tests 全通过。
 - BuildFactory：新 registry/pool 文件定向 ruff、compileall、Compose config 通过；
-  `pytest agent/tests orchestration/tests` 410 tests 全通过。
+  原 BuildFactory `agent/tests` 与 `orchestration/tests` 合计 410 tests 全通过。
 - 新增并通过 source-open 后篡改、mutation→outbox crash、subprocess
   unavailable/timeout/invalid JSON/output cap、receipt mismatch、response loss、
   partial batch、start response loss、partial stop/restart、resume-before-pause 与

@@ -8,7 +8,18 @@ version = "0.1.0"
 description = "A local Codex orchestrator for evidence-backed hackathon ideas"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["jsonschema>=4.23,<5"]
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.11",
+  "pytest>=8.3,<9",
+  "ruff>=0.9,<1",
+]
 
 [project.scripts]
 hacksome = "hacksome.cli:main"
@@ -22,12 +33,17 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 hacksome = [
-  "prompts/*.md",
-  "prompts/creative/*.md",
-  "build_approval_ui/*",
-  "prompts/pitch/*.md",
-  "review_ui/*",
-  "schemas/*.json",
-  "schemas/creative/*.json",
-  "schemas/pitch/*.json",
+  "stages/ideation/useful/prompts/*.md",
+  "stages/ideation/useful/schemas/*.json",
+  "stages/ideation/creative/prompts/*.md",
+  "stages/ideation/creative/schemas/*.json",
+  "stages/ideation/creative/review_ui/*",
+  "stages/pitch/prompts/*.md",
+  "stages/pitch/schemas/*.json",
+  "stages/build/approval_ui/*",
+  "stages/build/assets/agents/*.yaml",
+  "stages/build/assets/agents/assets/*.md",
+  "stages/build/assets/agents/ephemeral/*.yaml",
+  "stages/build/assets/agents/mcp/*.json",
+  "stages/build/assets/scripts/*.sh",
 ]

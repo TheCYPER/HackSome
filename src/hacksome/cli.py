@@ -1,4 +1,4 @@
-"""Command-line interface for the local Idea-only workflow."""
+"""Command-line interface for the local HackSome stage workflow."""
 
 from __future__ import annotations
 
@@ -13,52 +13,52 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from hacksome.codex import CodexRunner
-from hacksome.build_approval.build_adapter import (
+from hacksome.core.codex import CodexRunner
+from hacksome.core.config import CodexConfig
+from hacksome.core.hub import RunHub
+from hacksome.core.models import CodexDoctorResult
+from hacksome.core.state import StateError
+from hacksome.contracts.post_card.catalog import (
+    PostCardCatalogError,
+    project_post_card_catalog,
+)
+from hacksome.stages.build.approval.build_adapter import (
     SubprocessBuildControlAdapter,
 )
-from hacksome.build_approval.contracts import ApprovalError
-from hacksome.build_approval.server import (
+from hacksome.stages.build.approval.contracts import ApprovalError
+from hacksome.stages.build.approval.server import (
     ApprovalServerConfig,
     ApprovalServerError,
     BuildApprovalServer,
 )
-from hacksome.build_approval.service import ApprovalService
-from hacksome.config import CodexConfig
-from hacksome.creative.benchmark import (
+from hacksome.stages.build.approval.service import ApprovalService
+from hacksome.stages.ideation.creative.benchmark import (
     BenchmarkManifest,
     BlindCaseMap,
     BlindIdeaBinding,
     BlindReviewPacket,
     import_worksheet,
 )
-from hacksome.creative.contracts import CreativeWorkflowSettings
-from hacksome.creative.finalize import CreativeFeedbackError
-from hacksome.creative.review_backend import RunReviewBackend
-from hacksome.creative.review_server import (
+from hacksome.stages.ideation.creative.contracts import CreativeWorkflowSettings
+from hacksome.stages.ideation.creative.finalize import CreativeFeedbackError
+from hacksome.stages.ideation.creative.review_backend import RunReviewBackend
+from hacksome.stages.ideation.creative.review_server import (
     CreativeReviewServer,
     ReviewServerConfig,
     ReviewServerError,
 )
-from hacksome.creative.workflow import (
+from hacksome.stages.ideation.creative.workflow import (
     CreativeIdeaWorkflow,
     CreativeRunOutcome,
     CreativeWorkflowError,
 )
-from hacksome.hub import RunHub
-from hacksome.models import CodexDoctorResult
-from hacksome.pitch import (
+from hacksome.stages.pitch import (
     PITCH_MODEL,
     PITCH_REASONING_EFFORT,
     PitchWorkflow,
     PitchWorkflowError,
 )
-from hacksome.post_card.catalog import (
-    PostCardCatalogError,
-    project_post_card_catalog,
-)
-from hacksome.state import StateError
-from hacksome.workflow import (
+from hacksome.stages.ideation.useful.workflow import (
     UsefulIdeaWorkflow,
     WorkflowError,
     WorkflowSettings,
@@ -277,7 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument(
         "--build-root",
         type=Path,
-        default=Path("buildfactory/state/build-pool"),
+        default=Path("ops/build/state/build-pool"),
     )
     approve.add_argument(
         "--build-python",
@@ -304,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--build-root",
             type=Path,
-            default=Path("buildfactory/state/build-pool"),
+            default=Path("ops/build/state/build-pool"),
         )
         command.add_argument(
             "--build-python",

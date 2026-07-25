@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "Preserve the Useful ideation route's absolute-gate, persistence, and manual-handoff contracts during package moves."}
+{"file": ".trellis/spec/backend/creative-agent-workflow-contracts.md", "reason": "Preserve Creative route behavior, frozen-run compatibility, resources, and manual Build handoff."}
+{"file": ".trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Preserve the active Build team runtime, FIFO lifecycle, session ownership, timeouts, and validation gates."}
+{"file": ".trellis/spec/backend/pitch-workflow-contracts.md", "reason": "Preserve Pitch's independent four-role workflow, browser requirements, and explicit CLI inputs."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Preserve review UI structure and interaction conventions while relocating its assets."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Preserve active-card, local-draft, and persisted-review state boundaries in the review UI."}
+{"file": ".trellis/tasks/07-25-repository-stage-reorganization/research/current-repository-inventory.md", "reason": "Use the verified entrypoints, dependency closure, resource boundary, and secret exclusions as the deletion/migration boundary."}

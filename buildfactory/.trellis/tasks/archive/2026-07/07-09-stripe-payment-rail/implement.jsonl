@@ -1,3 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/account-package-contracts.md", "reason": "secrets.env key naming + accounts/README.md section contract for the new STRIPE_SECRET_KEY slot"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "per-role agents/mcp/<role>.json conventions for adding the stripe server fleet-wide"}

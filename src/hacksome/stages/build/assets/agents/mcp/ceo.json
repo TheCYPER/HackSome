@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "cua-local": {
+      "command": "python3",
+      "args": ["/opt/foundagent/cua_mcp.py"],
+      "env": {"CUA_HOST_SERVER": "1"}
+    },
+    "dataforseo": {
+      "command": "dataforseo-mcp-server",
+      "env": {
+        "DATAFORSEO_USERNAME": "${DATAFORSEO_USERNAME}",
+        "DATAFORSEO_PASSWORD": "${DATAFORSEO_PASSWORD}",
+        "ENABLED_MODULES": "SERP,KEYWORDS_DATA,DATAFORSEO_LABS,BACKLINKS"
+      }
+    },
+    "gsc": {
+      "command": "mcp-gsc",
+      "env": {
+        "GSC_CREDENTIALS_PATH": "${GOOGLE_APPLICATION_CREDENTIALS:-/account/google-sa.json}",
+        "GSC_SKIP_OAUTH": "true"
+      }
+    },
+    "ga4": {
+      "command": "google-analytics-mcp",
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS:-/account/google-sa.json}"
+      }
+    },
+    "playwright": {
+      "command": "/opt/hacksome/hacksome/stages/build/assets/scripts/browser_mcp.sh"
+    },
+    "stripe": {
+      "command": "stripe-mcp",
+      "env": {
+        "STRIPE_SECRET_KEY": "${STRIPE_SECRET_KEY:-}"
+      }
+    }
+  }
+}

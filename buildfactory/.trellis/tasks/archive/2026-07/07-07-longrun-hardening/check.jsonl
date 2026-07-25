@@ -1,2 +1,0 @@
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "verify wake semantics unchanged; telemetry write is fire-and-forget (never-brick)"}
-{"file": ".trellis/spec/backend/role-lifecycle-contracts.md", "reason": "verify anchor anti-drift test extended to cover restart policy in rendered role services"}

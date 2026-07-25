@@ -60,8 +60,9 @@ decoder 拒绝缺字段、额外字段、非 UTF-8/NUL、非 canonical SHA 以�
 不一致。Catalog 保留 route 权威顺序，ordinal 必须从 0 连续递增；catalog hash 是
 去掉自身 hash 字段后的 canonical JSON SHA-256。zero-card catalog 合法。
 
-测试入口：`tests/test_post_card_contracts.py`、
-`tests/test_post_card_useful.py`、`tests/test_post_card_creative.py`。
+测试入口：`tests/contracts/test_post_card_contracts.py`、
+`tests/contracts/test_post_card_useful.py`、
+`tests/contracts/test_post_card_creative.py`。
 
 ## 2. Approval ledger 与 source 完整性
 
@@ -94,8 +95,8 @@ HTTP authorize 的成功边界是 mutation + outbox intent 已 durable；它不�
 timeout、invalid JSON、receipt mismatch 与 partial batch error 保留为逐 Card
 delivery 状态，由后台或显式 reconcile 重试。
 
-测试入口：`tests/test_build_approval_store.py`、
-`tests/test_build_approval_integration.py`。
+测试入口：`tests/stages/build/approval/test_build_approval_store.py`、
+`tests/stages/build/approval/test_build_approval_integration.py`。
 
 ## 3. 本机 HTTP 与 UI
 
@@ -115,16 +116,17 @@ UI 只能用 `textContent`/DOM node 渲染不可信内容。批次上限、不�
 active slots、FIFO queue、partial error/retry 都必须来自真实 snapshot，不得做
 装饰性 mock。
 
-测试入口：`tests/test_build_approval_server.py`、
-`tests/test_build_approval_cli.py`；静态检查还需运行
-`node --check src/hacksome/build_approval_ui/app.js`。
+测试入口：`tests/stages/build/approval/test_build_approval_server.py`、
+`tests/stages/build/approval/test_build_approval_cli.py`；静态检查还需运行
+`node --check src/hacksome/stages/build/approval_ui/app.js`。
 
 ## 4. Build process boundary
 
 `SubprocessBuildControlAdapter` 只允许 fixed argv、`shell=False`、stdin strict
-JSON、minimal environment、bounded timeout/output。root 侧不得 import
-`buildfactory` 私有类型；Build 侧也不得 import `hacksome`。authorize receipt 与
-list/reconcile status 都由各自 decoder allowlist 后才进入 Approval projection。
+JSON、minimal environment、bounded timeout/output。Approval package 不得 import
+Build control 私有类型；Build control 也不得 import Approval 或 Ideation 私有类型。
+authorize receipt 与 list/reconcile status 都由各自 decoder allowlist 后才进入
+Approval projection。
 
 Browser API 永远不能提交 filesystem path、executable、Compose service、环境变量
 或任意命令。这些只能由 CLI 的可信启动参数提供。

@@ -1,6 +1,0 @@
-[company-hub] ready root=/state port=8910
-[verifier-manager] ready company=department-specs-e2e-20260719 max=3
-[department-provisioner] ready company=department-specs-e2e-20260719
-[resident_loadout] builder: skills=['company-state', 'company-methods', 'manage-notes', 'manage-goals', 'department-messaging', 'challenge-thesis', 'integrate-new-information', 'trace-causal-chain'] hooks_merged=False -> /home/kasm-user/.claude
-[agent_loop] boot key=builder provider=codex charter=/opt/foundagent-orch/agents/assets/departments/builder-charter.md mcp=/opt/foundagent-orch/agents/departments/../mcp/builder.json model=gpt-5.6-sol effort=xhigh objective=hub inbox=hub session=fresh idle=proactive strategic=false
-[agent_loop:builder] start heartbeat=900s session=fresh-per-wake

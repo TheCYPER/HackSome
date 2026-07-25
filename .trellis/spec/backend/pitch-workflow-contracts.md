@@ -1,13 +1,13 @@
 # Pitch 工作流合同
 
 > Building 后独立运行的 browser-native Pitch pipeline。实现位于
-> `src/hacksome/pitch/`，入口为 `hacksome pitch`。
+> `src/hacksome/stages/pitch/`，入口为 `hacksome pitch`。
 
 ## 1. Scope / Trigger 与入口
 
 Trigger：Building 已有一个完成到可 Pitch 的 Project，operator 显式要求从当时的
 完整 Project 副本生成一个 HTML deck 和对应讲稿。Pitch controller 不负责
-BuildFactory freeze/resume，也不生成 Project 摘要。
+Build Stage freeze/resume，也不生成 Project 摘要。
 
 ### Signatures
 
@@ -148,10 +148,10 @@ pitch-script.md
 
 ## 8. Tests Required
 
-- `tests/test_pitch_cli.py`：显式入口、输入参数、无 model override。
-- `tests/test_pitch_prompting.py`：四角色 catalog、snapshot boundary、Draft 2020-12
+- `tests/stages/pitch/test_pitch_cli.py`：显式入口、输入参数、无 model override。
+- `tests/stages/pitch/test_pitch_prompting.py`：四角色 catalog、snapshot boundary、Draft 2020-12
   validity，以及所有 Codex `const`/`enum` 节点显式声明 `type`。
-- `tests/test_pitch_workflow.py`：snapshot 隔离与 symlink 保真/逃逸拒绝、顺序、revision/resume session、
+- `tests/stages/pitch/test_pitch_workflow.py`：snapshot 隔离与 symlink 保真/逃逸拒绝、顺序、revision/resume session、
   fail-closed、实际 argv、outline/Review/HTML/script contracts、真实 Chromium
   正向与 broken-navigation 负向 smoke、自动发布。
 

@@ -1,2 +1,0 @@
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "检查 account-browser 没破坏五角色契约（/account ro、缺文件合法降级、proxy 插槽语义）"}
-{"file": ".trellis/tasks/07-03-social-rail/design.md", "reason": "对照 D1-D4 决策核查：双浏览器分离不变式（research playwright 无 cookies/proxy）、缺 cookies/缺 proxy 合法降级、cookies 不落 git"}

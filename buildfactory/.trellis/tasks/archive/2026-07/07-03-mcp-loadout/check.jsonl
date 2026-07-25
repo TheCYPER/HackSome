@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/07-03-mcp-loadout/prd.md", "reason": "验收标准五条（per-role argv 单测 / 真凭证 e2e / overlay 回归 / accounts README / Playwright 对比）"}
-{"file": ".trellis/tasks/07-03-mcp-loadout/design.md", "reason": "D1-D8 决策与测试设计——检查实现是否偏离（落点、优先级、恒加 strict、${VAR} 不写死）"}
-{"file": ".trellis/spec/backend/loadout-overlay-contracts.md", "reason": "AC3：mcp off/替换路径语义不得被 per-role 基线破坏"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "装配链改动后 spec 需同步更新的对照基线"}

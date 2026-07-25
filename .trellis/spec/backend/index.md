@@ -17,6 +17,8 @@
 | [Creative Idea 工作流合同](./creative-agent-workflow-contracts.md) | Creative C0–C7、software-first Demo gate、Idea Memory、C6 唯一人审与确定性发布 | Active |
 | [Post-card 与 Build Approval 合同](./post-card-build-approval-contracts.md) | 跨路线 catalog、multi-batch ledger/outbox、本机 Dispatch Board 与 Build JSON 边界 | Active |
 | [Hackathon Team Runtime 合同](./hackathon-team-runtime-contracts.md) | Build 阶段的 Goal、Worker 连续性、超时清理与恢复 | Active |
+| [Post-card 与 Build Approval 合同](./post-card-build-approval-contracts.md) | Final Idea Card、资源授权、handoff outbox 与本机 Dispatch Board | Active |
+| [Team Registry 与全局 Pool 合同](./team-registry-pool-contracts.md) | Build Team identity、registry-before-side-effect、双 slot FIFO 与 pause/resume | Active |
 | [Pitch 工作流合同](./pitch-workflow-contracts.md) | Project snapshot、四角色串行交接、Chromium 检查与自动发布 | Active |
 
 新规范应记录代码中的实际合同，而不是愿望；必须包含签名、验证/错误、正反例和

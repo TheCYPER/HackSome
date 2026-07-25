@@ -38,7 +38,7 @@ Approval 可以批量授权多张 Card；确认后，系统立即创建对应 Te
 - BuildFactory 已真实跑通一个 Team 的
   `Lead → Worker → fresh Verifier → Lead` 循环。当前 bootstrap 只接收两份
   Markdown 并拒绝覆盖已有 reference，不校验跨 run Card identity 或 SHA
-  （`buildfactory/orchestration/team_store.py:69-106,148-158`）。
+  （`src/hacksome/stages/build/control/team_store.py:69-106,148-158`）。
 - 现有 Build 规划已经确定：每张 approved Card 对应一个隔离 Team；默认最多两个
   active Team；其余 selected Team FIFO 排队；未选 Card 不是质量 reject
   （`.trellis/tasks/07-23-autonomous-build-teams/prd.md:35-69,147-159`）。
@@ -128,7 +128,7 @@ Approval 可以批量授权多张 Card；确认后，系统立即创建对应 Te
 ### R4 — Verified handoff and Build-side ingestion
 
 - Approval 后端只向 Build 侧提交规范化的纯 JSON handoff，不直接 import
-  `buildfactory/orchestration` 私有模块。
+  `hacksome.stages.build.control` 私有模块。
 - handoff v1 保持 Creative 已实现的精确五字段：
   `source_run_id`、`idea_card_id`、`idea_card_sha256`、
   `challenge_markdown`、`initial_idea_card_markdown`。`route_id` 与版本只放在

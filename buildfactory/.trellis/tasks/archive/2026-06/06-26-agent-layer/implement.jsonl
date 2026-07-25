@@ -1,3 +1,0 @@
-{"file": ".trellis/tasks/06-26-vm-layer/design.md", "reason": "VM 层地基接口与挂载点（.claude transcript 卷 / secrets.env env-file / proxy / computer-server:8000）；Agent 层 loadout/runner/broker 重构必须对齐这些既有契约、不破坏"}
-{"file": ".trellis/tasks/06-26-foundagent-v6/research/infra-research.md", "reason": "provider/凭证选型依据（订阅 vs API key、2026-06 程序化用量新政）；凭证 seam 默认订阅/可切 API key 的设计来源"}
-{"file": ".trellis/tasks/06-26-vm-layer/research/computer-use-architecture.md", "reason": "cua 薄 MCP 与 computer-server 架构（CUA_HOST_SERVER 容器内模式）；runner 在容器内驱动 computer-use 的依据"}

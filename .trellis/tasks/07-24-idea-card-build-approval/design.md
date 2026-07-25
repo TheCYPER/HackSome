@@ -66,7 +66,8 @@ completed Useful run                  completed Creative run
 | `PoolReconciler` | bounded slots and lifecycle side effects | automatic winner/rotation |
 | Browser UI | display, local draft, explicit operator mutations | arbitrary filesystem/argv/Team Hub access |
 
-`src/hacksome` 不 import `buildfactory` 私有 Python 类型。两侧只交换严格 JSON。
+Approval package 不 import Build control 私有 Python 类型；Build control 不
+import Approval 或 Ideation 私有类型。两侧只交换严格 JSON。
 Browser 永远不连接 Team Hub，也不能提交路径、Compose service、环境变量或任意命令。
 
 ## 3. 代码所有权与预期文件
@@ -75,25 +76,25 @@ Browser 永远不连接 Team Hub，也不能提交路径、Compose service、环
 review domain：
 
 ```text
-src/hacksome/post_card/
+src/hacksome/contracts/post_card/
   contracts.py              # Catalog/Card/Handoff 的唯一 decoder/encoder
   catalog.py                # provider registry、catalog hash
   useful_adapter.py         # Useful route-owned projection
   creative_adapter.py       # Creative route-owned projection
 
-src/hacksome/build_approval/
+src/hacksome/stages/build/approval/
   contracts.py              # HTTP mutation/status DTO
   store.py                  # immutable records、projection、lock、recovery
   service.py                # authorize/close/reconcile use cases
   build_adapter.py          # protocol + production subprocess adapter
   server.py                 # loopback HTTP/security/lifecycle
 
-src/hacksome/build_approval_ui/
+src/hacksome/stages/build/approval_ui/
   index.html
   styles.css
   app.js
 
-buildfactory/orchestration/
+src/hacksome/stages/build/control/
   handoff.py                # exact Build-side handoff/envelope decoder
   team_registry.py          # stable identity、registry row、enqueue sequence
   team_pool.py              # slot accounting、FIFO、reconcile
@@ -101,7 +102,7 @@ buildfactory/orchestration/
 ```
 
 现有 `src/hacksome/cli.py` 只做参数 dispatch 与人类可读输出。现有
-`buildfactory/orchestration/team_store.py` 继续拥有单 Team reference 初始化，
+`src/hacksome/stages/build/control/team_store.py` 继续拥有单 Team reference 初始化，
 由 registry 层在验证 identity/handoff 后调用。
 
 ## 4. Route-neutral catalog contract
@@ -321,7 +322,7 @@ Build-side decoder 是该 JSON 的唯一 owner，并在任何 registry/root 写�
 Production adapter 使用固定 executable/module/command allowlist，通过 stdin 写 JSON：
 
 ```text
-<build-python> -m buildfactory.orchestration.team_operator authorize
+<build-python> -m hacksome.stages.build.control.team_operator authorize
   --build-root <trusted-path> --json-stdin
 ```
 
@@ -621,7 +622,7 @@ team_operator resume    --build-root ... TEAM_ID --request-id ...
   `status/validate`。
 - 首版仅支持 completed run schema v2；不自动迁移 Useful run schema v1。route
   contract 则显式支持 Useful v1 与 Creative v1/v2。
-- 现有手工 `buildfactory make init/up` 可继续使用，但不会自动进入新 registry。
+- 现有手工 `make -C ops/build init/up` 可继续使用，但不会自动进入新 registry。
 - 当前分支已以 main-first 的普通 merge 吸收上游 `main`，Draft PR 直接以
   `west0nG/HackSome:main` 为 base；不得 rebase/force-push 改写已经发布的分支历史。
 

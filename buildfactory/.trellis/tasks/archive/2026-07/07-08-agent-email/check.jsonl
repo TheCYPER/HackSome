@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/07-08-agent-email/prd.md", "reason": "验收对照：AC1-AC6 与决策 D1-D7 是检查的最终标准"}
-{"file": ".trellis/tasks/07-08-agent-email/design.md", "reason": "实现与设计一致性检查：单通道/peek/双 skill/模块边界"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "检查 adapter/ingest 契约未被破坏（IME 五字段、adapter 哑巴原则）"}
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "检查 peek 只读语义：游标不动、poll_one 行为不变"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "通用质量门：测试/命名/错误处理规范"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "poller 失败重试/幂等路径的错误处理规范"}

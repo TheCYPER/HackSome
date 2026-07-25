@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/resident-agent-contracts.md", "reason": "agent_loop wake/poll contract — telemetry hook lands inside wake(); must not alter wake semantics"}
-{"file": ".trellis/spec/backend/agent-execution-contracts.md", "reason": "headless claude stream-json result parsing — where cost_usd comes from (RunResult), never-brick stance"}
-{"file": ".trellis/spec/backend/peripheral-layer-contracts.md", "reason": "FileInbox JSONL append pattern and hub message flow — audit log should follow the same append-only style"}
-{"file": ".trellis/spec/backend/role-lifecycle-contracts.md", "reason": "provisioner renders new role services from compose x-agent anchor + anchor anti-drift test — restart policy must survive rendering"}

@@ -2,6 +2,6 @@
 {"file": ".trellis/spec/backend/creative-agent-workflow-contracts.md", "reason": "Verify Creative completed-run finalization and exact handoff bytes/keys remain unchanged."}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check every cross-layer field has one decoder/projection owner and errors/replays preserve identity end to end."}
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check shared abstractions reuse real patterns while route meanings and domain owners remain separate."}
-{"file": "buildfactory/.trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Check pool/operator changes preserve single-Team runtime, Agent/session isolation, and no automatic completion."}
+{"file": ".trellis/spec/backend/hackathon-team-runtime-contracts.md", "reason": "Check pool/operator changes preserve single-Team runtime, Agent/session isolation, and no automatic completion."}
 {"file": ".trellis/tasks/07-24-idea-card-build-approval/research/route-neutral-post-card-contract.md", "reason": "Audit adapter discovery authority, exact Card/handoff identity, and route-neutral compatibility against the code-backed findings."}
 {"file": ".trellis/tasks/07-24-idea-card-build-approval/research/approval-build-gap-audit.md", "reason": "Audit multi-batch Approval, idempotency, security, crash recovery, queue observability, and real joined-E2E coverage against all identified gaps."}
