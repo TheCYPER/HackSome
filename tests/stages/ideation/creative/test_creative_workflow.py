@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from hacksome.core.config import CodexConfig
@@ -22,6 +23,8 @@ from hacksome.stages.ideation.creative.artifacts import (
     SOFTWARE_DEMO_REASON_BY_DIMENSION,
 )
 from hacksome.stages.ideation.creative.contracts import (
+    C1W_CULTURAL_SIGNAL_SCAN,
+    C3_CONCEPT_SYNTHESIZE,
     C5W_NOVELTY_SCAN,
     CreativeWorkflowSettings,
     DEFAULT_TERRITORY_LENSES,
@@ -33,19 +36,26 @@ from hacksome.stages.ideation.creative.memory import (
     MemoryRecord,
 )
 from hacksome.stages.ideation.creative.workflow import (
+    C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION,
     CreativeIdeaWorkflow,
     CreativeWorkflowError,
+    LEGACY_SYNTHESIS_LENSES,
     SYNTHESIS_LENSES,
+    _synthesis_assignments_for_template_version,
 )
 from hacksome.core.models import CodexLogs, CodexResult, CodexRunStatus, CodexTask
+from hacksome.core.prompting import PromptCatalog, PromptSpec
 from hacksome.core.routes import inspect_run, validate_run
-from hacksome.core.state import atomic_write_json, sha256_json, sha256_text
+from hacksome.core.state import (
+    atomic_write_json,
+    atomic_write_text,
+    sha256_json,
+    sha256_text,
+)
 
 
 def _markdown(title: str, headings: tuple[str, ...], value: str) -> str:
-    sections = "\n\n".join(
-        f"## {heading}\n\n{value}" for heading in headings
-    )
+    sections = "\n\n".join(f"## {heading}\n\n{value}" for heading in headings)
     return f"# {title}\n\n{sections}\n"
 
 
@@ -54,6 +64,7 @@ def _concept_markdown(
     *,
     repaired: bool = False,
     parent_atom_ref: str | None = None,
+    product_grammar_id: str | None = None,
 ) -> str:
     atom_ref = parent_atom_ref or f"creative-atom-t{slot:02d}-01"
     values = {
@@ -81,6 +92,12 @@ def _concept_markdown(
         ),
         "Why It Is Unexpected Yet Legible": (
             "The same action returns with one understandable rule changed."
+            + (
+                "\n\nRecognizable product grammar: "
+                f"{product_grammar_id} — the assigned loop changes the next action."
+                if product_grammar_id is not None
+                else ""
+            )
         ),
         "Minimum Hackathon Demo": (
             "Run two browser tabs and a local WebSocket server on one laptop; "
@@ -165,9 +182,7 @@ def _software_demo_review(
                 "dimension": dimension,
                 "verdict": "fail" if failed else "pass",
                 "reason_code": (
-                    SOFTWARE_DEMO_REASON_BY_DIMENSION[dimension]
-                    if failed
-                    else None
+                    SOFTWARE_DEMO_REASON_BY_DIMENSION[dimension] if failed else None
                 ),
                 "evidence": (
                     "The exact Concept makes this dependency a hard core."
@@ -266,11 +281,13 @@ class CreativeScriptedRunner:
         hook_mode: str = "pass",
         software_demo_mode: str = "pass",
         memory_ref: dict[str, str] | None = None,
+        signal_mode: str = "empty",
     ) -> None:
         self.novelty_failure = novelty_failure
         self.hook_mode = hook_mode
         self.software_demo_mode = software_demo_mode
         self.memory_ref = memory_ref
+        self.signal_mode = signal_mode
         self.tasks: list[CodexTask] = []
         self._tasks_by_id: dict[str, CodexTask] = {}
         self.completion_order: list[str] = []
@@ -282,10 +299,14 @@ class CreativeScriptedRunner:
             await asyncio.sleep(0.02)
         if (
             self.novelty_failure
-            and task.task_id
-            == "creative-c5w-novelty-creative-concept-s01-01-r001"
+            and task.task_id == "creative-c5w-novelty-creative-concept-s01-01-r001"
         ):
             raise RuntimeError("novelty search unavailable")
+        if (
+            self.signal_mode == "failed"
+            and task.task_id == "creative-c1w-cultural-signal-scan-01"
+        ):
+            raise RuntimeError("cultural scan unavailable")
 
         output = self._output(task.task_id)
         self.completion_order.append(task.task_id)
@@ -343,6 +364,75 @@ class CreativeScriptedRunner:
                     "Aim for a legible surprise without hidden labor.",
                 )
             }
+        if task_id == "creative-c1w-cultural-signal-scan-01":
+            if self.signal_mode == "partial":
+                window = json.loads(_prompt_block(task.prompt, "SCAN_WINDOW"))
+                return {
+                    "coverage": {
+                        "query_families": ["public participation formats"],
+                        "platforms_attempted": [
+                            {
+                                "name": "Example Network",
+                                "kind": "social",
+                            }
+                        ],
+                        "limitations": ["One public platform was inaccessible."],
+                    },
+                    "signals": [
+                        {
+                            "kind": "meme",
+                            "creative_role": "inspire",
+                            "label": "Surface phrase Zorbix",
+                            "neutral_summary": (
+                                "People publicly mutate a compact format."
+                            ),
+                            "abstract_pattern": (
+                                "A participant makes one choice and receives "
+                                "a remixable response."
+                            ),
+                            "creative_tension": (
+                                "Individual control conflicts with collective mutation."
+                            ),
+                            "participation_shape": (
+                                "Create, hand off, alter, and replay."
+                            ),
+                            "surface_markers_to_avoid": ["#Zorbix"],
+                            "safety_flags": ["none"],
+                            "confidence": "medium",
+                            "sources": [
+                                {
+                                    "title": "Public source title",
+                                    "url": ("https://example.test/signals/zorbix"),
+                                    "publisher": "Example publisher",
+                                    "source_kind": "primary_post",
+                                    "platform": {
+                                        "name": "Example Network",
+                                        "kind": "social",
+                                    },
+                                    "published_at": window["as_of_utc"],
+                                    "observed_at": None,
+                                    "time_precision": "minute",
+                                    "locale": "en",
+                                    "evidence_summary": (
+                                        "A public source shows repeat participation."
+                                    ),
+                                }
+                            ],
+                        }
+                    ],
+                    "no_signal_reason": None,
+                }
+            return {
+                "coverage": {
+                    "query_families": ["public participation formats"],
+                    "platforms_attempted": [],
+                    "limitations": [],
+                },
+                "signals": [],
+                "no_signal_reason": (
+                    "No responsibly supported recent signal was found."
+                ),
+            }
         if task_id.startswith("creative-c2-territory-"):
             lens = _prompt_block(task.prompt, "TERRITORY_LENS")
             slot = DEFAULT_TERRITORY_LENSES.index(lens) + 1
@@ -366,9 +456,17 @@ class CreativeScriptedRunner:
         if task_id.startswith("creative-c3-synthesis-"):
             lens = _prompt_block(task.prompt, "SYNTHESIS_LENS")
             lineage = _atom_lineage_from_prompt(task.prompt)
-            atom_ref, territory_ref = lineage[
-                SYNTHESIS_LENSES.index(lens) % len(lineage)
-            ]
+            product_grammar_id: str | None = None
+            try:
+                assignment = json.loads(lens)
+            except json.JSONDecodeError:
+                lens_index = LEGACY_SYNTHESIS_LENSES.index(lens)
+            else:
+                product_grammar_id = assignment["assigned_product_grammar_id"]
+                lens_index = tuple(
+                    grammar_id for grammar_id, _ in SYNTHESIS_LENSES
+                ).index(product_grammar_id)
+            atom_ref, territory_ref = lineage[lens_index % len(lineage)]
             atom_match = re.fullmatch(
                 r"creative-atom-t(?P<slot>[0-9]{2})-[0-9]{2}",
                 atom_ref,
@@ -382,6 +480,7 @@ class CreativeScriptedRunner:
                         "markdown": _concept_markdown(
                             slot,
                             parent_atom_ref=atom_ref,
+                            product_grammar_id=product_grammar_id,
                         ),
                         "primary_territory_ref": territory_ref,
                         "parent_atom_refs": [atom_ref],
@@ -407,10 +506,7 @@ class CreativeScriptedRunner:
                     "invalid",
                     failed_dimension="technical_demo_substance",
                 )
-            if (
-                self.software_demo_mode == "repair_success"
-                and "-c1" in task_id
-            ):
+            if self.software_demo_mode == "repair_success" and "-c1" in task_id:
                 return _software_demo_review("repairable")
             if self.software_demo_mode == "repair_unresolved":
                 return _software_demo_review("repairable")
@@ -422,9 +518,7 @@ class CreativeScriptedRunner:
                 source,
             )
             if atom_match is None:
-                raise AssertionError(
-                    "fixture requires a visible source Parent Atom"
-                )
+                raise AssertionError("fixture requires a visible source Parent Atom")
             slot = int(atom_match.group("slot"))
             return {
                 "markdown": _concept_markdown(
@@ -449,9 +543,7 @@ class CreativeScriptedRunner:
                             "The repaired Concept now makes its temporal rule legible."
                         ),
                         "current_atom_refs": ["creative-atom-t01-01"],
-                        "related_concept_refs": [
-                            "creative-concept-s01-01-r002"
-                        ],
+                        "related_concept_refs": ["creative-concept-s01-01-r002"],
                         "elements_that_must_not_be_copied": [
                             "The original shadow presentation."
                         ],
@@ -478,6 +570,36 @@ class CreativeScriptedRunner:
         raise AssertionError(f"unexpected Creative task: {task_id}")
 
 
+class InvalidC3GrammarRunner(CreativeScriptedRunner):
+    def __init__(self, mode: str) -> None:
+        super().__init__()
+        self.mode = mode
+
+    def _output(self, task_id: str) -> dict[str, Any]:
+        output = super()._output(task_id)
+        if task_id != "creative-c3-synthesis-01":
+            return output
+        concept = output["concepts"][0]
+        markdown = concept["markdown"]
+        if self.mode == "missing":
+            markdown = re.sub(
+                r"(?m)^Recognizable product grammar:.*\n?",
+                "",
+                markdown,
+                count=1,
+            )
+        elif self.mode == "wrong":
+            markdown = markdown.replace(
+                "Recognizable product grammar: explorer_simulator",
+                "Recognizable product grammar: creator_transformer",
+                1,
+            )
+        else:
+            raise AssertionError(f"unknown invalid grammar mode: {self.mode}")
+        concept["markdown"] = markdown
+        return output
+
+
 def _settings() -> CreativeWorkflowSettings:
     return CreativeWorkflowSettings(
         territory_explorers=2,
@@ -490,6 +612,31 @@ def _settings() -> CreativeWorkflowSettings:
     )
 
 
+def _catalog_with_c3_version(
+    version: str,
+    *,
+    template_path: Path | None = None,
+) -> PromptCatalog:
+    return PromptCatalog(
+        tuple(
+            PromptSpec(
+                stage=stage,
+                template_id=spec.template_id,
+                version=(version if stage == C3_CONCEPT_SYNTHESIZE else spec.version),
+                template_path=(
+                    template_path
+                    if stage == C3_CONCEPT_SYNTHESIZE and template_path is not None
+                    else spec.template_path
+                ),
+                schema_path=spec.schema_path,
+                web_search=spec.web_search,
+            )
+            for stage in creative_prompt_catalog
+            for spec in (creative_prompt_catalog[stage],)
+        )
+    )
+
+
 class CreativeWorkflowContractTests(unittest.TestCase):
     def test_default_fanout_and_web_policy_are_bounded(self) -> None:
         settings = CreativeWorkflowSettings()
@@ -497,6 +644,23 @@ class CreativeWorkflowContractTests(unittest.TestCase):
         self.assertEqual(settings.territory_explorers, 6)
         self.assertEqual(len(DEFAULT_TERRITORY_LENSES), 6)
         self.assertEqual(settings.concept_synthesizers, 4)
+        self.assertEqual(
+            SYNTHESIS_LENSES,
+            (
+                ("explorer_simulator", "Explorer / Simulator"),
+                ("realtime_partner", "Realtime Partner"),
+                ("social_game_relay", "Social Game / Relay"),
+                ("creator_transformer", "Creator / Transformer"),
+            ),
+        )
+        self.assertEqual(
+            len({grammar_id for grammar_id, _ in SYNTHESIS_LENSES}),
+            4,
+        )
+        self.assertEqual(
+            len({label for _, label in SYNTHESIS_LENSES}),
+            4,
+        )
         self.assertEqual(settings.hook_reviewers_per_concept, 2)
         self.assertEqual(settings.memory_recallers, 1)
         self.assertEqual(settings.max_memory_challengers, 2)
@@ -506,11 +670,205 @@ class CreativeWorkflowContractTests(unittest.TestCase):
                 for stage in creative_prompt_catalog
                 if creative_prompt_catalog[stage].web_search
             ),
-            (C5W_NOVELTY_SCAN,),
+            (C1W_CULTURAL_SIGNAL_SCAN, C5W_NOVELTY_SCAN),
         )
 
 
 class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_c1w_partial_palette_is_safe_and_slot_bound(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CreativeScriptedRunner(signal_mode="partial")
+            workflow = CreativeIdeaWorkflow.create(
+                "Make a current but durable interactive surprise.",
+                directory,
+                settings=_settings(),
+                run_id="creative-c1w-partial",
+                runner=runner,
+            )
+
+            outcome = await workflow.execute_c0_c5()
+            self.assertEqual(
+                outcome.cultural_signal_snapshot_ref,
+                "creative-cultural-signal-snapshot-r001",
+            )
+            snapshot_ref = outcome.cultural_signal_snapshot_ref
+            assert snapshot_ref is not None
+            snapshot = json.loads(workflow.hub.read_artifact(snapshot_ref))
+            self.assertEqual(snapshot["status"], "partial")
+            self.assertEqual(len(snapshot["signals"]), 1)
+            state = workflow.hub.load_state()
+            for task_id, task in state["tasks"].items():
+                if task["stage"] not in {
+                    "creative-territory-explore",
+                    "creative-concept-synthesize",
+                }:
+                    continue
+                self.assertEqual(
+                    task["parent_refs"].count(outcome.cultural_signal_snapshot_ref),
+                    1,
+                )
+                prompt = (workflow.run_dir / task["prompt_path"]).read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(
+                    prompt.count("<BEGIN_CULTURAL_SIGNAL_PALETTE_"),
+                    1,
+                )
+                self.assertIn("optional creative material", prompt)
+                self.assertIn("not evidence of demand", prompt)
+                self.assertNotIn("https://example.test/signals/zorbix", prompt)
+                self.assertNotIn("Surface phrase Zorbix", prompt)
+            self.assertEqual(validate_run(workflow.run_dir), [])
+
+    async def test_c1w_failure_publishes_unavailable_and_continues(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CreativeScriptedRunner(signal_mode="failed")
+            workflow = CreativeIdeaWorkflow.create(
+                "Continue honestly when cultural search is unavailable.",
+                directory,
+                settings=_settings(),
+                run_id="creative-c1w-unavailable",
+                runner=runner,
+            )
+
+            outcome = await workflow.execute_c0_c5()
+            snapshot_ref = outcome.cultural_signal_snapshot_ref
+            assert snapshot_ref is not None
+            snapshot = json.loads(workflow.hub.read_artifact(snapshot_ref))
+            self.assertEqual(snapshot["status"], "unavailable")
+            self.assertEqual(snapshot["signals"], [])
+            self.assertIsNotNone(snapshot["diagnostic_ref"])
+            state = workflow.hub.load_state()
+            task = state["tasks"]["creative-c1w-cultural-signal-scan-01"]
+            self.assertEqual(task["status"], "failed")
+            self.assertTrue(outcome.base_concept_refs)
+            self.assertEqual(validate_run(workflow.run_dir), [])
+
+    async def test_c1w_route_validation_rejects_closure_tampering(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = CreativeIdeaWorkflow.create(
+                "Keep cultural inspiration bounded and auditable.",
+                directory,
+                settings=CreativeWorkflowSettings(
+                    territory_explorers=1,
+                    max_atoms_per_territory=1,
+                    concept_synthesizers=1,
+                    max_concepts_per_synthesizer=1,
+                    idea_memory_mode="off",
+                    memory_remixers=0,
+                    max_memory_challengers=0,
+                ),
+                run_id="creative-c1w-closure",
+                runner=CreativeScriptedRunner(signal_mode="partial"),
+            )
+            await workflow.execute_c0_c5()
+            self.assertEqual(validate_run(workflow.run_dir), [])
+            baseline = workflow.hub.load_state()
+            snapshot_ref = "creative-cultural-signal-snapshot-r001"
+            c1w_task = "creative-c1w-cultural-signal-scan-01"
+
+            scenarios = (
+                ("snapshot-path", "Cultural Signal Snapshot path mismatch"),
+                (
+                    "task-parents",
+                    "C1W task parent refs do not match",
+                ),
+                (
+                    "artifact-sources",
+                    "Cultural Signal Snapshot source refs do not match",
+                ),
+                (
+                    "failure-policy",
+                    "C1W task must use optional_branch",
+                ),
+                (
+                    "run-anchor",
+                    "Cultural Signal Snapshot time does not match",
+                ),
+                (
+                    "later-stage-parent",
+                    "illegally receives the Cultural Signal Snapshot",
+                ),
+            )
+            for mutation, expected_error in scenarios:
+                with self.subTest(mutation=mutation):
+                    state = json.loads(json.dumps(baseline))
+                    if mutation == "snapshot-path":
+                        state["artifacts"][snapshot_ref]["path"] = (
+                            "artifacts/creative/cultural-signals/other.json"
+                        )
+                    elif mutation == "task-parents":
+                        state["tasks"][c1w_task]["parent_refs"] = []
+                    elif mutation == "artifact-sources":
+                        state["artifacts"][snapshot_ref]["source_refs"] = []
+                    elif mutation == "failure-policy":
+                        state["tasks"][c1w_task]["failure_policy"] = "fatal"
+                    elif mutation == "run-anchor":
+                        state["created_at"] = "2026-01-01T00:00:00Z"
+                    else:
+                        later_task = next(
+                            task
+                            for task in state["tasks"].values()
+                            if task["stage"] == "creative-cheap-hook-review"
+                        )
+                        later_task["parent_refs"].append(snapshot_ref)
+                    atomic_write_json(workflow.hub.state_path, state)
+                    errors = validate_run(workflow.run_dir)
+                    self.assertTrue(
+                        any(expected_error in error for error in errors),
+                        errors,
+                    )
+
+            atomic_write_json(workflow.hub.state_path, baseline)
+            original_events = workflow.hub.events_path.read_text(encoding="utf-8")
+            event_rows = [
+                json.loads(line) for line in original_events.splitlines() if line
+            ]
+            snapshot_index = next(
+                index
+                for index, row in enumerate(event_rows)
+                if row["event_id"]
+                == ("artifact:creative-cultural-signal-snapshot-r001:published")
+            )
+            c2_index = next(
+                index
+                for index, row in enumerate(event_rows)
+                if row["kind"] == "task.started"
+                and row["data"].get("stage") == "creative-territory-explore"
+            )
+            event_rows[snapshot_index], event_rows[c2_index] = (
+                event_rows[c2_index],
+                event_rows[snapshot_index],
+            )
+            atomic_write_text(
+                workflow.hub.events_path,
+                "".join(
+                    json.dumps(
+                        row,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                    for row in event_rows
+                ),
+            )
+            errors = validate_run(workflow.run_dir)
+            self.assertTrue(
+                any(
+                    "Signal Snapshot must publish after C1W and before C2" in error
+                    for error in errors
+                ),
+                errors,
+            )
+            atomic_write_text(workflow.hub.events_path, original_events)
+
     async def test_tampered_frozen_inputs_fail_before_any_agent_starts(
         self,
     ) -> None:
@@ -535,9 +893,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     manifest_path = (
                         workflow.run_dir / state["resource_manifest"]["path"]
                     )
-                    manifest = json.loads(
-                        manifest_path.read_text(encoding="utf-8")
-                    )
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                     challenge_stage = next(
                         row
                         for row in manifest["stages"]
@@ -632,11 +988,18 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(novelty_tasks), 2)
             self.assertTrue(all(task.web_search for task in novelty_tasks))
+            signal_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id == "creative-c1w-cultural-signal-scan-01"
+            ]
+            self.assertEqual(len(signal_tasks), 1)
+            self.assertTrue(signal_tasks[0].web_search)
             self.assertTrue(
                 all(
                     not task.web_search
                     for task in runner.tasks
-                    if task not in novelty_tasks
+                    if task not in novelty_tasks and task not in signal_tasks
                 )
             )
 
@@ -679,6 +1042,16 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(c3_tasks), 2)
             for task in c3_tasks:
+                slot = int(task.task_id.rsplit("-", 1)[1])
+                self.assertEqual(
+                    json.loads(_prompt_block(task.prompt, "SYNTHESIS_LENS")),
+                    {
+                        "assigned_product_grammar_id": (SYNTHESIS_LENSES[slot - 1][0]),
+                        "assigned_product_grammar_label": (
+                            SYNTHESIS_LENSES[slot - 1][1]
+                        ),
+                    },
+                )
                 for territory_ref, atom_ref in zip(
                     outcome.territory_refs,
                     outcome.atom_refs,
@@ -703,9 +1076,9 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 sha256_text(
-                    (
-                        workflow.run_dir / policy_input["path"]
-                    ).read_text(encoding="utf-8")
+                    (workflow.run_dir / policy_input["path"]).read_text(
+                        encoding="utf-8"
+                    )
                 ),
                 policy_input["sha256"],
             )
@@ -741,10 +1114,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "creative-c5-complete-internal",
             )
             self.assertFalse(
-                any(
-                    task_id.startswith("creative-c5m-")
-                    for task_id in state["tasks"]
-                )
+                any(task_id.startswith("creative-c5m-") for task_id in state["tasks"])
             )
             memory_summary = json.loads(
                 workflow.hub.read_artifact(outcome.memory_summary_ref)
@@ -759,6 +1129,105 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(projection["concept_counts"]["base_generated"], 2)
             self.assertEqual(projection["concept_counts"]["hook_passed"], 2)
             self.assertEqual(projection["memory"]["status"], "disabled")
+
+    async def test_c3_v6_context_validation_invalidates_bad_grammar_marker(
+        self,
+    ) -> None:
+        for mode in ("missing", "wrong"):
+            with (
+                self.subTest(mode=mode),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                runner = InvalidC3GrammarRunner(mode)
+                workflow = CreativeIdeaWorkflow.create(
+                    "Bind every C3 output to its assigned product grammar.",
+                    directory,
+                    settings=_settings(),
+                    run_id=f"creative-invalid-c3-grammar-{mode}",
+                    runner=runner,
+                )
+
+                with self.assertRaisesRegex(
+                    CreativeWorkflowError,
+                    "product grammar",
+                ):
+                    await workflow.execute_c0_c5()
+
+                state = workflow.hub.load_state()
+                self.assertEqual(state["status"], "failed")
+                self.assertEqual(
+                    state["tasks"]["creative-c3-synthesis-01"]["status"],
+                    "failed",
+                )
+                result_path = state["tasks"]["creative-c3-synthesis-01"]["result_path"]
+                result = json.loads(
+                    (workflow.run_dir / result_path).read_text(encoding="utf-8")
+                )
+                self.assertIn("product grammar", result["validation_error"]["message"])
+                self.assertFalse(
+                    any(
+                        record["artifact_type"] == "creative_concept"
+                        for record in state["artifacts"].values()
+                    )
+                )
+
+    async def test_frozen_c3_v5_keeps_legacy_synthesis_lens_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_template = Path(directory) / "creative-concept-synthesize-v5.md"
+            legacy_marker = "# Frozen C3 v5 synthesis semantics"
+            legacy_template.write_text(
+                legacy_marker + "\n\nUse the supplied legacy synthesis lens exactly.\n",
+                encoding="utf-8",
+            )
+            runner = CreativeScriptedRunner()
+            workflow = CreativeIdeaWorkflow.create(
+                "Make a legible interactive surprise.",
+                directory,
+                settings=_settings(),
+                runner=runner,
+                prompt_catalog=_catalog_with_c3_version(
+                    "5",
+                    template_path=legacy_template,
+                ),
+            )
+
+            outcome = await workflow.execute_c0_c5()
+
+            self.assertEqual(len(outcome.base_concept_refs), 2)
+            c3_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith("creative-c3-synthesis-")
+            ]
+            self.assertEqual(len(c3_tasks), 2)
+            for task in c3_tasks:
+                slot = int(task.task_id.rsplit("-", 1)[1])
+                self.assertEqual(
+                    _prompt_block(task.prompt, "SYNTHESIS_LENS"),
+                    LEGACY_SYNTHESIS_LENSES[slot - 1],
+                )
+                concept_output = runner._output(task.task_id)["concepts"][0]
+                self.assertNotIn(
+                    "Recognizable product grammar:",
+                    concept_output["markdown"],
+                )
+                self.assertIn(legacy_marker, task.prompt)
+                self.assertNotIn(
+                    "The controller assigns exactly one of these mutually "
+                    "exclusive grammars:",
+                    task.prompt,
+                )
+            self.assertEqual(validate_run(workflow.run_dir), [])
+
+    def test_unknown_c3_template_version_fails_closed_before_synthesis(
+        self,
+    ) -> None:
+        self.assertEqual(C3_PRODUCT_GRAMMAR_TEMPLATE_VERSION, "7")
+        with self.assertRaisesRegex(
+            CreativeWorkflowError,
+            "unsupported C3 synthesis template semantics",
+        ):
+            _synthesis_assignments_for_template_version("8")
 
     async def test_validate_rejects_c2_controller_lineage_tampering(
         self,
@@ -816,28 +1285,22 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(mutation=mutation):
                     state = json.loads(json.dumps(baseline))
                     if mutation == "atom-metadata":
-                        state["artifacts"][atom_ref]["metadata"][
-                            "territory_ref"
-                        ] = "creative-territory-02"
+                        state["artifacts"][atom_ref]["metadata"]["territory_ref"] = (
+                            "creative-territory-02"
+                        )
                     elif mutation == "atom-source-refs":
                         state["artifacts"][atom_ref]["source_refs"] = []
                     elif mutation == "atom-id":
                         atom_record = state["artifacts"].pop(atom_ref)
-                        state["artifacts"][
-                            "creative-atom-t02-01"
-                        ] = atom_record
+                        state["artifacts"]["creative-atom-t02-01"] = atom_record
                     elif mutation == "atom-slot":
-                        state["artifacts"][atom_ref]["metadata"][
-                            "atom_slot"
-                        ] = 2
+                        state["artifacts"][atom_ref]["metadata"]["atom_slot"] = 2
                     elif mutation == "territory-artifact":
-                        state["artifacts"][territory_ref][
-                            "artifact_type"
-                        ] = "creative_constraint_view"
+                        state["artifacts"][territory_ref]["artifact_type"] = (
+                            "creative_constraint_view"
+                        )
                     else:
-                        state["artifacts"][territory_ref]["metadata"][
-                            "slot"
-                        ] = 2
+                        state["artifacts"][territory_ref]["metadata"]["slot"] = 2
                     atomic_write_json(workflow.hub.state_path, state)
 
                     errors = validate_run(workflow.run_dir)
@@ -875,8 +1338,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             failed_novelty = [
                 record
                 for record in state["tasks"].values()
-                if record["stage"] == C5W_NOVELTY_SCAN
-                and record["status"] == "failed"
+                if record["stage"] == C5W_NOVELTY_SCAN and record["status"] == "failed"
             ]
             self.assertTrue(failed_novelty)
             self.assertTrue(
@@ -914,7 +1376,10 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         for run_id, hook_mode, passed, novelty_ref, final_outcome in scenarios:
-            with self.subTest(run_id=run_id), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(run_id=run_id),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 runner = CreativeScriptedRunner(hook_mode=hook_mode)
                 settings = CreativeWorkflowSettings(
                     territory_explorers=1,
@@ -956,9 +1421,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 second_cycle_feasibility = [
                     task
                     for task in runner.tasks
-                    if task.task_id.startswith(
-                        "creative-c4f-software-demo-"
-                    )
+                    if task.task_id.startswith("creative-c4f-software-demo-")
                     and "-c2" in task.task_id
                 ]
                 self.assertEqual(len(second_cycle_feasibility), 1)
@@ -979,14 +1442,12 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 disposition_rows = [
                     json.loads(workflow.hub.read_artifact(artifact_id))
                     for artifact_id, record in state["artifacts"].items()
-                    if record["artifact_type"]
-                    == "creative_concept_disposition"
+                    if record["artifact_type"] == "creative_concept_disposition"
                 ]
                 source_terminal = [
                     row
                     for row in disposition_rows
-                    if row["concept_revision_ref"]
-                    == "creative-concept-s01-01-r001"
+                    if row["concept_revision_ref"] == "creative-concept-s01-01-r001"
                     and row["terminal"]
                 ]
                 self.assertEqual(len(source_terminal), 1)
@@ -1001,8 +1462,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 repaired_dispositions = [
                     row
                     for row in disposition_rows
-                    if row["concept_revision_ref"]
-                    == "creative-concept-s01-01-r002"
+                    if row["concept_revision_ref"] == "creative-concept-s01-01-r002"
                 ]
                 self.assertEqual(
                     repaired_dispositions[0]["outcome"],
@@ -1067,13 +1527,10 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     for artifact_id, record in workflow.hub.load_state()[
                         "artifacts"
                     ].items()
-                    if record["artifact_type"]
-                    == "creative_concept_disposition"
+                    if record["artifact_type"] == "creative_concept_disposition"
                 ]
                 terminal = [
-                    row
-                    for row in dispositions
-                    if row["outcome"] == "eliminated"
+                    row for row in dispositions if row["outcome"] == "eliminated"
                 ]
                 self.assertEqual(len(terminal), 1)
                 self.assertIn(
@@ -1088,9 +1545,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            runner = CreativeScriptedRunner(
-                software_demo_mode="repair_success"
-            )
+            runner = CreativeScriptedRunner(software_demo_mode="repair_success")
             workflow = CreativeIdeaWorkflow.create(
                 "Build a software-native viral surprise.",
                 directory,
@@ -1128,9 +1583,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 sum(
-                    task.task_id.startswith(
-                        "creative-c4f-software-demo-"
-                    )
+                    task.task_id.startswith("creative-c4f-software-demo-")
                     for task in runner.tasks
                 ),
                 2,
@@ -1221,7 +1674,10 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         for mutation, expected_error in scenarios:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 runner = CreativeScriptedRunner()
                 settings = CreativeWorkflowSettings(
                     territory_explorers=1,
@@ -1246,8 +1702,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     disposition_id = next(
                         artifact_id
                         for artifact_id, record in state["artifacts"].items()
-                        if record["artifact_type"]
-                        == "creative_concept_disposition"
+                        if record["artifact_type"] == "creative_concept_disposition"
                         and record["metadata"]["outcome"] == "pass"
                     )
                     del state["artifacts"][disposition_id]
@@ -1259,9 +1714,9 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     )
                     del state["artifacts"][novelty_id]
                 else:
-                    state["tasks"]["creative-c0-challenge-parse"][
-                        "status"
-                    ] = "invalidated"
+                    state["tasks"]["creative-c0-challenge-parse"]["status"] = (
+                        "invalidated"
+                    )
                 atomic_write_json(workflow.hub.state_path, state)
 
                 self.assertTrue(

@@ -19,6 +19,7 @@
 - **惊喜必须源自某种机制。** 神秘的描述、营销文案或无法解释的 AI 魔法都不够。
 - **先让人看懂，再允许它神秘。** 评审者必须先能用朴素语言说清“用户做什么、软件回应什么、为什么还想再试或转发”，之后才讨论诗意、诡异或余韵。需要策展说明、世界观补课或审美训练才能成立的 Concept 不进入 shortlist。
 - **先例提供交互语法，不提供可复制答案。** Concept 可以借鉴人们已经理解的产品/游戏/创作工具形态，但必须说明借用了哪种可识别的互动语法、核心机制做了什么实质变化，以及为何不是给旧产品换 AI 外皮。
+- **组合多样性来自产品循环，不来自换皮。** 四个 C3 综合 Session 分别承担 Explorer / Simulator、Realtime Partner、Social Game / Relay、Creator / Transformer 四种互斥产品语法；不同视觉、故事、传感器或分享格式不能把同一个输入—转换—揭示循环伪装成四种产品。
 - **软件必须承载核心因果。** 浏览器、手机、桌面、CLI、服务端或本地/云模型必须真正完成体验的关键转换；主持人、演员、卡片、椅子、舞台规则或投影布景不能代替软件完成核心机制。
 - **能跑 Demo，而不只是能讲 Demo。** 最小演示必须使用真实可得输入和依赖，由代码、模型、API 或协议产生现场可观察、可录屏或可亲手操作的输出；Figma、预录视频、人工选结果和 wizard-of-oz 不能冒充核心技术。
 - **技术名词不等于可落地。** 写出标准 Web API、WebSocket、模型或云服务名称，只能证明存在候选技术，不能证明权限、兼容性、时延、预热、部署和失败降级在比赛现场可控。若 Challenge 没有给出资源预算，路线按“最多 2 人、24 小时、一个简单 backend、一个主要浏览器/设备切片”的保守参考预算审查，而不是默认拥有完整产品团队。
@@ -35,11 +36,18 @@
 
 ## 背景与已确认事实
 
-- 仓库当前提供本地 Python CLI 和具体的七阶段 `UsefulIdeaWorkflow`；尚无 Creative 路线、运行级恢复、HTTP 服务器或前端依赖（`pyproject.toml`、`src/hacksome/cli.py`、`src/hacksome/workflow.py`）。
-- `CodexRunner` 已经提供有界并发、显式 timeout、精确 Session 基础设施重试、结构化输出和原始日志；这些能力可以原样共享（`src/hacksome/codex.py`）。
-- `RunHub` 是当前运行状态、Prompt、任务、产物、事件和机器决策的唯一持久化所有者；`state.py` 只提供原子 JSON、内容哈希和幂等 JSONL 等路线中立原语（`src/hacksome/hub.py`、`src/hacksome/state.py`）。
+- 仓库当前按产品阶段组织：Idea 路线位于 `src/hacksome/stages/ideation/`，
+  Creative canonical 实现在 `src/hacksome/stages/ideation/creative/`；根级旧模块
+  只保留兼容 import shim，不再作为第二份实现。
+- `CodexRunner` 已经提供有界并发、显式 timeout、精确 Session 基础设施重试、
+  结构化输出和原始日志；共享实现位于 `src/hacksome/core/codex.py`。
+- `RunHub` 是当前运行状态、Prompt、任务、产物、事件和机器决策的唯一持久化
+  所有者；路线中立原语位于 `src/hacksome/core/hub.py` 与
+  `src/hacksome/core/state.py`。
 - `RunHub` 的任务和产物基础能力较通用，但 `idea_card_ids`、`pass/reject` 决策枚举、状态集合、`inspect()` 与 `validate()` 仍包含 Useful 语义，不能直接视作已经完成的通用 Harness。
-- 当前 `prompting.py` 的渲染算法可复用，但 Prompt 注册表、Schema 映射和语义验证属于 Useful；`UsefulIdeaWorkflow._call()` 中“渲染 → 先持久化 → 调用 Codex → 记录结果 → 语义验证”的执行骨架是最清晰的共享抽取点。
+- `src/hacksome/core/prompting.py` 与 `task_executor.py` 承担共享渲染、资源冻结和
+  “先持久化 → 调用 Codex → 记录结果 → 语义验证”的执行骨架；Prompt 注册表、
+  Schema 映射、阶段拓扑和语义验证继续由各 route 持有。
 - 当前 `RunHub` 只能打开一个明确的 run 路径，没有跨 run 发现或索引能力；现有产物和 SHA-256 原语足以支持“扫描显式 runs 目录 → 验证完成的 Creative memory record → 复制成当前 run 的冻结快照”，v1 不需要新增全局数据库。
 - 最新 Useful v1 明确不支持运行级 `resume`。Creative 的 Agent/业务工作流恢复只用于 C6 `waiting → resume`；C7 另允许一个不调用模型、只重放已冻结字节的发布恢复入口，二者都不能借机改变 Useful 的 CLI 与失败语义。
 - Weston 负责 Useful/商业方向。Percy 负责 Creative hackathon 方向。两条路线可以在同一仓库中并行演进。
@@ -148,6 +156,52 @@ UsefulRunContract        CreativeRunContract
 
 **关卡：** 简报包含正向体验目标、反目标，以及足够清晰、可指导独立探索的场景；Policy 的路径、版本和 hash 与 run metadata 闭合。C1 不等待人工批准。
 
+### C1W. 文化信号扫描
+
+**目的：** 在 C2/C3 生成前，为 Agent 提供少量、近期、可追溯的文化参与模式，
+帮助人类常用的“从别处获得灵感”进入 Harness；它不是需求验证，也不能替代
+C5W 的先例与撞车审查。
+
+**行为：**
+
+- C1 完成后只启动一次联网 C1W，检索最近 30 天的趋势、梗、争议与
+  counter-signal；`as_of_utc` 固定为 run 创建时刻，resume 时不随墙上时钟漂移。
+- 有明确发布时间的来源写 `published_at`；只有无发布时间的 live trend
+  surface 可以写 `observed_at`，且必须等于 supplied `as_of_utc`。真实任务完成
+  时刻只由 Controller 写入 `retrieved_at_utc`。
+- 非空 `published_at/observed_at` 必须是带 seconds 与显式 `Z` 或数字 offset
+  的完整 RFC3339；允许 fractional seconds。日级来源由 Agent 把
+  `YYYY-MM-DD` 确定性锚定为 `YYYY-MM-DDT00:00:00Z`，同时保留
+  `time_precision=day`；该午夜只用于精度和窗口比较，不声称来源恰在该分钟
+  发布。分钟级时间必须有来源明确给出的时区，系统不得猜测 UTC 或本地时区。
+  `month/unknown` 不放宽 timestamp、timezone 或 window；Controller 只能把
+  已显式带 offset 的时间等价换算为 UTC，不得补猜缺失的日期、时间或时区。
+  `observed_at` 必须逐字复制 supplied `as_of_utc`，不能换成等价 offset。
+- 同一 canonical source URL 在整个 `signals[]` 中最多出现一次，同一 signal
+  内和跨 signal 都不能复用；host 大小写或 `#fragment` 不产生新来源。一页若
+  支持多个候选，只保留证据最强的一条，其他候选寻找独立 URL 或省略。来源数量
+  不是 coverage 指标；同 publisher 的不同 URL 合法。Schema 无法表达该跨数组
+  不变量，由 Python semantic validator fail closed，Controller 不静默去重。
+- 原始标题、URL、publisher、平台、摘要、surface marker 与网页指令只保留在
+  hash-bound `CulturalSignalSnapshot`；C2/C3 只获得按 slot 稳定轮转的脱敏
+  `CULTURAL_SIGNAL_PALETTE`。
+- Palette 只含 `signal_ref/kind/creative_role/abstract_pattern/
+  creative_tension/participation_shape`。每个 C2 最多 2 个 inspire + 2 个
+  avoid，每个 C3 最多 2 个 inspire；C2/C3 本身继续禁止联网。
+- Palette 是可忽略的创作材料，不能声称证明 demand、市场规模、文化共识、
+  virality、novelty、可行性、安全性或质量；不得复刻热词、角色、口号、视觉
+  模板、固定 punchline 或 exact interaction format。
+- C1W 是 fail-open 的 optional branch。搜索失败或输出无效时，Controller 保留
+  failed/invalidated task 与唯一 diagnostic，并发布 `status=unavailable` 的
+  显式空 snapshot；C2/C3 继续，不把失败伪装成“没有热点”。
+
+**输出：** 唯一、稳定 ID、hash 绑定的 `CulturalSignalSnapshot`，状态为
+`ready|partial|empty|unavailable`；C2/C3 使用其确定性 safe projection。
+
+**关卡：** C1W 不产生 pass/fail 或 shortlist 决策。Snapshot、task、diagnostic、
+时间窗、C2/C3 parent 与 prompt block 必须闭合；C5W 仍是 fatal 的 novelty
+evidence stage。
+
 ### C2. 创意领域
 
 **目的：** 在确定完整产品概念之前，先探索真正不同的创意空间。
@@ -177,8 +231,17 @@ UsefulRunContract        CreativeRunContract
 
 **行为：**
 
-- 多个相互独立的综合 Agent 可以跨领域组合创意原子。
-- 第一批综合只能读取当前运行的 C0-C2；不得读取 Idea Memory、旧 Idea Card、过去淘汰原因或联网先例。
+- 四个相互独立的综合 Agent 可以跨领域组合创意原子，但各自承担一个固定且互斥的产品语法责任：
+  - **Explorer / Simulator (`explorer_simulator`)：** 用户提出查询或改变显式变量，软件计算可检查的关系、路径、情景或反事实，用户继续比较并改变假设；没有可追问变量的抽象地图、情绪地形或一次性揭示不属于该语法。
+  - **Realtime Partner (`realtime_partner`)：** 用户提供连续或快速序列的真实输入，软件在本轮结束前低延迟回应，用户据此改变下一次动作；结束后才生成的地图、卡片、分数或收据不属于该语法。
+  - **Social Game / Relay (`social_game_relay`)：** 一位真人的动作改变软件持有的共享状态，另一位真人必须完成一个受规则约束、会继续改变状态的 move/turn/handoff；单人生成器加分享按钮或被动观看链接不属于该语法。
+  - **Creator / Transformer (`creator_transformer`)：** 用户用真实素材和至少两个有意义的选择反复制作、编辑、预览或 remix 一个可复用产物；自动记录行为后吐出不可编辑收据、总结卡或一键滤镜不属于该语法。
+- 互斥轴是“软件回应后，核心用户为了获得下一单位价值必须做什么”。次要功能可以来自其他语法，但每个 Concept 必须只有一个 primary product loop；如果删去两个语法中的任一个都会破坏核心，Agent 必须先简化。如果当前 Atoms 无法诚实支持被分配的语法，该 Session 返回零 Concept，不得用换视觉隐喻、地图、卡片、粒子或收据填满配额。
+- 第一批综合读取当前运行的 C0-C2；Creative v3 还可读取 Controller 从唯一
+  C1W snapshot 投影出的 slot-bound safe palette，但不得读取 raw snapshot、
+  URL/标题/平台/表面梗，不得把 palette 当作需求、传播、查重、可行性或质量
+  证据。所有版本都不得读取 Idea Memory、旧 Idea Card、过去淘汰原因或 C5W
+  联网先例。
 - 每个 Concept 都要说明：
   - 预期反应；
   - 一句话 Hook；
@@ -279,7 +342,7 @@ Agent 应抽取这两个例子的共同质量形状——熟悉入口、真实�
 
 **修订预算：**
 
-- software-first contract v2 使用按目的分开的有界预算，而不是“整个生命周期只能改一次”：C4H 与 C4F 共享最多一次局部修复，C6 自动准备恰好一次证据驱动修订，C6 人审关闭后最多一次反馈驱动修订。
+- software-first contract v2/v3 使用按目的分开的有界预算，而不是“整个生命周期只能改一次”：C4H 与 C4F 共享最多一次局部修复，C6 自动准备恰好一次证据驱动修订，C6 人审关闭后最多一次反馈驱动修订。
 - 因而，每个 base Concept 或 memory challenger 在最坏情况下最多经历三次模型修订；每次都有不同的原因、输入边界和版本谱系。某一阶段未使用的预算不能挪到另一阶段，也不能通过重试增加次数。
 
 **自动准备：**
@@ -340,7 +403,7 @@ Agent 应抽取这两个例子的共同质量形状——熟悉入口、真实�
   - 反馈处理情况和最终 Idea Card；
   - 未解决的分歧和推迟处理的风险；
   - 路线、Prompt、筛选和报告策略版本。
-- 有效运行可以零个最终 Idea 结束，但必须写出稳定的 `zero_reason_code`，区分没有生成 Concept、所有候选未通过完整 C4 Concept screen、自动 shortlist 为空和人类全部拒绝/否决。新 v2 使用 `all_candidates_failed_concept_screen`；旧 v1 冻结 run 继续保留并识别 `all_candidates_failed_hook`，不得重写历史。
+- 有效运行可以零个最终 Idea 结束，但必须写出稳定的 `zero_reason_code`，区分没有生成 Concept、所有候选未通过完整 C4 Concept screen、自动 shortlist 为空和人类全部拒绝/否决。software-first v2/v3 使用 `all_candidates_failed_concept_screen`；旧 v1 冻结 run 继续保留并识别 `all_candidates_failed_hook`，不得重写历史。
 - 控制器为每个正常完成的 run 确定性生成 `creative-memory-record.json`，覆盖最终项、未入 shortlist 项和被淘汰项；它只保存有界的 Concept 结构、结果类别、原因码、与原因码绑定的机器评审证据摘录及可验证来源，不保存 reviewer 身份或未批准原始反馈。
 - 在发布第一个最终文件之前，控制器先把报告、Idea Cards、handoffs 和 Memory Record 的精确字节、ID、路径及 hash 冻结为 C7 finalization plan。中途崩溃时 `resume` 只能幂等重放该 plan，不能重新渲染、调用模型或使用新时间；全部产物与 ledger event 就绪后才能标记 `completed`。
 - 若某个必需任务发生致命基础设施或协议失败，run 仍保持 `failed`，但控制器根据当时已经持久化的内容生成确定性的 partial report；partial report 不包含最终 Idea Card，也不得把 run 标为完成。
@@ -368,7 +431,7 @@ Agent 应抽取这两个例子的共同质量形状——熟悉入口、真实�
 - **C0：** 硬性规则召回率、无依据推断率和约束漂移。
 - **C1：** 与 Percy 预期反应及反目标的一致性，以及 frozen Software Demo Policy 的版本/hash 完整性。
 - **C2：** software-native 机制实质不同的数量，而非标题多样性；旧 spatial/performance/cross-media lens 不得作为独立目标回流。
-- **C3：** 从铺垫到揭示的完整路径、software-first 合格率、冷启动 30 秒路径覆盖率、端到端技术路径完整率、关键子系统/最高风险假设/降级切片/预置成本覆盖率，以及具体 share artifact 覆盖率。
+- **C3：** 从铺垫到揭示的完整路径、四种 assigned product grammar 的覆盖与精确绑定、software-first 合格率、冷启动 30 秒路径覆盖率、端到端技术路径完整率、关键子系统/最高风险假设/降级切片/预置成本覆盖率、具体 share artifact 覆盖率，以及跨 grammar 的抽象地图/过程收据等核心机制重复率。
 - **C4：** C4H/C4F 的 `pass|repairable|invalid` 分布与原因码；定制硬件和纯装置 fixture 的 false-pass、合法普通设备 I/O fixture 的 false-reject、标准 Web API 但现场不稳定的 false-pass、可修复缺信息 fixture 是否只使用一次 repair，以及手工录屏传播摩擦是否被正确识别。
 - **C5：** 历史线索命中率、challenger 的非复制变换与 C4F 通过率、旧硬件模式再引入率、完整 C4 screen 后进入 C5W 的任务数及 token/wall-time 节省、有价值外部碰撞和引用有效性。
 - **C6：** C6B categorical 维度分布、shortlist 中 `immediate_share_trigger=pass` 的占比、复述与分享判断的独立一致性、跨候选核心机制重复率、候选名单多样性、评审负担、一句话复述准确度、`share_impulse=immediate`、具体分享对象、`demo_confidence=yes`、困惑率、人类分歧，以及依据反馈修订的忠实度。
@@ -417,10 +480,14 @@ Benchmark 的 `live` 模式经过正式 C6 团队评审后才计算人类指标�
 - [ ] 运行会被明确创建为 `route.id=creative`，可以在不依赖 Useful 专属假设的情况下检查和验证，并只在 C6 已关闭的人审等待点继续。
 - [ ] C0 将硬性挑战约束与创意解释分开保留。
 - [ ] C1 记录明确的预期反应、反目标、交互场景和歧义边界。
+- [ ] Creative v3 在 C1 后、C2 前恰好运行一次 C1W；只有 C1W/C5W 联网，C2/C3 保持离线，旧 v1/v2 frozen run 不补跑 C1W。
+- [ ] C1W 的 `as_of_utc` 固定为 run 创建时刻；live surface 的 `observed_at` 使用该 anchor，Controller 完成时刻只进入 `retrieved_at_utc`。`ready|partial|empty|unavailable` 四种状态均可验证。
+- [ ] C2/C3 每个 task 恰好引用一次 signal snapshot 并收到一个确定性、无 URL/标题/label/hashtag/网页指令的 safe palette；C1W 失败时显式降级继续，C5W 失败仍使 run fatal。
 - [ ] 每个新 Creative run 持久化并 hash/freeze 可见的 Software Demo Policy；C1/C2/C3/C4H/C4F/C5M Remix/C6A/C6B 使用同一精确版本，且 C1 不增加人工暂停。
 - [ ] 默认 Policy 只淘汰定制硬件、实体制作、专用设备和纯人工装置核心；普通电脑/手机及其内置 camera/mic/screen/touch 等 I/O 合法。
 - [ ] C2 在不受先例锚定且不强制要求商业痛点的情况下，使用六个 software-native lens 产出多个实质不同的创意领域。
 - [ ] C3 产出版本化 Concept，包含完整的 30 秒铺垫、受众行动、揭示、机制、余韵、Software Core and Runtime、Share Trigger and Artifact 及可执行 Minimum Hackathon Demo。
+- [ ] 默认四个 C3 Session 按稳定 slot 分别绑定 `explorer_simulator`、`realtime_partner`、`social_game_relay` 与 `creator_transformer`；C3 v6/v7 Concept 都在既有产品语法说明中回显自己的 exact ID（v7 额外接收 C1W safe palette），不匹配时输出无效，无法诚实满足该语法时允许该 Session 返回零项。旧 frozen v2–v5 C3 Prompt 不补注新 assignment，也不要求新 marker。
 - [ ] C0 未提供更明确资源时，C3/C4F 使用 2 人/24 小时、至多一个简单 backend 和一个主要浏览器/设备切片的保守参考预算；Concept 明示冷启动 30 秒路径、关键子系统、最危险技术假设、降级切片和预置状态成本。
 - [ ] 每个 base Concept 和 memory challenger 的 `primary_territory_ref` 都属于其 current Parent Atoms；C4/C6 revision 与 C6B curator 不能重写该值，merge 只能从 source primary refs 中选择。
 - [ ] 当前 run 的第一批 C2/C3 与初始 C4 判断冻结之前，Controller 不向其 Prompt、parent refs、registered context 或 stage input 注入过去 Idea、历史淘汰原因或外部先例；合同与测试不把 Codex `read-only` sandbox 误称为 chroot，且明确禁止这些 Session 主动扫描 run 历史。
@@ -433,7 +500,7 @@ Benchmark 的 `live` 模式经过正式 C6 团队评审后才计算人类指标�
 - [ ] C6A 接收 feasibility/novelty evidence，并把抽象描述收敛为可识别的产品循环；C6B 两位 Red Team 分别审查“意义/价值/反装置”与“真实展厅是否好玩、想试”，同时都完整使用 software demo、surprise/fun、clarity、share-trigger、novelty categorical evidence，不输出 1–10 总分或排序。
 - [ ] C4H/C6B 分别判断一句话复述与立即分享，不把“可手工录屏”视为低摩擦分享证据；C6B 还要识别跨 Territory 标签重复的输入、转换、揭示或分享机制，避免同质候选占满 shortlist。
 - [ ] 每个 completed run 中的 Concept revision 恰好有一个 terminal disposition；它能区分 Hook 淘汰、被修订取代、未入选、提升为 Final、依据反馈改写、人工拒绝、taste veto 与合并，并在存在后继时引用确切的新 revision 或 Final Idea。
-- [ ] 没有待审 Concept 时仍生成带 `skip_reason` 的空 C6 batch，不进入人工等待；v2 完整 screen 为空使用 `all_candidates_failed_concept_screen`，所有 Hook/Feasibility 判断与淘汰原因仍出现在 C7。
+- [ ] 没有待审 Concept 时仍生成带 `skip_reason` 的空 C6 batch，不进入人工等待；v2/v3 完整 screen 为空使用 `all_candidates_failed_concept_screen`，所有 Hook/Feasibility 判断与淘汰原因仍出现在 C7。
 - [ ] 多名具名评审者可以用单卡接力界面评估候选名单中的精确修订版本；描述与本卡评审一一相邻，`✓/△/✕` 后卡片离场并进入下一项，且可返回修改。每份回执记录一句话复述、`share_impulse`、`demo_confidence` 与具体分享对象，且 `immediate` 必须填写对象。
 - [ ] 成对比较完全可选：评审者可以回答任意子集，也可以全部跳过，未回答的 pair 不被解释为平局、拒绝或缺失回执。
 - [ ] 每个 reviewer 在首次提交前看不到他人答案；提交后的团队视图与 Percy 策展权限不会因共享链接或 cookie 混淆身份。
@@ -441,7 +508,7 @@ Benchmark 的 `live` 模式经过正式 C6 团队评审后才计算人类指标�
 - [ ] Percy 可以关闭一轮评审；每个 `revise/merge` 决议最多生成一个与版本绑定的反馈修订并记录反馈处理情况，`keep` 不会被模型悄然重写。
 - [ ] 关闭轮次只冻结 resolution；`keep/revise/merge` 的目标 Final Idea 在 `resume` 中成功验证并发布后，才允许写带目标引用的 terminal disposition，失败不得被预记为成功。
 - [ ] revision ledger 能证明每个 base Concept 和 memory challenger 最多发生一次 C4 Hook 修复、一次 C6 证据修订和一次 C6 人类反馈修订，重试不会额外消耗或绕过这些预算。
-- [ ] C6 等待期间即使代码库同步更新，`resume` 仍使用 run 创建时冻结并校验的 Prompt/Schema；已存在的 v1 waiting run 继续使用 v1 review/report/zero-reason 合同，新 run 使用 software-first v2，禁止用 v2 资源重解释 v1 字节。
+- [ ] C6 等待期间即使代码库同步更新，`resume` 仍使用 run 创建时冻结并校验的 Prompt/Schema；已存在的 v1/v2 waiting run 继续使用自身 review/report/zero-reason 合同，新 run 使用含 C1W 的 Creative v3，禁止用当前资源重解释旧字节。
 - [ ] C7 确定性地记录每个已生成、失败、修复、合并、淘汰、进入候选名单、接受评审和最终保留的候选项；零 Idea 报告逐项列出最终淘汰阶段、原因码和证据，并包含稳定 `zero_reason_code`。
 - [ ] C7 在任何最终产物发布前冻结包含精确 bytes/hash 的 finalization plan；逐文件发布中断后可以不调用模型地幂等恢复，且只有全部计划产物和事件就绪后才能进入 `completed`。
 - [ ] 每个 completed Creative run 生成可验证的 `creative-memory-record.json`；completed 的零 Idea run 可贡献 caution 线索，failed/waiting/fixture/Useful/篡改来源和未批准原始人类反馈均不能进入下一次运行。

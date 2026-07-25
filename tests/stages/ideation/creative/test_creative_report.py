@@ -28,6 +28,7 @@ from hacksome.stages.ideation.creative.report import (
     ConceptRevisionProjection,
     CreativeReportError,
     CreativeReportProjection,
+    CulturalSignalUseProjection,
     DispositionProjection,
     FinalIdeaProjection,
     HumanSignalProjection,
@@ -403,6 +404,17 @@ def _nonzero_projection() -> CreativeReportProjection:
         final_ideas=(final_idea,),
         zero_reason_code=None,
         empty_batch_skip_reason=None,
+        cultural_signal_scan=CulturalSignalUseProjection(
+            status="partial",
+            snapshot_ref="creative-cultural-signal-snapshot-r001",
+            snapshot_sha256="a" * 64,
+            as_of_utc="2026-07-23T01:00:00Z",
+            start_utc="2026-06-23T01:00:00Z",
+            end_utc="2026-07-23T01:00:00Z",
+            lookback_days=30,
+            signal_count=2,
+            platform_kinds=("social", "video"),
+        ),
     )
 
 
@@ -555,6 +567,7 @@ class CreativeReportTests(unittest.TestCase):
         )
         report_markdown = bundle.report_markdown.content.decode("utf-8")
         for heading in (
+            "## Cultural Signal Scan",
             "## Candidate Fate Ledger",
             "## Idea Memory Used",
             "## Memory-derived Branches",
@@ -563,6 +576,31 @@ class CreativeReportTests(unittest.TestCase):
         self.assertNotIn("## Zero-Idea Explanation", report_markdown)
         self.assertIn("creative-concept-m01", report_markdown)
         self.assertIn("c4_double_invalid", report_markdown)
+        report_json = json.loads(bundle.report_json.content)
+        self.assertEqual(
+            report_json["cultural_signal_scan"]["status"],
+            "partial",
+        )
+        self.assertEqual(
+            set(report_json["cultural_signal_scan"]),
+            {
+                "status",
+                "snapshot_ref",
+                "snapshot_sha256",
+                "window",
+                "signal_count",
+                "platform_kinds",
+                "diagnostic_ref",
+            },
+        )
+        self.assertNotIn(
+            "captured_at_utc",
+            report_json["cultural_signal_scan"]["window"],
+        )
+        self.assertNotIn(
+            "cultural_signal_scan",
+            json.loads(bundle.memory_record.content),
+        )
 
         card = bundle.idea_cards[0].content.decode("utf-8")
         validate_markdown(

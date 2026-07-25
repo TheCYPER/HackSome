@@ -17,7 +17,11 @@ SemanticValidator = Callable[[str, dict[str, Any]], None]
 FATAL_FAILURE_POLICY: FailurePolicy = "fatal"
 OPTIONAL_BRANCH_FAILURE_POLICY: FailurePolicy = "optional_branch"
 OPTIONAL_BRANCH_STAGE_ALLOWLIST = frozenset(
-    {"creative-memory-recall", "creative-memory-remix"}
+    {
+        "creative-cultural-signal-scan",
+        "creative-memory-recall",
+        "creative-memory-remix",
+    }
 )
 
 

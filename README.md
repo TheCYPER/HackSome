@@ -68,6 +68,7 @@ Build handoff 为止：
 ```text
 C0 赛题与硬约束
 → C1 Creative Brief + frozen Software Demo Policy
+→ C1W 最近 30 天文化信号扫描（optional / fail-open）
 → C2 Software-native Creative Territories
 → C3 Concept Synthesis
 → C4 Hook/Share Screen + Software Demo Feasibility
@@ -76,11 +77,23 @@ C0 赛题与硬约束
 → C7 确定性报告、Idea Card、Memory Record、Build handoff
 ```
 
-新 run 使用 Creative contract v2：普通电脑/手机和内置 camera、microphone、
-touch、screen、speaker 可以作为交互入口；定制硬件、实体制作、纯装置/
-人工表演核心、mock 或 wizard-of-oz 核心不能进入后续查重和人审。每个 Concept
-要先经过两份独立 Hook/传播审查和一份独立 Software Demo 可行性审查，三者
-只共享一次有界修复机会。
+新 run 使用 Creative contract v3。它继承 v2 的 software-first 约束：普通
+电脑/手机和内置 camera、microphone、touch、screen、speaker 可以作为交互
+入口；定制硬件、实体制作、纯装置/人工表演核心、mock 或 wizard-of-oz 核心
+不能进入后续查重和人审。每个 Concept 要先经过两份独立 Hook/传播审查和一份
+独立 Software Demo 可行性审查，三者只共享一次有界修复机会。
+
+v3 在 C1 后、C2 前恰好运行一次 C1W：以 run 创建时间为锚点扫描最近 30 天的
+热点、迷因、争议与反向信号。带来源的原始 Snapshot 只用于审计；C2/C3 只收到
+去掉 URL、标题、平台和表面梗的 slot-bound 安全 palette，因此借用的是抽象
+互动模式，而不是照抄热点。C1W 搜索失败会留下 `unavailable` 证据并继续生成；
+C5W 的外部撞车审查仍然失败即终止。v1/v2 历史 run 始终按各自冻结资源恢复，
+不会被补跑 C1W 或用 v3 重新解释。
+
+默认四个 C3 synthesizer 还按稳定 slot 分别承担 Explorer / Simulator、
+Realtime Partner、Social Game / Relay、Creator / Transformer；这是互斥的
+primary product loop，不是四种审美换皮。某个 slot 没有诚实可行的组合时可以
+返回零 Concept。
 
 启动：
 
@@ -131,7 +144,7 @@ hacksome review runs/<run-id> \
 评审者可以看到候选的软件核心、最小 Demo 与分享产物，但提交前看不到机器
 可行性 verdict 或队友原文；提交后只能看只读 team wall。只有 curator 链接
 能查看完整 C4F 证据、批准哪些反馈进入最后一次有界修订、合并候选或关闭
-轮次。v2 回执还会记录 `share_impulse`、具体分享对象和
+轮次。当前回执还会记录 `share_impulse`、具体分享对象和
 `demo_confidence`，这些只是 Idea 阶段代理信号，不代表真实传播率或构建成功。
 
 ### Idea Memory 是什么
@@ -144,10 +157,11 @@ hacksome review runs/<run-id> \
 - 只读取去身份化的 `creative-memory-record.json`，不读取 Prompt、Session、
   原始人工评论或整个旧 Idea Card。
 
-当前运行创建前会冻结一份带哈希的 Snapshot。C0–C4 先独立生成，之后 C5
-才允许最多两个 memory challenger；challenger 仍需重走 Hook 与 Novelty
-检查，且不能递归读取 Memory。`off`、没有合格历史或历史损坏都有明确记录，
-不会偷偷退化成不透明的全局数据库。
+当前运行创建前会冻结一份带哈希的 Snapshot。C2/C3 和第一批 C4 不读取任何
+Idea Memory；v3 的 C1W 文化信号是另一条仅面向“当下灵感”的有界输入，不会
+读取历史 Idea。只有到了 C5，流程才允许最多两个 memory challenger；
+challenger 仍需重走 Hook 与 Novelty 检查，且不能递归读取 Memory。`off`、
+没有合格历史或历史损坏都有明确记录，不会偷偷退化成不透明的全局数据库。
 
 ### 空 batch 与零 Idea
 

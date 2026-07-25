@@ -243,6 +243,130 @@ Reviewer UI：
   回归、Node syntax、静态移动/reduced-motion 检查及 Desktop 首屏视觉已完成；
   当前浏览器环境阻止真实点击与 390px 交互，保持未勾选。
 
+### 0.5 C3 v6 互斥产品语法（2026-07-25）
+
+第三次真实 smoke 的零 shortlist 不是 C6B 误杀：两位 Red Team 正确识别出
+“放手/停顿 → 抽象地图”和“清除文字 → 节奏收据”两组近重复。根因是 C3 v5
+四个 lens 分别强调 legibility、reveal、share artifact 与 hidden state，但同一
+Concept 可以同时满足四项。此切片只收紧第一批 C3 的 portfolio partition：
+
+- [x] 默认四个 slot 按稳定顺序绑定 `explorer_simulator`、
+  `realtime_partner`、`social_game_relay`、`creator_transformer`；四类以
+  primary next action 分界，不以题材、视觉、传感器或分享格式分界。
+- [x] C3 Prompt 把 assignment 定义为 hard product-loop responsibility；
+  每个 Concept 只能有一个 primary grammar，无法诚实满足时返回零项，不得把
+  decorative map、receipt、card、recording 或 share link 改名填满配额。
+- [x] 四类分别要求查询/变量比较、低延迟 call-and-response、另一位真人改变
+  shared state、以及真实素材的多步 edit/remix；同时写出相邻 grammar 的明确
+  排除边界。
+- [x] v6 在既有 `Recognizable product grammar:` 行回显 exact assigned ID，
+  Controller 的 context-aware semantic validation 校验 marker 与 slot 一致；
+  不增加 JSON Schema 字段或 H2。
+- [x] C3 template 从 v5 前进到 v6，并把 v5 加入显式兼容 allowlist；
+  frozen v2–v5 继续收到旧 `SYNTHESIS_LENS` block 且不要求 marker。route-level
+  contract/prompt/stage/report policy 继续为 v2。
+- [x] 不修改 C2 Territory lens、C6B Schema/Prompt、reason code、
+  `_deterministic_shortlist` 或 C5M Remix；语义重复仍由 C6B 反证，而不是新增
+  embedding/LLM dedup。
+- [x] 聚焦 38 项与隔离 `CODEX_HOME` 下全量 282 项测试通过（8 项 loopback
+  sandbox skip）；ruff、mypy、compileall、Node syntax、diff-check 与
+  Trellis check 通过。默认用户环境下的首轮全量测试被非空
+  `~/.codex/AGENTS.md` 按预期拦截，未修改该全局文件。
+- [ ] 使用同一 `Hack the Rest` challenge、Brief、Policy、Memory-off 新建 v6
+  smoke，对比 v5 的 grammar coverage、C4 pass、C6B duplicate family 与
+  abstract-map/process-receipt 数量。成功标准不是 shortlist 必须非空。
+
+### 0.6 Creative v3 C1W 文化信号扫描（2026-07-25）
+
+- [x] 将新 run 的 Creative contract/prompt/stage/report policy 提升到 v3；
+  建立独立 v1/v2/v3 PromptCatalog，旧 v1/v2 stage 顺序、web policy、C2/C3
+  template/schema 字节与解释保持冻结。
+- [x] 新增一次性 `creative-cultural-signal-scan`：C1 后、C2 fanout 前执行；
+  仅 C1W/C5W 联网，C2/C3 继续 `web_search=false`。
+- [x] 新增严格 Signal Agent schema、Controller snapshot/status/window/source
+  validator；上限为 12 signals、每项 4 sources，URL 去凭据并全局去重。
+- [x] 固定 `as_of_utc=run.created_at` 与 30-day window；无发布时间的 live
+  trend surface 必须 `observed_at=as_of_utc`，真实完成时刻只写
+  `retrieved_at_utc`。
+- [x] 实现 ready/partial/empty/unavailable 四态；C1W optional failure 保留
+  failed/invalidated task、唯一 diagnostic 与 controller-owned unavailable
+  snapshot，生成继续；C5W 仍 fatal。
+- [x] 实现 deterministic safe palette：C2 每 slot ≤2 inspire + ≤2 avoid，
+  C3 ≤2 inspire；删除 raw URL/title/publisher/platform/label/evidence/marker，
+  拒绝 URL、handle、hashtag、link、code fence 和 surface copy。
+- [x] C2/C3 每个 v3 task 恰好一个 snapshot parent 与一个 hash-delimited
+  `CULTURAL_SIGNAL_PALETTE`；block 自描述“可忽略、非需求/传播/新颖性证据、
+  禁止表面复制”，旧 v2 Prompt 不出现该 block。
+- [x] Route validator 与 C7 projection 校验 task/web/optional/event/snapshot/
+  prompt/parent/palette/hash 闭包；报告只披露 ref/hash/status/window/count，
+  Idea Memory schema 保持 v2 且不复制 raw trends。
+- [x] Memory source contract 支持 v3；为 v3 Recall/Remix 新建 schema 文件，
+  不修改 v1/v2 原 schema 字节。
+- [x] 新增 Signal 单元测试与 workflow partial/unavailable、slot projection、
+  raw leakage、live timestamp、v1/v2 compatibility、report/memory closure 回归。
+- [x] 真实 v3 smoke 暴露 C1W Schema 的 `uniqueItems` 虽是合法 Draft 2020-12
+  JSON Schema，却不属于 Codex structured-output 子集，任务会在 spawn 前以
+  `attempts=0` 失败；optional fail-open 随后把静态资源缺陷掩盖成
+  `unavailable`。已移除该关键词，并保留 Python semantic validator 对规范化
+  `safety_flags` 去重的强制校验。
+- [x] 抽取并复用 `CodexRunner` 的 `validate_output_schema()`；PromptCatalog
+  在复制或写入任何 frozen resource 前校验完整 Catalog。回归覆盖 Creative
+  v1/v2/v3 package schemas、真实 frozen bytes、Useful catalog、C1W 可接受、
+  人工加回 `uniqueItems` 会 fail-fast 且不会留下半成品 `resources/`。
+- [x] Structured-output validator 改为上下文感知的正向 keyword allowlist；
+  `properties`/`$defs` 名称仍作为数据，未知 Schema-position keyword 返回
+  exact JSON path 并 fail closed。Path 与 bytes API 共用同一 compiler；
+  freeze 对单次读取的 exact bytes 预检并通过临时目录一次发布，失败不留
+  半冻结目录、不覆盖既有目录；`load_frozen` 也校验 manifest hash 绑定的
+  exact bytes，避免持久化坏资源被 C1W optional fail-open 掩盖。
+- [x] 第二次真实 v3 smoke 已跨过 Schema preflight 并实际联网返回 5 条 signal，
+  随后因 `published_at="2026-07-08"` 与
+  `published_at="2026-07-14T06:10"` 缺少 timezone 被现有 Python semantic
+  validator invalidated。保留该 fail-closed 语义；Prompt 现在要求完整 RFC3339
+  与显式 `Z`/offset，日级日期只允许锚定为 `T00:00:00Z` 并保留
+  `time_precision=day`，分钟级时间禁止猜测时区。
+- [x] C1W Schema 的 `published_at/observed_at` 共用一个 `$defs` RFC3339
+  timestamp pattern；回归覆盖真实 smoke 风格的 date-only/offsetless-minute
+  双边界拒绝、day anchor/Z/offset 接受与 UTC window 边界、Prompt 明示规则、
+  Codex subset preflight，以及 v1/v2 Catalog 不含 C1W、旧资源不变。
+- [x] Python timestamp lexical gate 与 Schema exact pattern 绑定，避免
+  `datetime.fromisoformat()` 额外接受 basic ISO、空格分隔、compact offset 或
+  offset seconds；semantic 层继续拒绝错误日历与非 midnight day precision。
+  回归还覆盖 fractional seconds、`month/unknown` 原语义、显式 offset→UTC
+  window，以及 `observed_at` 必须逐字等于 supplied `as_of_utc`。
+- [x] 第三次最小 C1W runtime probe 在模型输出前收到 Codex 400：
+  `invalid_json_schema` 指出 `published_at` 的 `$ref` 不能带
+  `description` sibling。C1W Schema 改为两个字段都使用 pure `$ref`，共同说明
+  移入 `$defs`/Prompt；timestamp regex 与语义不变。
+- [x] Codex subset validator 增加组合规则：任一 Schema-position object 含
+  `$ref` 时必须只含 `$ref`，否则在 Catalog freeze 前返回准确 JSON path。
+  回归复现 exact `{ "$ref": ..., "description": ... }` 失败形状，并验证 pure
+  `$ref` + `$defs`、真实 C1W package/frozen schema 与 v1/v2 catalog 继续通过。
+- [x] 修复后的最小 live probe 已通过真实 Codex Schema 并返回合法 RFC3339，
+  随后因同一 canonical Later URL 被 signal 1/2 跨项复用而触发已有全局
+  `seen_urls` semantic invalidation。保持 fail closed，不做 Controller dedupe；
+  Prompt 明示同 signal/跨 signal 的 canonical URL 全局唯一、共享页面只留给
+  最强候选、source count 非 coverage，同 publisher 不同 URL 合法。
+- [x] URL 回归覆盖 exact duplicate、跨 signal、host case + fragment
+  canonical-equivalent duplicate，以及相同 publisher 的独立 URL；Schema 能
+  接受这些跨数组形状，Python semantic validator 负责拒绝。
+- [x] 第五次最小 C1W live probe 已通过完整真实路径：Codex runner
+  `attempts=1`、wall time `230.94s`，输出经
+  `build_cultural_signal_snapshot()` 语义验证为 `status=partial`、`1` 条
+  signal、platform kind 仅 `social`。C2/C3 各得到 `1` 条 safe palette，
+  每条字段集合严格为
+  `abstract_pattern/creative_role/creative_tension/kind/
+  participation_shape/signal_ref`；实施记录不保存 raw URL、标题、label 或
+  surface content。
+- [x] 聚焦 Creative 测试 183 项通过（其中 review server 8 项依环境 skip）；
+  routes 12 项、workflow 15 项、signals/contracts/prompting/executor/artifacts
+  49 项均通过。
+- [x] 最终 check 已运行全仓 unittest、ruff、mypy、compileall、Node UI syntax
+  与 diff-check：`304` tests total，其中 `296` passed，`8` 项 loopback
+  socket 测试因当前隔离环境不可用而 skip，`0` failed；其余门禁全部通过。
+- [ ] 使用 `test-topics.md` 的真实题目运行一次 v3 smoke；审查 Signal Snapshot、
+  四种 grammar coverage 与到 C6 前的 Idea Card 质量。
+
 ## 1. Preflight 与基线
 
 - [ ] 检查当前分支为 `codex/creative-review-loop`，base 为最新 `origin/main`。
@@ -258,7 +382,7 @@ Reviewer UI：
 
 ### 2.1 Run schema 与 route contract
 
-- [ ] 在 `src/hacksome/hub.py` 增加 v1/v2 读取：
+- [ ] 在 `src/hacksome/core/hub.py` 增加 v1/v2 读取：
   - v1 投影为 `route.id=useful`；
   - v1 projection 严格只读，不创建 lock、不写回、不要求 v2 字段；
   - 新 run 写 v2 与显式 route metadata；
@@ -273,7 +397,7 @@ Reviewer UI：
   - JSON list 恢复为 `CodexConfig` 要求的 tuple；
   - Creative settings 由同一入口验证；
   - 未知字段、缺失安全字段或 hash 漂移 fail closed。
-- [ ] 新增 `src/hacksome/routes.py`：
+- [ ] 在 `src/hacksome/core/routes.py` 维护：
   - `RunContract` protocol；
   - `useful` / `creative` route registry；
   - 未知 route 与未支持 schema 的明确错误。
@@ -286,11 +410,14 @@ Reviewer UI：
 
 ### 2.2 Prompt 与 task executor
 
-- [ ] 在 `src/hacksome/prompting.py` 公开 `PromptSpec` 与 `PromptCatalog`。
+- [ ] 在 `src/hacksome/core/prompting.py` 公开 `PromptSpec` 与 `PromptCatalog`。
 - [ ] 把现有 Useful `_SPECS` 迁移为 `useful_prompt_catalog`，不改变模板 ID/version/schema。
-- [ ] v2 run 创建时把整条 route（含条件式 C5M 和尚未执行的 C6C）Prompt/Schema 复制到 `RUN_DIR/resources/`，生成 template ID/version/hash + schema hash + web policy manifest；所有 task 从 frozen copy 加载。
+- [ ] v3 run 创建时把整条 route（含 optional C1W、条件式 C5M 和尚未执行的
+  C6C）Prompt/Schema 复制到 `RUN_DIR/resources/`，生成 template
+  ID/version/hash + schema hash + web policy manifest；所有 task 从 frozen
+  copy 加载。v1/v2 resume 只读取自身 frozen catalog。
 - [ ] resume 前验证 resource manifest、冻结文件和受支持 contract version；package 资源更新不改变 frozen Prompt，冻结副本被篡改或代码不再支持该版本时 fail closed。
-- [ ] 新增 `src/hacksome/task_executor.py`，抽取：
+- [ ] 在 `src/hacksome/core/task_executor.py` 抽取：
   - render；
   - begin_task；
   - CodexTask；
@@ -307,7 +434,7 @@ Reviewer UI：
 
 ### 2.3 CLI 与跨进程 lease
 
-- [ ] 在 `src/hacksome/state.py` 增加受限的 `run.lock` advisory lease。
+- [ ] 在 `src/hacksome/core/state.py` 增加受限的 `run.lock` advisory lease。
 - [ ] 增加独立 `review-server.lock`；`run.lock` 只围绕单次 shared snapshot 或 exclusive mutation，不能让长期 server 阻塞 `status`。
 - [ ] 在 `src/hacksome/cli.py` 增加 `--route`，默认 `useful`。
 - [ ] route-specific option 使用 `argparse.SUPPRESS`，dispatch 后才注入 route 默认；显式传入另一 route option 报错。
@@ -318,11 +445,11 @@ Reviewer UI：
 
 ### 2.4 切片一测试门
 
-- [ ] `tests/test_hub.py`：v1 read-only/no lock write、v2 write、terminal error 首因、config JSON round-trip、transition outbox 各崩溃点/terminal reconcile、artifact 全幂等/冲突/missing-file/adopt/orphan/event reconcile、unknown route、route projection。
-- [ ] `tests/test_prompting.py`：两个 catalog、resource freeze/manifest、等待期间 package resource 更新仍用 frozen bytes、frozen tamper/unsupported version fail closed、exact prompt hash、未知 stage。
-- [ ] `tests/test_task_executor.py`：success、infra failure、semantic invalidation、cancel、failure-policy 默认值/allowlist/序列化。
-- [ ] `tests/test_routes.py`：inspect/validate dispatch。
-- [ ] `tests/test_cli.py`：迁移前 Useful run/status human + JSON golden 字节/字段不变、默认/显式 Useful 等价、跨 route 显式参数拒绝、terminal reconcile。
+- [ ] `tests/core/test_hub.py`：v1 read-only/no lock write、v2 write、terminal error 首因、config JSON round-trip、transition outbox 各崩溃点/terminal reconcile、artifact 全幂等/冲突/missing-file/adopt/orphan/event reconcile、unknown route、route projection。
+- [ ] `tests/core/test_prompting.py`：两个 catalog、resource freeze/manifest、等待期间 package resource 更新仍用 frozen bytes、frozen tamper/unsupported version fail closed、exact prompt hash、未知 stage。
+- [ ] `tests/core/test_task_executor.py`：success、infra failure、semantic invalidation、cancel、failure-policy 默认值/allowlist/序列化。
+- [ ] `tests/core/test_routes.py`：inspect/validate dispatch。
+- [ ] `tests/core/test_cli.py`：迁移前 Useful run/status human + JSON golden 字节/字段不变、默认/显式 Useful 等价、跨 route 显式参数拒绝、terminal reconcile。
 - [ ] 运行完整 Useful 质量门。
 - [ ] 形成 commit 1：`refactor: add route-aware idea workflow harness`。
 - [ ] 推送分支并创建 Draft PR，让 Weston 可以尽早审共享契约。
@@ -331,7 +458,7 @@ Reviewer UI：
 
 ### 3.1 Creative contracts 与资源
 
-- [ ] 新建 `src/hacksome/creative/` package：
+- [ ] 在 canonical `src/hacksome/stages/ideation/creative/` package 实现：
   - `contracts.py`
   - `artifacts.py`
   - `memory.py`
@@ -408,7 +535,7 @@ Reviewer UI：
 
 ### 3.4 C5M Idea Memory
 
-- [ ] 实现 `src/hacksome/creative/memory.py`：
+- [ ] 实现 `src/hacksome/stages/ideation/creative/memory.py`：
   - memory record/snapshot/capsule/`MemoryStageSummary` Schema 与 semantic validation；
   - direct-child discovery、稳定排序、hard limits、diagnostics；
   - composite cross-run refs 与独立 capsule hash；
@@ -433,7 +560,7 @@ Reviewer UI：
 
 - [ ] 只有 base/challenger 的完整 C4H+C4F pass Concept 进入 Novelty Scan；
   task 数严格等于完整 screen pass 数。
-- [ ] 只有 C5W task 设置 `web_search=True`。
+- [x] v3 只有 C1W/C5W task 设置 `web_search=True`；v1/v2 仍只有 C5W。
 - [ ] 验证 source URL、relation 枚举和必需 section。
 - [ ] 网络/任务失败使 run failed，绝不生成“未发现先例”的空结论。
 - [ ] Scan 只作为证据，不直接 gate Concept；memory challenger 不豁免外部查重。
@@ -449,7 +576,8 @@ Reviewer UI：
 - [ ] 覆盖 memory off/无历史/zero-Idea source/坏来源 diagnostics/source 删除篡改/snapshot 篡改/稳定 cap 顺序。
 - [ ] 覆盖 Recall/Remix 上限、无 current Atom、无 relevant cue、copy reject、复合 ref、optional failure 和禁止递归。
 - [ ] 覆盖 Recall 失败、Remix 0/1/2 成功、两个 sibling 一成一败，以及错误 stage 冒充 optional 的拒绝。
-- [ ] 断言 C0-C4/C5M 没有 web，C5W 才有。
+- [ ] 断言 v3 只有 C1W/C5W 有 web，v1/v2 只有 C5W；C0、C1、C2-C4、
+  C5M、C6、C7 均无 web。
 - [ ] 覆盖空 Atom、空 base Concept、hardware/install/manual 全拒绝、合法普通
   I/O pass、base 全部 C4 reject、challenger 全 reject、C5W 失败。
 - [ ] 完整 Useful + Creative 离线测试。
@@ -481,7 +609,7 @@ Reviewer UI：
 
 ### 4.2 Review domain 与 ledger
 
-- [ ] 新建 `src/hacksome/creative/review.py`：
+- [ ] 实现 `src/hacksome/stages/ideation/creative/review.py`：
   - snapshot DTO；
   - HumanReview schema/domain validation；
   - HumanResolution validation；
@@ -489,7 +617,7 @@ Reviewer UI：
   - append-only 与 supersedes。
 - [ ] 初始化 `human-reviews.jsonl` 与 `human-resolutions.jsonl`。
 - [ ] reviewer name 与 reviewer ID 分离。
-- [ ] v2 ConceptReview 保存 `share_impulse` 与 `demo_confidence` 并纳入
+- [ ] v2/v3 ConceptReview 保存 `share_impulse` 与 `demo_confidence` 并纳入
   request/fragment hash；`immediate` + 空 share target 拒绝。
 - [ ] review/resolution 以规范化 client `request_sha256` 重试幂等，复用原 server timestamp；冲突 ID、过期 hash 和未知 ref 拒绝。
 - [ ] supersedes 只能指向同 reviewer/round 的 latest record；首份记录标记 pre-reveal，看到 team wall 后的 edit 标记 post-reveal。
@@ -502,7 +630,7 @@ Reviewer UI：
 
 ### 4.3 HTTP server
 
-- [ ] 新建 `src/hacksome/creative/review_server.py`，只使用标准库。
+- [ ] 实现 `src/hacksome/stages/ideation/creative/review_server.py`，只使用标准库。
 - [ ] 实现固定 HTML/assets/API 路由。
 - [ ] 实现 `/join/<token>` → HttpOnly cookie → 无 token URL，并关闭/脱敏 access log。
 - [ ] 默认 loopback/随机端口；非 loopback 强制 `--public-host`，用它生成 URL/Host allowlist 并打印警告。
@@ -519,7 +647,8 @@ Reviewer UI：
 
 ### 4.4 HTML/CSS/JS
 
-- [x] 新建 `src/hacksome/review_ui/index.html`、`styles.css`、`app.js`。
+- [x] 在 `src/hacksome/stages/ideation/creative/review_ui/` 提供 `index.html`、
+  `styles.css`、`app.js`。
 - [x] 将每个 exact Concept 的说明与回执绑定在同一项目档案卡内。该历史纵向
   多卡呈现已由 0.4 的单 active card 接力状态模型替代；不得恢复成“先看完整批
   描述、再集中评审”的页面。
@@ -592,7 +721,7 @@ Reviewer UI：
 
 ### 5.1 Deterministic report
 
-- [ ] 新建 `src/hacksome/creative/report.py`。
+- [ ] 实现 `src/hacksome/stages/ideation/creative/report.py`。
 - [ ] 从 Hub、decision ledger、human ledgers 读取已验证数据。
 - [ ] 按稳定 ID 渲染完整历史和零个或多个 Idea Card，并固定生成 Candidate Fate Ledger、Idea Memory Used、Memory-derived Branches；零 Idea 增加逐项原因/证据的 Zero-Idea Explanation。
 - [ ] 实现 Final Creative Idea Card 的 12 个必需 H2、Human Signal 代理声明和 controller-owned Lineage。

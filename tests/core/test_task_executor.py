@@ -156,6 +156,14 @@ class AgentTaskExecutorTests(unittest.IsolatedAsyncioTestCase):
                     template_path=template,
                     schema_path=schema,
                 ),
+                PromptSpec(
+                    stage="creative-cultural-signal-scan",
+                    template_id="test.signal",
+                    version="1",
+                    template_path=template,
+                    schema_path=schema,
+                    web_search=True,
+                ),
             )
         )
 
@@ -315,6 +323,33 @@ class AgentTaskExecutorTests(unittest.IsolatedAsyncioTestCase):
                 lambda _stage, _output: None,
                 optional_branch_stages=("required-stage",),
             )
+
+    async def test_cultural_signal_scan_may_be_explicitly_optional(
+        self,
+    ) -> None:
+        hub = RecordingHub(self.root)
+        executor = self.executor(
+            hub,
+            ScriptedRunner(),
+            lambda _stage, _output: None,
+            optional_branch_stages=(
+                "creative-cultural-signal-scan",
+            ),
+        )
+
+        await executor.execute(
+            stage="creative-cultural-signal-scan",
+            task_id="signal-scan",
+            blocks=(("SCAN_WINDOW", "bounded"),),
+            parent_refs=(),
+            failure_policy=OPTIONAL_BRANCH_FAILURE_POLICY,
+        )
+
+        self.assertEqual(
+            hub.begin_calls[0]["failure_policy"],
+            "optional_branch",
+        )
+        self.assertTrue(hub.begin_calls[0]["web_search"])
 
 
 if __name__ == "__main__":

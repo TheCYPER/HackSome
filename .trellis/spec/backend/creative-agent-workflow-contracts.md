@@ -15,12 +15,14 @@
 
 Creative 从一道 challenge 开始，在 Idea 阶段结束。它不负责实现产品、创建
 Repo、部署或 Pitch。C6 是唯一 Human-in-the-loop gate；C0–C5 不得增加人工
-暂停。Creative contract v2 默认 software-first：核心体验必须由可执行软件
-产生，并有比赛期间可运行的真实端到端 Demo 路径与具体分享触发物。
+暂停。新 run 使用 Creative contract v3：它继承 v2 的 software-first
+约束，核心体验必须由可执行软件产生，并有比赛期间可运行的真实端到端 Demo
+路径与具体分享触发物；同时增加一次 optional、fail-open 的 C1W 文化信号扫描。
 
 ```text
 C0 Challenge & Constraints
 → C1 Creative Brief + frozen Software Demo Policy
+→ C1W Cultural Signal Scan
 → C2 Software-native Creative Territories
 → C3 Concept Synthesis
 → C4H Cheap Hook/Share Trigger + C4F Software Demo Feasibility
@@ -102,7 +104,7 @@ Territory ref: creative-territory-01
 
 Agent 不生成、猜测或从 `task_id` 推导 Territory/Atom 稳定 ID。
 
-Creative contract v2 的每个 run 还必须冻结 controller-owned
+Creative contract v2/v3 的每个 run 还必须冻结 controller-owned
 `SoftwareDemoPolicy`。Policy 至少精确包含：
 
 ```text
@@ -139,7 +141,7 @@ Creative-only 参数必须使用 `argparse.SUPPRESS` 或等价机制，在 route
 
 ### 3.1 Run 与状态
 
-Creative 只能使用 v2 Hub state，并持久化：
+Creative 使用 Hub `schema_version=2` state，并持久化：
 
 - `route.id=creative` 和 contract/prompt/stage/report policy version；
 - Challenge、Creative Brief、Software Demo Policy、Idea Memory Snapshot 的 path/hash；
@@ -155,19 +157,47 @@ catalog 与 Memory Snapshot，不能采用当前 package 默认值替换旧 run 
 继续报告 manifest 中的真实版本，未知版本、ID、web policy、路径或 hash 漂移
 一律 fail closed。
 
-新 run 必须使用 Creative `contract/prompt/stage/report policy version=2`，相关
-Prompt template、review payload/snapshot 与 report/memory schema 也必须提升
-版本；不能在 version `1` 下静默增加 C4F、reason enum 或人工字段。已存在的
-Creative v1 waiting run 必须继续使用冻结的 v1 resources 完成
-`inspect/status/validate/review/resume`，不得补写 Policy、补跑 C4F 或用 v2
-schema 重解释。v1 允许 `all_candidates_failed_hook`；v2 只允许新
-`all_candidates_failed_concept_screen`。未知或未在 allowlist 中的版本 fail
-closed。
+新 run 必须使用 Creative `contract/prompt/stage/report policy version=3`。
+v3 在 software-first v2 基础上增加 C1W；不能用 v3 resources 重解释已存在的
+v1/v2 run。v1/v2 waiting run 必须继续使用自身冻结 resources 完成
+`inspect/status/validate/review/resume`，不得补写 Policy、补跑 C1W/C4F 或
+改写旧 C2/C3 Prompt bytes。v1 允许 `all_candidates_failed_hook`；v2/v3 只
+允许 `all_candidates_failed_concept_screen`。未知或未在 allowlist 中的版本
+fail closed。
 
 所有语义验证入口都必须显式绑定该 run 持久化的 `contract_version` 与
 `FrozenPromptCatalog[stage].schema_path`，包括 task executor 的首次校验和
 workflow 发布前的 `_validate_completed_output` 二次校验。任何一个入口回退到
-当前 package 的 v2 默认 Schema，都会错误拒绝合法的 frozen v1 resume 输出。
+当前 package 默认 Schema，都会错误拒绝合法的 frozen v1/v2 resume 输出。
+
+Package catalog 冻结前必须让每个输出 Schema 同时通过离线 JSON Schema
+合法性检查与 `CodexRunner` 使用的 structured-output 子集预检，并复用同一个
+validator；Catalog 中任一 Schema 不兼容时，在复制任何 Prompt/Schema 字节前
+fail closed。`Draft202012Validator.check_schema()` 接受某个关键词，不代表
+Codex structured output 接受它。此静态资源错误属于 run 创建错误，不能由
+C1W 的 optional fail-open 转写为 `unavailable`，否则会掩盖“该 stage 永远
+无法启动”的缺陷。
+
+子集预检必须使用正向、上下文感知的 Schema keyword allowlist：`properties`
+下的业务字段名和 `$defs` 下的 definition 名不是 keyword；出现在 Schema
+位置且未显式支持的未来 keyword 必须返回准确 JSON path 并 fail closed。关键词
+各自合法不代表组合合法：任何 Schema-position object 一旦包含 `$ref`，就必须
+是只含 `$ref` 的 pure reference；`description` 等说明应放在被引用的 `$defs`
+定义或 Prompt 中。`$ref` sibling 必须在本地返回该 object 的准确 JSON path，
+不能等真实 Codex 请求返回 `invalid_json_schema` 才发现。
+Catalog 对每个 Schema 只读取一次 bytes，预检与最终冻结必须使用同一份 exact
+bytes，禁止“先读待复制 bytes、再按路径二次读取验证”的 TOCTOU。整个 Catalog
+预检通过后才可在临时目录写入，并以一次目录发布产生 `resources/`；失败不能
+留下半冻结目录，也不能覆盖既有有效目录。`load_frozen` 必须对 manifest hash
+绑定的 exact Schema bytes 再做同源预检，使历史坏资源在 workflow 启动前失败，
+而不是进入 C1W optional task lifecycle。
+
+Structured-output Schema 只约束 Agent envelope 能用 Codex 支持的词汇表达的
+形状；不能表达的领域不变量继续由 route semantic validator 持有。例如 C1W
+`safety_flags` 不在 Schema 中使用 Codex 不支持的 `uniqueItems`，但 Python
+validator 必须在 task 首次校验与发布前二次校验中拒绝规范化后重复的 flag。
+Agent 返回值未通过 JSON Schema/语义校验仍是 task invalidation，不得误报为
+Catalog 资源兼容错误。
 
 ### 3.2 Agent 隔离与循环上限
 
@@ -176,9 +206,45 @@ workflow 发布前的 `_validate_completed_output` 二次校验。任何一个�
 - C1/C2/C3/C4H/C4F/C5M Remix/C6A/C6B 必须读取 run 中同一 exact
   Software Demo Policy bytes/hash；自由文本 Brief 只能收紧体验方向，不能
   放宽该 Policy。C1 不因此暂停。
-- 只有 C5W Novelty Scan 使用 web search。
+- v3 只有 C1W Cultural Signal Scan 与 C5W Novelty Scan 使用 web search；
+  v1/v2 仍只有 C5W。C2/C3 在所有版本中都禁止联网。
 - C0–C4、第一批 C3/C4 的 Prompt、parent refs 与 context 不得含 Idea Memory
   或历史 disposition。
+- v3 的 C1W 必须在 C1 完成后、首个 C2 task 前恰好执行一次。它使用
+  `as_of_utc=run.created_at` 的 30-day window；有发布时间用 `published_at`，
+  无发布时间的 live trend surface 才允许
+  `observed_at=as_of_utc`。Controller 完成时刻只写
+  `retrieved_at_utc`。
+- C1W 非 null `published_at/observed_at` 必须是带 seconds 与显式 `Z` 或数字
+  offset 的完整 RFC3339，可包含 fractional seconds。日级来源必须由 Agent
+  规范化为
+  `YYYY-MM-DDT00:00:00Z` 并保持 `time_precision=day`；该 UTC midnight 是
+  确定性 precision anchor，不是分钟级发布时间声明。分钟级时间没有明确时区
+  时必须拒绝，Agent/Controller 不得猜测 UTC 或本地时区。`month/unknown`
+  不得放宽 timestamp/timezone/window，也不允许补写缺失日期或时间。Controller
+  只可把显式 offset 等价换算成 UTC；`observed_at` 必须与 supplied
+  `as_of_utc` 文本完全相同。两字段在 Agent Schema 中引用同一 `$defs`
+  pattern，Python lexical gate 必须使用同一 exact regex，再独立检查真实日历、
+  timezone、互斥、day UTC-midnight、exact observed anchor 与 UTC window。
+- 同一 canonical source URL 在整个 C1W `signals[]` 中最多出现一次，同 signal
+  内与跨 signal 均不得复用；canonical key 忽略 host 大小写和 fragment。
+  同 publisher 的不同 URL 合法，source count 不是 coverage 指标。该跨嵌套
+  array 不变量无法由 Agent JSON Schema 表达，必须由 Python semantic validator
+  使用全局 `seen_urls` fail closed；Controller 不得静默去重或把重复来源拆成
+  多条 evidence。
+- C1W Agent raw source 只能进入唯一
+  `creative-cultural-signal-snapshot-r001`。Snapshot 状态严格区分
+  `ready|partial|empty|unavailable`；unavailable 必须绑定 failed/invalidated
+  optional task 与唯一 `optional_cultural_signal_stage_failed` event，不能用
+  `no_signal_reason` 冒充成功搜索。C1W fail-open；C5W 仍 fatal。
+- v3 每个 C2/C3 task 必须恰好引用一次 signal snapshot，并收到恰好一个按
+  slot 确定性生成的 `CULTURAL_SIGNAL_PALETTE`。C2 上限为 2 inspire + 2 avoid，
+  C3 为 2 inspire；empty/unavailable 仍注入同 shape 空 palette。
+- Palette 只能包含 `signal_ref/kind/creative_role/abstract_pattern/
+  creative_tension/participation_shape`，不得含 URL、title、publisher、
+  platform、label、neutral summary、source evidence、surface marker、handle、
+  hashtag、Markdown link 或 code fence。它只能作为可忽略灵感，不能作为
+  demand、virality、novelty、feasibility、安全或质量证据。
 - C5M 最多一次 Recall、八个 cue、两个 Remix challenger；challenger 不得递归
   Recall，仍须经过普通 C4H+C4F/C5W。
 - 每个 Concept 的 budget 独立：C4 hook repair ≤1、C6A evidence revision
@@ -232,11 +298,35 @@ workflow 发布前的 `_validate_completed_output` 二次校验。任何一个�
   `Software immediately responds:`、`Why try or share again:` 与
   `Recognizable product grammar:`。六度人物关系路径与实时 Jam 搭档只作为
   静态质量形状校准，Prompt 明确禁止输出两者的表面题材；它们不作为当前 run
-  的外部 evidence，也不改变 C3 只读取 C0-C2 data blocks。v5 还限制单篇
-  Concept 的篇幅，并要求返回前机械自检全部必需 H2、末尾 `Parent Atoms` 与
-  结构化 refs；它不能放宽 validator 或由 Controller 补写缺失正文。frozen
-  C3 v4 继续按原字节加载。C6A v4 只能使用 C5W 已验证先例降低解释门槛，不能
-  编造具体项目/URL 或把 Concept 改得更抽象。
+  的外部 evidence。v1/v2 的 C3 只读取 C0-C2 data blocks；v3 仍不读取 raw
+  signal snapshot，只额外接收 Controller 从该 snapshot 投影的 safe palette。
+  v5 还限制单篇 Concept 的篇幅，并要求返回前机械自检全部必需 H2、末尾
+  `Parent Atoms` 与结构化 refs；它不能放宽 validator 或由 Controller 补写
+  缺失正文。frozen C3 v4 继续按原字节加载。C6A v4 只能使用 C5W 已验证先例
+  降低解释门槛，不能编造具体项目/URL 或把 Concept 改得更抽象。
+- C3 v6 把四个默认 synthesizer 从可重叠的软 lens 改为稳定且互斥的
+  product-loop responsibility，slot 顺序固定为：
+  `explorer_simulator`、`realtime_partner`、`social_game_relay`、
+  `creator_transformer`。分类轴是软件回应后的 primary next action：
+  query/variable comparison、bounded-latency call-and-response、另一位真人
+  改变 shared state、或用户对真实素材进行多步 edit/remix。视觉、题材、输入
+  传感器、分享按钮、地图或收据本身不能改变分类；无法诚实满足 assigned
+  grammar 时必须返回零 Concept。
+- v6 Controller 的 `SYNTHESIS_LENS` block 只提供 exact stable
+  `assigned_product_grammar_id` 与 label；详细 acceptance/exclusion 规则属于
+  frozen v6 Prompt。每个输出在 `Why It Is Unexpected Yet Legible` 中恰好写
+  一行 `Recognizable product grammar: <assigned-id> — <explanation>`。
+  context-aware semantic validation 将 marker 与当前 task 的 expected ID
+  fail closed 绑定；缺失、未知或错 slot 会 invalidated，不是 candidate reject。
+  frozen C3 v2–v5 继续收到旧 `SYNTHESIS_LENS` 文本，不注入新 assignment，也
+  不要求 marker；v5 加入显式 compatible template allowlist。任何尚未注册
+  context semantics 的未来 C3 template version 必须 fail closed，不能静默退回
+  legacy lens。C3 JSON Schema、十二个 H2、software-first product semantics、
+  C2 与 C6B 均不改变。
+- v3 当前 C3 template version 为 v7：继续使用 v6 的四种互斥 product grammar
+  语义，同时由 Controller 增加 safe palette block 与 snapshot parent。C2
+  template version 为 v3。C2/C3 旧模板文件本身不修改，v2 catalog 仍冻结 C2
+  v2 / C3 v6 的真实旧字节且完全没有 palette block。
 - C2 fanout 的 slot 在调用 Agent 前已确定，但内部 Territory ID 不注入 C2
   Prompt，也不要求 Atom Markdown 回显。Controller 发布 Atom 时必须同时绑定
   Atom ID、`source_refs=(territory_ref,)`、`metadata.territory_ref`、
@@ -268,7 +358,7 @@ workflow 发布前的 `_validate_completed_output` 二次校验。任何一个�
 
 Review 与 resolution 是 append-only JSONL：
 
-- v2 `ConceptReview` 必须保存
+- v2/v3 `ConceptReview` 必须保存
   `share_impulse=immediate|maybe|no` 与
   `demo_confidence=yes|maybe|no`；`immediate` 必须有非空
   `share_target`，两个字段进入 request/feedback fragment hash；
@@ -427,13 +517,14 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 | v2 Software Demo Policy 缺失/hash 漂移，或允许阶段使用不同 bytes | fatal + partial；不调用下一 Agent |
 | Atom ID、metadata、source refs 或 Territory artifact 不一致 | 离线 validation 失败；不得依赖 Markdown 子串修复或放行 |
 | C3 缺 software runtime、share trigger 或可执行 Demo section | task invalidated + partial；不是 candidate reject |
+| C3 v6/v7 缺少 exact grammar marker，或 marker 与 assigned slot 不同 | task invalidated + partial；不得改写 marker、换 slot 或把它当零候选 |
 | C4F 明确定制硬件/实体制作/纯装置或不可得依赖 invalid | terminal `c4_software_demo_invalid` + 维度 reason/evidence；0 个后续 C5W/C6 task |
 | C4H/C4F 有可修复缺口 | 共用一次 C4R；对 repaired revision 重跑 fresh 2+1 |
 | repaired revision 任一 C4H/C4F 非 pass | `c4_unresolved_after_repair` 终态淘汰 |
 | C4R/C6A 改写三个不可变 source section 任一项 | semantic validation 失败并产出 partial；Prompt 必须事先列出不可变 section |
 | C5M optional task 失败 | 写匹配 diagnostic；保留成功 sibling；继续 base |
 | C5W/其他 fatal task 失败 | run failed + partial，不能伪装“无先例/空候选” |
-| v2 base 与 challenger 均无完整 C4 screen pass | 空 batch + `all_candidates_failed_concept_screen`，直接 C7 |
+| v2/v3 base 与 challenger 均无完整 C4 screen pass | 空 batch + `all_candidates_failed_concept_screen`，直接 C7 |
 | v1 frozen run 使用旧 zero reason/review shape | 按 v1 loader/validator；不迁移、不补 C4F |
 | v1 task 首次校验使用 frozen schema、二次校验回退 package v2 schema | 契约错误；两次都必须绑定 persisted contract + frozen stage schema |
 | C6B shortlist 为空 | 空 batch + `shortlist_empty`，直接 C7 |
@@ -458,6 +549,10 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 - Good：同一 C6A portfolio 的两个 C6B task 分别收到 Meaning/Value 与
   Hackathon Floor lens；两者仍输出完全相同的五维 shape，Controller 只按既有
   categorical decision 聚合。
+- Good：当前 v3 的 C3 v7 slot 2 收到 `realtime_partner` 与一个不含来源表面
+  信息的 safe palette，输出的核心价值依赖本轮结束前的软件回应，并使用 exact
+  marker；slot 2 没有合适 Atom 时返回空集合，而不是把批处理可视化改名为
+  realtime。frozen Creative v2 仍按 C3 v6 运行且没有 palette。
 - Good：C2 Atom 用自然语言说明“仪式化暂停”所属的创意空间；Controller 在
   C3 索引中另行给出 `creative-atom-t01-01 → creative-territory-01`。
 - Good：两位 reviewer 独立复述，Percy 只批准一个相关 fragment；C6C Prompt
@@ -480,6 +575,9 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
   human curation 合同。
 - Bad：两个 curator 只换 task ID 却收到相同审查角色，或 Meaning/Value
   reviewer 只输出“是否有意义”而跳过五维；测试必须失败。
+- Bad：四个 C3 task 都产出“输入遥测 → 抽象地图/收据 → 分享链接”，仅用不同
+  grammar label 包装；错 marker 必须由 v6 validator 拒绝，语义近似仍由 C6B
+  反证，Controller 不得因为四个 ID 都出现就强制 include。
 - Bad：完成状态缺 terminal disposition、report、Memory Record 或 exact
   finalization/result binding；离线 validation 必须失败。
 
@@ -488,10 +586,28 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 默认质量门必须离线，不调用 Codex 或网络，并断言：
 
 - C0–C6 Prompt allowlist、fresh sessions、web policy、稳定 fanout ID；
+- v3 C1W 单次时序、四态 snapshot、source/time/URL 规则、optional diagnostic
+  closure；只有 C1W/C5W 联网，C5W failure 仍 fatal；
+- C1W 同 URL 在单 signal、跨 signal 与 canonical-equivalent fragment 形状都
+  semantic reject；Schema 仍可接受该跨数组形状，同 publisher 不同 URL 通过；
+- v1/v2/v3 package catalog 与真实 frozen Schema 字节全部通过运行器同源的
+  Codex structured-output compatibility validator；人工把 `uniqueItems`
+  加回 C1W Schema 或给 `$ref` 加 `description` sibling 时必须在 freeze
+  写入前失败，而 pure `$ref` + `$defs` 合法；重复 `safety_flags` 继续由
+  Python semantic validator 拒绝；
+- C2/C3 snapshot parent 与 safe palette block 恰好一次、slot round-robin
+  确定性、empty/unavailable shape、raw URL/title/label/evidence/marker 泄漏
+  fail closed；v1/v2 无 C1W task/artifact/block；
+- report 披露 snapshot ref/hash/status/window/count，而 Memory Record 不复制
+  raw trend；snapshot/palette/hash/version/parent 任一篡改 fail closed；
 - Software Demo Policy 在 C1/C2/C3/C4H/C4F/C5M Remix/C6A/C6B 使用同一
   exact bytes/hash；v2 C2 lens 不含纯 spatial/performance/cross-media 目标；
-- C3 v5 与 C6A/C6B v4 的 plain-language marker、正例禁复制、C5W 先例边界；
-  C3 v5 还需断言十二个 H2、末尾 `Parent Atoms`、ref 自检与 frozen v4 兼容；
+- C3 v7（继承 v6 语义）与 C6A/C6B v4 的 plain-language marker、正例禁复制、
+  C5W 先例边界；C3 v7 还需断言四个 stable grammar assignment 按 slot
+  一一分配、hard-role
+  与 zero-output 规则、map/receipt 边界、exact marker/expected-ID
+  invalidation、十二个 H2、末尾 `Parent Atoms`、ref 自检与 frozen v5 兼容；
+  frozen v2–v5 继续使用旧 lens block 且不要求新 marker；
   C4F v4 必须从 `SOFTWARE_DEMO_REASON_BY_DIMENSION` 逐对断言 Prompt 显式
   映射，并兼容 frozen v3；两个
   `CURATOR_LENS` ID/正文互不相同、artifact metadata 记录 lens，五维 Schema
@@ -520,9 +636,9 @@ Benchmark 不得只统计 shortlist 数。自动指标至少包含：
 - benchmark 两种 comparison、shared snapshot/no leakage、blind mapping、
   0/1/N Idea worksheet、software false-pass/false-reject、C5W cost、
   share impulse/demo confidence 和 live/fixture 指标边界；
-- v1 waiting run 继续 inspect/review/resume 且资源/receipt/zero reason 不被 v2
-  重解释；回归必须实际触发至少一个 C6C Agent 输出的首次与二次语义校验；新
-  v2 run 不加载 v1 template bytes 冒充当前版本。
+- v1/v2 waiting run 继续 inspect/review/resume，资源/receipt/zero reason
+  不被 v3 重解释；回归必须实际触发至少一个 C6C Agent 输出的首次与二次语义
+  校验；新 v3 run 不加载旧 template bytes 冒充当前版本。
 
 执行：
 
@@ -607,6 +723,30 @@ hub.publish_artifact(
     },
 )
 atom_index = render_atom_index(hub, atom_refs)
+```
+
+### 错误：只给 C3 四个可重叠的审美强调
+
+```python
+SYNTHESIS_LENSES = (
+    "make it legible",
+    "make it surprising",
+    "make it shareable",
+    "make hidden state visible",
+)
+```
+
+### 正确：稳定 slot 绑定互斥的 primary product loop
+
+```python
+SYNTHESIS_LENSES = (
+    ("explorer_simulator", "Explorer / Simulator"),
+    ("realtime_partner", "Realtime Partner"),
+    ("social_game_relay", "Social Game / Relay"),
+    ("creator_transformer", "Creator / Transformer"),
+)
+# v6 output marker is validated against the assigned ID.
+# Frozen v2-v5 continue using their exact legacy lens bytes.
 ```
 
 ### 错误：把“用了电脑”当作 software-first

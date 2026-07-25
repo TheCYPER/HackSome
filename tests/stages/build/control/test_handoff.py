@@ -65,12 +65,13 @@ def test_handoff_exact_schema_sha_and_stable_identity():
         BuildAuthorizationEnvelopeV1.from_mapping(stale)
 
 
-def test_handoff_supports_current_creative_contract_only_for_creative():
-    decoded = BuildAuthorizationEnvelopeV1.from_mapping(
-        envelope(route_id="creative", route_contract_version="2")
-    )
-    assert decoded.route_id == "creative"
-    assert decoded.route_contract_version == "2"
+def test_handoff_supports_all_frozen_creative_contracts_only_for_creative():
+    for version in ("1", "2", "3"):
+        decoded = BuildAuthorizationEnvelopeV1.from_mapping(
+            envelope(route_id="creative", route_contract_version=version)
+        )
+        assert decoded.route_id == "creative"
+        assert decoded.route_contract_version == version
 
     with pytest.raises(HandoffError, match="version is unsupported"):
         BuildAuthorizationEnvelopeV1.from_mapping(
@@ -78,5 +79,5 @@ def test_handoff_supports_current_creative_contract_only_for_creative():
         )
     with pytest.raises(HandoffError, match="version is unsupported"):
         BuildAuthorizationEnvelopeV1.from_mapping(
-            envelope(route_id="creative", route_contract_version="3")
+            envelope(route_id="creative", route_contract_version="4")
         )

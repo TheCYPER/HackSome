@@ -27,13 +27,14 @@ from hacksome.core.state import (
 MEMORY_SCHEMA_VERSION = 2
 SUPPORTED_MEMORY_SCHEMA_VERSIONS = frozenset({1, MEMORY_SCHEMA_VERSION})
 SNAPSHOT_SCHEMA_VERSION = 1
-SUPPORTED_SOURCE_CONTRACT_VERSION = "2"
+SUPPORTED_SOURCE_CONTRACT_VERSION = "3"
 SUPPORTED_SOURCE_CONTRACT_VERSIONS = frozenset(
-    {"1", SUPPORTED_SOURCE_CONTRACT_VERSION}
+    {"1", "2", SUPPORTED_SOURCE_CONTRACT_VERSION}
 )
-SUPPORTED_REPORT_POLICY_VERSION = "2"
+SUPPORTED_REPORT_POLICY_VERSION = "3"
 SUPPORTED_REPORT_POLICY_BY_CONTRACT = {
     "1": "1",
+    "2": "2",
     SUPPORTED_SOURCE_CONTRACT_VERSION: SUPPORTED_REPORT_POLICY_VERSION,
 }
 MEMORY_RECORD_ARTIFACT_TYPE = "creative_memory_record"
@@ -573,11 +574,12 @@ class MemoryRecord:
                 "Creative v1 memory cannot use the v2 Concept Screen zero reason"
             )
         if (
-            route["contract_version"] == "2"
+            route["contract_version"] != "1"
             and zero_reason == "all_candidates_failed_hook"
         ):
             raise MemoryValidationError(
-                "Creative v2 memory cannot use the legacy Hook zero reason"
+                "Creative software-first memory cannot use the legacy Hook "
+                "zero reason"
             )
         raw_entries = raw["entries"]
         if not isinstance(raw_entries, list):

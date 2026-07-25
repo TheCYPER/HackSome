@@ -9,6 +9,7 @@ from typing import Any
 from hacksome.stages.ideation.creative.contracts import (
     C0_CHALLENGE_PARSE,
     C1_BRIEF_NORMALIZE,
+    C1W_CULTURAL_SIGNAL_SCAN,
     C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -22,6 +23,7 @@ from hacksome.stages.ideation.creative.contracts import (
     C6C_FEEDBACK_REVISE,
     CREATIVE_CONTRACT_VERSION,
     LEGACY_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
     CreativeWorkflowSettings,
 )
 from hacksome.core.prompting import PromptCatalog, PromptSpec
@@ -37,6 +39,7 @@ def _spec(
     *,
     version: str = "2",
     web_search: bool = False,
+    schema_name: str | None = None,
 ) -> PromptSpec:
     short_name = stage.removeprefix("creative-")
     return PromptSpec(
@@ -44,7 +47,9 @@ def _spec(
         template_id=f"hacksome.creative.{short_name}",
         version=version,
         template_path=_PROMPT_DIR / f"{stage}.md",
-        schema_path=_SCHEMA_DIR / f"{stage}.schema.json",
+        schema_path=_SCHEMA_DIR / (
+            schema_name or f"{stage}.schema.json"
+        ),
         web_search=web_search,
     )
 
@@ -53,8 +58,42 @@ creative_prompt_catalog = PromptCatalog(
     (
         _spec(C0_CHALLENGE_PARSE),
         _spec(C1_BRIEF_NORMALIZE),
+        _spec(C1W_CULTURAL_SIGNAL_SCAN, version="1", web_search=True),
+        _spec(C2_TERRITORY_EXPLORE, version="3"),
+        _spec(C3_CONCEPT_SYNTHESIZE, version="7"),
+        _spec(C4_CHEAP_HOOK_REVIEW, version="3"),
+        _spec(C4_SOFTWARE_DEMO_REVIEW, version="4"),
+        _spec(C4_CHEAP_HOOK_REPAIR, version="3"),
+        _spec(
+            C5M_MEMORY_RECALL,
+            schema_name="creative-memory-recall-v3.schema.json",
+        ),
+        _spec(
+            C5M_MEMORY_REMIX,
+            schema_name="creative-memory-remix-v3.schema.json",
+        ),
+        _spec(C5W_NOVELTY_SCAN, web_search=True),
+        _spec(C6A_EVIDENCE_REVISE, version="4"),
+        _spec(C6B_PORTFOLIO_CURATE, version="4"),
+        _spec(C6C_FEEDBACK_REVISE),
+    ),
+    compatible_template_versions={
+        C3_CONCEPT_SYNTHESIZE: ("2", "3", "4", "5", "6"),
+        C4_CHEAP_HOOK_REVIEW: ("2",),
+        C4_SOFTWARE_DEMO_REVIEW: ("2", "3"),
+        C4_CHEAP_HOOK_REPAIR: ("2",),
+        C6A_EVIDENCE_REVISE: ("2", "3"),
+        C6B_PORTFOLIO_CURATE: ("2", "3"),
+    },
+)
+
+
+software_first_creative_prompt_catalog = PromptCatalog(
+    (
+        _spec(C0_CHALLENGE_PARSE),
+        _spec(C1_BRIEF_NORMALIZE),
         _spec(C2_TERRITORY_EXPLORE),
-        _spec(C3_CONCEPT_SYNTHESIZE, version="5"),
+        _spec(C3_CONCEPT_SYNTHESIZE, version="6"),
         _spec(C4_CHEAP_HOOK_REVIEW, version="3"),
         _spec(C4_SOFTWARE_DEMO_REVIEW, version="4"),
         _spec(C4_CHEAP_HOOK_REPAIR, version="3"),
@@ -66,7 +105,7 @@ creative_prompt_catalog = PromptCatalog(
         _spec(C6C_FEEDBACK_REVISE),
     ),
     compatible_template_versions={
-        C3_CONCEPT_SYNTHESIZE: ("2", "3", "4"),
+        C3_CONCEPT_SYNTHESIZE: ("2", "3", "4", "5"),
         C4_CHEAP_HOOK_REVIEW: ("2",),
         C4_SOFTWARE_DEMO_REVIEW: ("2", "3"),
         C4_CHEAP_HOOK_REPAIR: ("2",),
@@ -97,6 +136,8 @@ legacy_creative_prompt_catalog = PromptCatalog(
 def creative_prompt_catalog_for_contract(contract_version: str) -> PromptCatalog:
     if contract_version == CREATIVE_CONTRACT_VERSION:
         return creative_prompt_catalog
+    if contract_version == SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION:
+        return software_first_creative_prompt_catalog
     if contract_version == LEGACY_CREATIVE_CONTRACT_VERSION:
         return legacy_creative_prompt_catalog
     raise ValueError(f"unsupported Creative contract version: {contract_version!r}")
@@ -131,5 +172,6 @@ __all__ = [
     "creative_prompt_catalog",
     "creative_prompt_catalog_for_contract",
     "legacy_creative_prompt_catalog",
+    "software_first_creative_prompt_catalog",
     "validate_creative_output",
 ]

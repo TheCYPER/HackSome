@@ -10,10 +10,14 @@ from unittest.mock import patch
 from hacksome.stages.ideation.creative.artifacts import (
     CHALLENGE_BRIEF_HEADINGS,
     CONCEPT_HEADINGS,
+    CONSTRAINT_VIEW_HEADINGS,
     CREATIVE_BRIEF_HEADINGS,
     NOVELTY_SCAN_HEADINGS,
 )
-from hacksome.stages.ideation.creative.contracts import CreativeWorkflowSettings
+from hacksome.stages.ideation.creative.contracts import (
+    C1W_CULTURAL_SIGNAL_SCAN,
+    CreativeWorkflowSettings,
+)
 from hacksome.stages.ideation.creative.report import CreativeReportError
 from hacksome.stages.ideation.creative.report_projection import build_report_projection
 from hacksome.stages.ideation.creative.review import (
@@ -23,6 +27,18 @@ from hacksome.stages.ideation.creative.review import (
     ReviewStore,
 )
 from hacksome.stages.ideation.creative.workflow import CreativeIdeaWorkflow
+from hacksome.stages.ideation.creative.signals import (
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+    CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+    CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+    build_cultural_signal_snapshot,
+)
+from hacksome.core.models import (
+    CodexLogs,
+    CodexResult,
+    CodexRunStatus,
+)
+from hacksome.core.state import atomic_write_json
 
 
 def _markdown(
@@ -106,12 +122,106 @@ class _Fixture:
             task_id=None,
         )
         self.hub.publish_artifact(
+            artifact_id="creative-constraint-view-r001",
+            artifact_type="creative_constraint_view",
+            relative_path=(
+                "artifacts/creative/challenge/"
+                "creative-constraint-view-r001.md"
+            ),
+            content=_markdown(
+                "Constraint View",
+                CONSTRAINT_VIEW_HEADINGS,
+            ),
+            task_id=None,
+            source_refs=("creative-challenge-brief-r001",),
+        )
+        self.hub.publish_artifact(
             artifact_id="creative-brief-r001",
             artifact_type="creative_brief",
             relative_path="artifacts/creative/brief/creative-brief-r001.md",
             content=brief,
             task_id=None,
-            source_refs=("creative-challenge-brief-r001",),
+            source_refs=(
+                "creative-challenge-brief-r001",
+                "creative-constraint-view-r001",
+            ),
+        )
+        task_id = "creative-c1w-cultural-signal-scan-01"
+        rendered = self.workflow.prompt_catalog.render(
+            C1W_CULTURAL_SIGNAL_SCAN,
+            (("SCAN_WINDOW", "fixture deterministic scan window"),),
+        )
+        spec = self.workflow.prompt_catalog[
+            C1W_CULTURAL_SIGNAL_SCAN
+        ]
+        paths = self.hub.begin_task(
+            task_id=task_id,
+            stage=C1W_CULTURAL_SIGNAL_SCAN,
+            prompt=rendered.text,
+            prompt_metadata=rendered.metadata(),
+            output_schema=spec.schema_path,
+            web_search=True,
+            parent_refs=(
+                "creative-challenge-brief-r001",
+                "creative-constraint-view-r001",
+                "creative-brief-r001",
+            ),
+            failure_policy="optional_branch",
+        )
+        output = {
+            "coverage": {
+                "query_families": ["fixture signal scan"],
+                "platforms_attempted": [],
+                "limitations": [],
+            },
+            "signals": [],
+            "no_signal_reason": "Fixture intentionally has no cultural signal.",
+        }
+        created_at = self.hub.load_state()["created_at"]
+        self.hub.finish_task(
+            CodexResult(
+                task_id=task_id,
+                status=CodexRunStatus.SUCCEEDED,
+                session_id="fixture-c1w-session",
+                structured_output=output,
+                usage={},
+                logs=CodexLogs(
+                    stdout=paths.raw / "stdout.jsonl",
+                    stderr=paths.raw / "stderr.jsonl",
+                    last_message=paths.raw / "last-message.json",
+                ),
+                error=None,
+                returncode=0,
+                attempts=1,
+                started_at=created_at,
+                finished_at=created_at,
+                duration_seconds=0.0,
+            )
+        )
+        snapshot = build_cultural_signal_snapshot(
+            output,
+            run_created_at=created_at,
+            captured_at=created_at,
+            task_ref=task_id,
+        )
+        self.hub.publish_artifact(
+            artifact_id=CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_ID,
+            artifact_type=CULTURAL_SIGNAL_SNAPSHOT_ARTIFACT_TYPE,
+            relative_path=CULTURAL_SIGNAL_SNAPSHOT_RELATIVE_PATH,
+            content=_json_text(snapshot.to_dict()),
+            task_id=task_id,
+            source_refs=(
+                "creative-challenge-brief-r001",
+                "creative-constraint-view-r001",
+                "creative-brief-r001",
+            ),
+            metadata={
+                "status": snapshot.status,
+                "task_ref": snapshot.task_ref,
+                "diagnostic_ref": snapshot.diagnostic_ref,
+                "signal_count": len(snapshot.signals),
+                "window": snapshot.window.to_dict(),
+            },
         )
         territory = "# Shared Reversal\n\nA distinct interaction territory.\n"
         self.hub.publish_artifact(
@@ -837,6 +947,22 @@ class CreativeReportProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 CreativeReportError,
                 "stale Concept binding",
+            ):
+                build_report_projection(fixture.hub)
+
+    def test_c1w_projection_rejects_invalid_failure_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = _Fixture(Path(directory), run_id="run-c1w-policy")
+            fixture.skipped_batch("no_concepts_generated")
+            state = fixture.hub.load_state()
+            state["tasks"][
+                "creative-c1w-cultural-signal-scan-01"
+            ]["failure_policy"] = "fatal"
+            atomic_write_json(fixture.hub.state_path, state)
+
+            with self.assertRaisesRegex(
+                CreativeReportError,
+                "C1W task must use optional_branch",
             ):
                 build_report_projection(fixture.hub)
 

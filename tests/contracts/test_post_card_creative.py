@@ -4,9 +4,22 @@ import json
 import tempfile
 import unittest
 
-from hacksome.stages.ideation.creative.review import ReviewBatch, ReviewRound, ReviewStore
+from hacksome.stages.ideation.creative.contracts import (
+    CREATIVE_CONTRACT_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+)
+from hacksome.stages.ideation.creative.review import (
+    ReviewBatch,
+    ReviewRound,
+    ReviewStore,
+)
 from hacksome.stages.ideation.creative.workflow import CreativeIdeaWorkflow
-from hacksome.contracts.post_card.catalog import project_post_card_catalog
+from hacksome.contracts.post_card import catalog as post_card_catalog
+from hacksome.contracts.post_card.catalog import (
+    CreativePostCardProvider,
+    project_post_card_catalog,
+)
 
 from tests.stages.ideation.creative.test_creative_curation_workflow import (
     CreativeCurationRunner,
@@ -56,7 +69,10 @@ class CreativePostCardTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(completed.status, "completed")
 
             catalog = project_post_card_catalog(workflow.run_dir)
-            self.assertEqual(catalog.source.route_contract_version, "2")
+            self.assertEqual(
+                catalog.source.route_contract_version,
+                CREATIVE_CONTRACT_VERSION,
+            )
             self.assertEqual(len(catalog.cards), len(review_round.concepts))
             for card in catalog.cards:
                 self.assertIsNotNone(card.route_handoff_ref)
@@ -81,6 +97,27 @@ class CreativePostCardTests(unittest.IsolatedAsyncioTestCase):
                 project_post_card_catalog(workflow.run_dir).cards,
                 (),
             )
+
+    def test_all_frozen_creative_contracts_have_explicit_providers(self) -> None:
+        versions = {
+            version
+            for route_id, version in post_card_catalog._PROVIDERS
+            if route_id == "creative"
+        }
+        self.assertEqual(
+            versions,
+            {
+                LEGACY_CREATIVE_CONTRACT_VERSION,
+                SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+                CREATIVE_CONTRACT_VERSION,
+            },
+        )
+        self.assertEqual(
+            CreativePostCardProvider(
+                SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION
+            ).contract_version,
+            SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+        )
 
 
 if __name__ == "__main__":
