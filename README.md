@@ -4,12 +4,12 @@
 
 ## 评审入口与部署能力
 
-当前提交版本是 `2026.07.25-production-v5`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
+当前提交版本是 `2026.07.25-production-v6`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
 
 - **Production status:** `LIVE — GitHub Pages`（2026-07-25 UTC）
 - **Production URL:** <https://thecyper.github.io/HackSome/?deployment=static-review>
 - **Deployment identity:** 已授权仓库的发布分支 `TheCYPER/HackSome:gh-pages`；发布提交使用与本地发布 HEAD 完全相同的根 Git tree，不修改该仓库默认分支
-- **Public verification:** `BASE_URL='<上方 Production URL>' node tests/deployment-e2e.js` 分别用干净浏览器存储覆盖桌面 / 390 / 320 三宽度的真实家庭 1 / 6 设置与刷新续接，并检查评审导览重播、公开配对边界、隐私策略和离线壳层
+- **Public verification:** `BASE_URL='<上方 Production URL>' node tests/deployment-e2e.js` 分别用干净浏览器存储覆盖桌面 / 390 / 320 三宽度的真实家庭设置与刷新续接；320 宽度还会真实提交第 1 步并往返第 2 步，检查每次转换都回到新标题并移动辅助焦点，同时检查评审导览重播、公开配对边界、隐私策略和离线壳层
 
 | 能力 | 公开评审版（静态托管） | 本地完整体验（`npm start`） |
 | --- | --- | --- |

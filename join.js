@@ -4,7 +4,7 @@ const SafetyPolicy = window.RelaySafetyPolicy;
 if (!SafetyPolicy?.VERSION) throw new Error("Matching safety policy failed to load");
 const app = document.getElementById("join-app");
 const banner = document.getElementById("connection-banner");
-const APP_BUILD = "2026.07.25-production-v5";
+const APP_BUILD = "2026.07.25-production-v6";
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
   if (!host || host === "localhost" || host === "::1" || host.endsWith(".local")) return true;

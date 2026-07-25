@@ -4,7 +4,7 @@ const { firefox } = require("/usr/local/lib/python3.12/dist-packages/playwright/
 const { server } = require("../server");
 
 const FIREFOX_PATH = "/home/kasm-user/.cache/ms-playwright/firefox-1509/firefox/firefox";
-const BUILD = "2026.07.25-production-v5";
+const BUILD = "2026.07.25-production-v6";
 const PRODUCTION_URL = "https://thecyper.github.io/HackSome/?deployment=static-review";
 const PRODUCTION_PREVIEW = "https://thecyper.github.io/HackSome/assets/social-preview.jpg";
 const STORAGE_KEY = "relay-rehearsal-demo-v1";
@@ -67,6 +67,27 @@ async function navigateWithRetries(page, url) {
       await realPage.reload({ waitUntil: "domcontentloaded" });
       await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
       assert((await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY))?.mode === "real", `public ${viewport.width}px onboarding resumes from browser storage`);
+      if (viewport.width === 320) {
+        const people = {
+          "#setup-caregiver": "林安",
+          "#setup-caregiver-phone": "13800138000",
+          "#setup-recipient": "林禾",
+          "#setup-relay": "周宁",
+          "#setup-emergency-name": "陈平",
+          "#setup-emergency-phone": "13900139000",
+          "#setup-emergency-service": "999",
+        };
+        for (const [selector, value] of Object.entries(people)) await realPage.locator(selector).fill(value);
+        await realPage.locator("#onboarding-people button[type='submit']").click();
+        await realPage.locator(".page-kicker").filter({ hasText: "第 2 / 6 步" }).waitFor();
+        await realPage.waitForFunction(() => window.scrollY === 0);
+        assert(await realPage.getByRole("heading", { name: "只定一个能实现的小休息" }).isVisible(), "320px forward transition reveals the next onboarding heading");
+        assert(await realPage.evaluate(() => document.activeElement?.matches(".setup-header h1")), "320px forward transition moves assistive focus to the new step heading");
+        await realPage.getByRole("button", { name: "上一步" }).click();
+        await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
+        await realPage.waitForFunction(() => window.scrollY === 0);
+        assert(await realPage.getByRole("heading", { name: "先把需要联系的人放进来" }).isVisible(), "320px back transition reveals the previous onboarding heading");
+      }
       assert(realApiRequests === 0, `public ${viewport.width}px real onboarding makes no room API requests (saw ${realApiRequests})`);
       await realContext.close();
     }
@@ -173,7 +194,7 @@ async function navigateWithRetries(page, url) {
     assert(await joinPage.getByRole("heading", { name: "公开评审版不连接临时双机房间" }).isVisible(), "direct substitute URL also fails closed to the hosted boundary");
     assert(joinApiRequests === 0, `hosted substitute page makes no room API requests (saw ${joinApiRequests})`);
     await context.close();
-    console.log("Deployment E2E passed: exact canonical build, clean-storage real onboarding at desktop/390/320, expanded review brief, document/security policy, social preview, demo replay, static no-API boundary, offline shell, and honest local/LAN pairing handoff");
+    console.log("Deployment E2E passed: exact canonical build, clean-storage real onboarding and 320px step transitions, expanded review brief, document/security policy, social preview, demo replay, static no-API boundary, offline shell, and honest local/LAN pairing handoff");
   } finally {
     await browser.close();
     if (localServer) await new Promise((resolve) => server.close(resolve));

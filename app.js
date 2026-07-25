@@ -13,7 +13,7 @@ const SOURCE_IDS = Object.freeze({
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v5";
+const APP_BUILD = "2026.07.25-production-v6";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -1713,11 +1713,28 @@ function onboardingReady() {
 
 function onboardingShell(step, title, intro, body) {
   const calls = state.family.emergencyService ? `<div class="setup-direct-calls"><span>紧急联系始终可用</span><a href="${phoneHref(state.family.caregiverPhone)}">${icon("i-phone")}${escapeHTML(state.family.caregiverName || "主要照护者")}</a><a class="urgent" href="${phoneHref(state.family.emergencyService)}">${icon("i-alert")}当地紧急服务 ${escapeHTML(state.family.emergencyService)}</a></div>` : "";
-  return `<div class="setup-page"><header class="setup-header"><div><span class="page-kicker">我的家庭 · 第 ${step} / 6 步</span><h1>${title}</h1><p>${intro}</p></div><div class="setup-progress" aria-label="设置进度 ${step} / 6"><span style="width:${step / 6 * 100}%"></span></div></header>${body}${calls}<p class="setup-persist">${icon("i-shield")}每一步都会保存在本设备。现在关掉页面，下次会从这里继续。</p></div>`;
+  return `<div class="setup-page"><header class="setup-header"><div><span class="page-kicker">我的家庭 · 第 ${step} / 6 步</span><h1 tabindex="-1">${title}</h1><p>${intro}</p></div><div class="setup-progress" aria-label="设置进度 ${step} / 6"><span style="width:${step / 6 * 100}%"></span></div></header>${body}${calls}<p class="setup-persist">${icon("i-shield")}每一步都会保存在本设备。现在关掉页面，下次会从这里继续。</p></div>`;
 }
 
 function setupFooter(step, nextLabel = "保存并继续") {
   return `<footer class="setup-footer">${step > 1 ? `<button type="button" class="btn btn-secondary" data-action="onboarding-back">上一步</button>` : `<span></span>`}<button class="btn btn-primary" type="submit">${nextLabel}${icon("i-arrow")}</button></footer>`;
+}
+
+function revealOnboardingStep() {
+  const expectedStep = Math.min(6, Math.max(1, Number(state.onboarding?.step) || 1));
+  const reveal = () => {
+    if (state.mode !== "real" || state.onboarding?.status === "complete" || Number(state.onboarding?.step) !== expectedStep) return;
+    window.scrollTo({ top: 0, behavior: "auto" });
+    $(".setup-header h1")?.focus({ preventScroll: true });
+  };
+  reveal();
+  requestAnimationFrame(() => requestAnimationFrame(reveal));
+  setTimeout(reveal, 120);
+}
+
+function renderOnboardingFromStart() {
+  render();
+  revealOnboardingStep();
 }
 
 function renderOnboarding() {
@@ -1766,7 +1783,7 @@ function saveOnboardingPeople(event) {
   }
   state.onboarding.step = 2;
   saveState();
-  render();
+  renderOnboardingFromStart();
 }
 
 function renderOnboardingGoal() {
@@ -1785,7 +1802,7 @@ function saveOnboardingGoal(event) {
   state.family.restGoal = { title: String(data.get("title") || "").trim(), date: String(data.get("date") || "").trim(), duration: Number(data.get("duration")) };
   state.onboarding.step = 3;
   saveState();
-  render();
+  renderOnboardingFromStart();
 }
 
 function renderOnboardingConsent() {
@@ -1804,12 +1821,12 @@ function renderOnboardingConsent() {
 function saveOnboardingConsent(event) {
   event.preventDefault();
   if (!event.currentTarget.elements.recipientConsent.checked) return;
-  if (!state.family.recipientName) { state.onboarding.step = 1; saveState(); render(); toast("请先填写被照护者姓名，再由本人当面确认"); return; }
+  if (!state.family.recipientName) { state.onboarding.step = 1; saveState(); renderOnboardingFromStart(); toast("请先填写被照护者姓名，再由本人当面确认"); return; }
   if (!isRecipientAuthorized()) grantRecipientAuthorization();
   state.onboarding.consentDecision = "granted";
   state.onboarding.step = 4;
   saveState();
-  render();
+  renderOnboardingFromStart();
 }
 
 function recordOnboardingConsentDecision(decision) {
@@ -1817,7 +1834,7 @@ function recordOnboardingConsentDecision(decision) {
   state.onboarding.consentDecision = decision;
   state.onboarding.step = 4;
   saveState();
-  render();
+  renderOnboardingFromStart();
   toast(decision === "declined" ? "已记录本人不同意；彩排保持锁定" : "已暂时跳过；稍后仍需本人当面确认");
 }
 
@@ -1866,7 +1883,7 @@ function saveOnboardingGuide(event) {
   state.onboarding.guideId = guideId;
   state.onboarding.step = 5;
   saveState();
-  render();
+  renderOnboardingFromStart();
 }
 
 function renderOnboardingRules() {
@@ -1885,7 +1902,7 @@ function saveOnboardingRules(event) {
   state.onboarding.redLinesReviewedAt = nowISO();
   state.onboarding.step = 6;
   saveState();
-  render();
+  renderOnboardingFromStart();
 }
 
 function redLinesText() {
@@ -2972,14 +2989,7 @@ document.addEventListener("click", async (event) => {
     startRealHousehold();
     currentPage = "home";
     history.replaceState(null, "", "#home");
-    render();
-    const revealOnboardingStart = () => {
-      window.scrollTo({ top: 0, behavior: "auto" });
-      $("#app")?.focus({ preventScroll: true });
-    };
-    revealOnboardingStart();
-    requestAnimationFrame(() => requestAnimationFrame(revealOnboardingStart));
-    setTimeout(revealOnboardingStart, 120);
+    renderOnboardingFromStart();
   }
   else if (action === "show-local-full-experience") showLocalFullExperience();
   else if (action === "review-brief") showReviewBrief();
@@ -3064,8 +3074,8 @@ document.addEventListener("click", async (event) => {
       details?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
-  else if (action === "onboarding-back") { state.onboarding.step = Math.max(1, Number(state.onboarding.step) - 1); saveState(); render(); }
-  else if (action === "onboarding-jump") { state.onboarding.step = Number(trigger.dataset.step) || 1; saveState(); render(); }
+  else if (action === "onboarding-back") { state.onboarding.step = Math.max(1, Number(state.onboarding.step) - 1); saveState(); renderOnboardingFromStart(); }
+  else if (action === "onboarding-jump") { state.onboarding.step = Number(trigger.dataset.step) || 1; saveState(); renderOnboardingFromStart(); }
   else if (action === "consent-decline") recordOnboardingConsentDecision("declined");
   else if (action === "consent-skip") recordOnboardingConsentDecision("skipped");
   else if (action === "use-redline-example") {
@@ -3499,7 +3509,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v5", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v6", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {
