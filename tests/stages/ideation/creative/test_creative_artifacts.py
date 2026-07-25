@@ -52,10 +52,17 @@ def _concept_markdown(
     hook: str = "A door answers in your own future voice.",
     parent_refs: tuple[str, ...] = ("creative-atom-t01-01",),
     extra_headings: tuple[str, ...] = (),
+    product_grammar_id: str | None = None,
 ) -> str:
     bodies = {heading: f"content for {heading}" for heading in CONCEPT_HEADINGS}
     bodies["One-sentence Hook"] = hook
     bodies["Parent Atoms"] = "\n".join(f"- `{ref}`" for ref in parent_refs)
+    if product_grammar_id is not None:
+        bodies["Why It Is Unexpected Yet Legible"] = (
+            "The next action follows one recognizable product loop.\n\n"
+            "Recognizable product grammar: "
+            f"{product_grammar_id} — the user changes the next meaningful state."
+        )
     headings = CONCEPT_HEADINGS + extra_headings
     sections = "\n\n".join(f"## {heading}\n\n{bodies.get(heading, 'value')}" for heading in headings)
     return f"# Concept\n\n{sections}\n"
@@ -179,6 +186,78 @@ class CreativeArtifactValidationTests(unittest.TestCase):
                 {"concepts": [missing_runtime]},
                 settings=SETTINGS,
             )
+
+    def test_c3_v6_binds_exact_assigned_product_grammar_marker(self) -> None:
+        def concept(markdown: str) -> dict[str, object]:
+            return {
+                "markdown": markdown,
+                "primary_territory_ref": "creative-territory-01",
+                "parent_atom_refs": ["creative-atom-t01-01"],
+            }
+
+        context = {
+            "allowed_atom_refs": {"creative-atom-t01-01"},
+            "expected_product_grammar_id": "explorer_simulator",
+        }
+        validate_creative_output(
+            C3_CONCEPT_SYNTHESIZE,
+            {
+                "concepts": [
+                    concept(
+                        _concept_markdown(
+                            product_grammar_id="explorer_simulator"
+                        )
+                    )
+                ]
+            },
+            settings=SETTINGS,
+            context=context,
+        )
+        validate_creative_output(
+            C3_CONCEPT_SYNTHESIZE,
+            {"concepts": []},
+            settings=SETTINGS,
+            context=context,
+        )
+
+        valid_markdown = _concept_markdown(
+            product_grammar_id="explorer_simulator"
+        )
+        for bad_markdown in (
+            _concept_markdown(),
+            _concept_markdown(product_grammar_id="creator_transformer"),
+            _concept_markdown(product_grammar_id="unknown_product_grammar"),
+            valid_markdown.replace(
+                "Recognizable product grammar: explorer_simulator — "
+                "the user changes the next meaningful state.",
+                "Recognizable product grammar: explorer_simulator",
+            ),
+            valid_markdown.replace(
+                "Recognizable product grammar: explorer_simulator — "
+                "the user changes the next meaningful state.",
+                "Recognizable product grammar: explorer_simulator — "
+                "the user changes the next meaningful state.\n\n"
+                "Recognizable product grammar: malformed duplicate",
+            ),
+        ):
+            with self.subTest(bad_markdown=bad_markdown):
+                with self.assertRaisesRegex(
+                    CreativeArtifactError,
+                    "product grammar",
+                ):
+                    validate_creative_output(
+                        C3_CONCEPT_SYNTHESIZE,
+                        {"concepts": [concept(bad_markdown)]},
+                        settings=SETTINGS,
+                        context=context,
+                    )
+
+        validate_creative_output(
+            C3_CONCEPT_SYNTHESIZE,
+            {"concepts": [concept(_concept_markdown())]},
+            settings=SETTINGS,
+            context={"allowed_atom_refs": {"creative-atom-t01-01"}},
+        )
 
     def test_hook_review_requires_stable_dimension_order_and_reason_mapping(
         self,

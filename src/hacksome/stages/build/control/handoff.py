@@ -20,7 +20,7 @@ _AUTHORIZATION_ID = re.compile(r"^auth-[0-9a-f]{32}$")
 _ROUTE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _SUPPORTED_ROUTE_CONTRACT_VERSIONS = {
     "useful": frozenset({"1"}),
-    "creative": frozenset({"1", "2"}),
+    "creative": frozenset({"1", "2", "3"}),
 }
 _HANDOFF_FIELDS = frozenset(
     {

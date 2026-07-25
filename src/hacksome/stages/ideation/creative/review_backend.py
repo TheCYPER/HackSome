@@ -63,7 +63,7 @@ class RunReviewBackend:
             )
             if contract_version == "1":
                 self.schema_version = 1
-            elif contract_version == "2":
+            elif contract_version in {"2", "3"}:
                 self.schema_version = 2
             else:
                 raise ReviewValidationError(

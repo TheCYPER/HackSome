@@ -34,6 +34,10 @@ from hacksome.stages.ideation.creative.contracts import (
     LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
     LEGACY_CREATIVE_REPORT_POLICY_VERSION,
     LEGACY_CREATIVE_STAGE_POLICY_VERSION,
+    SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION,
+    SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION,
+    SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION,
+    SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION,
     DispositionOutcome,
     DispositionStage,
     StableReasonCode,
@@ -428,6 +432,87 @@ class MemoryUseProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class CulturalSignalUseProjection:
+    """De-sensitized report provenance for the optional C1W scan."""
+
+    status: Literal["ready", "partial", "empty", "unavailable"]
+    snapshot_ref: str
+    snapshot_sha256: str
+    as_of_utc: str
+    start_utc: str
+    end_utc: str
+    lookback_days: int
+    signal_count: int
+    platform_kinds: tuple[str, ...] = ()
+    diagnostic_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"ready", "partial", "empty", "unavailable"}:
+            raise CreativeReportError("Cultural Signal status is invalid")
+        _require_ref(self.snapshot_ref, "Cultural Signal snapshot_ref")
+        _require_sha(
+            self.snapshot_sha256,
+            "Cultural Signal snapshot_sha256",
+        )
+        for label, value in (
+            ("as_of_utc", self.as_of_utc),
+            ("start_utc", self.start_utc),
+            ("end_utc", self.end_utc),
+        ):
+            if not isinstance(value, str) or not value:
+                raise CreativeReportError(
+                    f"Cultural Signal {label} must not be empty"
+                )
+        if self.lookback_days != 30:
+            raise CreativeReportError(
+                "Cultural Signal lookback_days must be exactly 30"
+            )
+        if (
+            isinstance(self.signal_count, bool)
+            or not isinstance(self.signal_count, int)
+            or self.signal_count < 0
+            or self.signal_count > 12
+        ):
+            raise CreativeReportError(
+                "Cultural Signal signal_count is invalid"
+            )
+        _require_unique_text(
+            self.platform_kinds,
+            "Cultural Signal platform_kinds",
+        )
+        if self.status == "unavailable":
+            if self.diagnostic_ref is None or self.signal_count:
+                raise CreativeReportError(
+                    "unavailable Cultural Signal scan requires a diagnostic "
+                    "and zero signals"
+                )
+            _require_ref(
+                self.diagnostic_ref,
+                "Cultural Signal diagnostic_ref",
+            )
+        elif self.diagnostic_ref is not None:
+            raise CreativeReportError(
+                "successful Cultural Signal scan cannot have a diagnostic"
+            )
+
+    def to_report_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "snapshot_ref": self.snapshot_ref,
+            "snapshot_sha256": self.snapshot_sha256,
+            "window": {
+                "as_of_utc": self.as_of_utc,
+                "start_utc": self.start_utc,
+                "end_utc": self.end_utc,
+                "lookback_days": self.lookback_days,
+            },
+            "signal_count": self.signal_count,
+            "platform_kinds": sorted(self.platform_kinds),
+            "diagnostic_ref": self.diagnostic_ref,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewRoundProjection:
     """De-identified review coverage; raw receipts remain in their ledger."""
 
@@ -490,6 +575,7 @@ class CreativeReportProjection:
     final_ideas: tuple[FinalIdeaProjection, ...]
     zero_reason_code: str | None
     empty_batch_skip_reason: str | None
+    cultural_signal_scan: CulturalSignalUseProjection | None = None
     route_contract_version: str = CREATIVE_CONTRACT_VERSION
     prompt_policy_version: str = CREATIVE_PROMPT_POLICY_VERSION
     stage_policy_version: str = CREATIVE_STAGE_POLICY_VERSION
@@ -504,6 +590,11 @@ class CreativeReportProjection:
                 CREATIVE_PROMPT_POLICY_VERSION,
                 CREATIVE_STAGE_POLICY_VERSION,
                 CREATIVE_REPORT_POLICY_VERSION,
+            ),
+            SOFTWARE_FIRST_CREATIVE_CONTRACT_VERSION: (
+                SOFTWARE_FIRST_CREATIVE_PROMPT_POLICY_VERSION,
+                SOFTWARE_FIRST_CREATIVE_STAGE_POLICY_VERSION,
+                SOFTWARE_FIRST_CREATIVE_REPORT_POLICY_VERSION,
             ),
             LEGACY_CREATIVE_CONTRACT_VERSION: (
                 LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
@@ -521,6 +612,16 @@ class CreativeReportProjection:
         ) != expected_policies:
             raise CreativeReportError(
                 "Creative route policy versions do not match its contract"
+            )
+        if self.route_contract_version == CREATIVE_CONTRACT_VERSION:
+            if self.cultural_signal_scan is None:
+                raise CreativeReportError(
+                    "Creative v3 report requires Cultural Signal provenance"
+                )
+        elif self.cultural_signal_scan is not None:
+            raise CreativeReportError(
+                "Creative v1/v2 report cannot contain v3 Cultural Signal "
+                "provenance"
             )
         concept_headings = (
             LEGACY_CONCEPT_HEADINGS
@@ -591,12 +692,14 @@ class CreativeReportProjection:
                     "Creative v1 cannot use the v2 Concept Screen zero reason"
                 )
             if (
-                self.route_contract_version == CREATIVE_CONTRACT_VERSION
+                self.route_contract_version
+                != LEGACY_CREATIVE_CONTRACT_VERSION
                 and self.zero_reason_code
                 == ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value
             ):
                 raise CreativeReportError(
-                    "Creative v2 cannot use the legacy Hook zero reason"
+                    "Creative software-first contracts cannot use the legacy "
+                    "Hook zero reason"
                 )
             if self.final_ideas:
                 raise CreativeReportError(
@@ -1167,7 +1270,7 @@ def _report_json_payload(
         "review_rounds": len(projection.review_rounds),
         "final_ideas": len(ordered_ideas),
     }
-    return {
+    payload = {
         "schema_version": 1,
         "route": {
             "id": "creative",
@@ -1206,6 +1309,11 @@ def _report_json_payload(
         "memory_record_ref": MEMORY_RECORD_ARTIFACT_ID,
         "report_policy_version": projection.report_policy_version,
     }
+    if projection.cultural_signal_scan is not None:
+        payload["cultural_signal_scan"] = (
+            projection.cultural_signal_scan.to_report_dict()
+        )
+    return payload
 
 
 def _report_markdown_bytes(
@@ -1251,6 +1359,54 @@ def _report_markdown_bytes(
             else CREATIVE_BRIEF_HEADINGS
         ),
     )
+    if projection.cultural_signal_scan is not None:
+        signal = projection.cultural_signal_scan
+        lines.extend(
+            [
+                "## Cultural Signal Scan",
+                "",
+                (
+                    f"Snapshot: `{signal.snapshot_ref}` / "
+                    f"`{signal.snapshot_sha256}`"
+                ),
+                "",
+                f"Status: `{signal.status}`",
+                "",
+                (
+                    "Window: "
+                    f"`{signal.start_utc}` → `{signal.end_utc}` "
+                    f"(as-of `{signal.as_of_utc}`)"
+                ),
+                "",
+                f"Qualified signals: `{signal.signal_count}`",
+                "",
+                (
+                    "Platform kinds: "
+                    + (
+                        ", ".join(
+                            f"`{kind}`"
+                            for kind in signal.platform_kinds
+                        )
+                        if signal.platform_kinds
+                        else "`none recorded`"
+                    )
+                ),
+                "",
+                (
+                    "Use limit: this scan supplied bounded inspiration only; "
+                    "it is not evidence of demand, virality, novelty, "
+                    "feasibility, safety, or quality."
+                ),
+                "",
+            ]
+        )
+        if signal.diagnostic_ref is not None:
+            lines.extend(
+                [
+                    f"Diagnostic: `{signal.diagnostic_ref}`",
+                    "",
+                ]
+            )
     lines.extend(["## Creative Territories", ""])
     if projection.territories:
         for territory in sorted(
@@ -1580,7 +1736,7 @@ def _memory_record_payload(
                     classification=classification,
                     include_software_fields=(
                         projection.route_contract_version
-                        == CREATIVE_CONTRACT_VERSION
+                        != LEGACY_CREATIVE_CONTRACT_VERSION
                     ),
                 )
             )
@@ -1608,7 +1764,7 @@ def _memory_record_payload(
                 classification="positive",
                 include_software_fields=(
                     projection.route_contract_version
-                    == CREATIVE_CONTRACT_VERSION
+                    != LEGACY_CREATIVE_CONTRACT_VERSION
                 ),
             )
         )
@@ -1812,6 +1968,7 @@ def _validate_concept_markdown(markdown: str, *, label: str) -> None:
 __all__ = [
     "CreativeReportError",
     "CreativeReportProjection",
+    "CulturalSignalUseProjection",
     "DispositionProjection",
     "FinalIdeaProjection",
     "HumanSignalProjection",
