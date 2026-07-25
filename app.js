@@ -13,7 +13,7 @@ const SOURCE_IDS = Object.freeze({
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v2";
+const APP_BUILD = "2026.07.25-production-v3";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -3463,7 +3463,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v2", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v3", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {

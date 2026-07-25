@@ -1,10 +1,10 @@
 {
-  "provider": "raw.githack immutable CDN",
+  "provider": "GitHub Pages",
   "status": "live",
-  "build": "2026.07.25-production-v2",
-  "production_url": "https://rawcdn.githack.com/TheCYPER/HackSome/relay-rehearsal-production-v1/index.html?deployment=static-review",
+  "build": "2026.07.25-production-v3",
+  "production_url": "https://thecyper.github.io/HackSome/?deployment=static-review",
   "source_repository": "TheCYPER/HackSome",
-  "source_branch": "relay-rehearsal-production-v1",
-  "source_policy": "isolated root tree; default branch unchanged",
+  "source_branch": "gh-pages",
+  "source_policy": "dedicated Pages root tree; default branch unchanged",
   "sites_status": "sites_access_disabled"
 }

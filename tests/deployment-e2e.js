@@ -4,9 +4,9 @@ const { firefox } = require("/usr/local/lib/python3.12/dist-packages/playwright/
 const { server } = require("../server");
 
 const FIREFOX_PATH = "/home/kasm-user/.cache/ms-playwright/firefox-1509/firefox/firefox";
-const BUILD = "2026.07.25-production-v2";
-const PRODUCTION_URL = "https://rawcdn.githack.com/TheCYPER/HackSome/relay-rehearsal-production-v1/index.html?deployment=static-review";
-const PRODUCTION_PREVIEW = "https://rawcdn.githack.com/TheCYPER/HackSome/relay-rehearsal-production-v1/assets/social-preview.jpg";
+const BUILD = "2026.07.25-production-v3";
+const PRODUCTION_URL = "https://thecyper.github.io/HackSome/?deployment=static-review";
+const PRODUCTION_PREVIEW = "https://thecyper.github.io/HackSome/assets/social-preview.jpg";
 const suppliedReviewURL = String(process.env.BASE_URL || "").trim();
 
 function assert(condition, message) {
@@ -32,11 +32,24 @@ async function listen() {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     let apiRequests = 0;
+    const failedRequests = [];
+    page.on("requestfailed", (request) => failedRequests.push(`${request.resourceType()} ${request.url()} — ${request.failure()?.errorText || "failed"}`));
     await page.route("**/api/**", (route) => {
       apiRequests += 1;
       route.abort();
     });
-    await page.goto(reviewURL, { waitUntil: "networkidle" });
+    let initialized = false;
+    for (let attempt = 1; attempt <= (suppliedReviewURL ? 5 : 1); attempt += 1) {
+      try {
+        await page.goto(reviewURL, { waitUntil: "networkidle" });
+        await page.waitForFunction(() => document.documentElement.dataset.deploymentMode === "hosted-static-review", null, { timeout: 4_000 });
+        initialized = true;
+        break;
+      } catch {
+        if (attempt < (suppliedReviewURL ? 5 : 1)) await page.waitForTimeout(attempt * 700);
+      }
+    }
+    assert(initialized, `public scripts initialize after bounded TLS retries (${failedRequests.slice(-8).join(" | ") || "no failed request detail"})`);
     assert(await page.locator("html").getAttribute("data-deployment-mode") === "hosted-static-review", "forced hosted build advertises its deployment mode");
     assert(await page.locator('meta[name="relay-build"]').getAttribute("content") === BUILD, "document exposes the exact review build");
     assert(await page.locator('link[rel="canonical"]').getAttribute("href") === PRODUCTION_URL, "canonical metadata names the immutable public review URL");

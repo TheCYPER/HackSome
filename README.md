@@ -4,11 +4,11 @@
 
 ## 评审入口与部署能力
 
-当前提交版本是 `2026.07.25-production-v2`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
+当前提交版本是 `2026.07.25-production-v3`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
 
-- **Production status:** `LIVE — immutable CDN fallback`（2026-07-25 UTC）
-- **Production URL:** <https://rawcdn.githack.com/TheCYPER/HackSome/relay-rehearsal-production-v1/index.html?deployment=static-review>
-- **Deployment identity:** 已授权仓库的隔离分支 `TheCYPER/HackSome:relay-rehearsal-production-v1`；发布提交使用与本地发布 HEAD 完全相同的根 Git tree，不修改该仓库默认分支
+- **Production status:** `LIVE — GitHub Pages`（2026-07-25 UTC）
+- **Production URL:** <https://thecyper.github.io/HackSome/?deployment=static-review>
+- **Deployment identity:** 已授权仓库的发布分支 `TheCYPER/HackSome:gh-pages`；发布提交使用与本地发布 HEAD 完全相同的根 Git tree，不修改该仓库默认分支
 - **Public verification:** `BASE_URL='<上方 Production URL>' node tests/deployment-e2e.js` 覆盖干净存储、评审导览重播、公开配对边界、离线壳层以及桌面 / 390 / 320 三宽度
 
 | 能力 | 公开评审版（静态托管） | 本地完整体验（`npm start`） |
@@ -18,7 +18,7 @@
 | 两台手机创建 / 加入短时房间 | **不提供**；所有入口显示“本地完整体验”，不会请求 `/api/rooms` | 可用；两台设备需访问同一台电脑的局域网地址 |
 | 后台推送、持久远端会话、临床判断 | 不提供 | 不提供 |
 
-`npm run build` 同时保留 Sites 兼容的 vinext 构建；但本工作区的 Sites 连接器返回 `sites_access_disabled`，因此 `.openai/hosting.json` 诚实保留 `project_id: null`，没有捏造 Sites 项目。生产发布改用 raw.githack 的永久缓存 CDN URL；该服务将 commit/tag 路径作为不可变 production 资源，而不是临时隧道。`.openai/deployment.json` 记录实际提供商、公开 URL 和隔离源分支。
+`npm run build` 同时保留 Sites 兼容的 vinext 构建；但本工作区的 Sites 连接器返回 `sites_access_disabled`，因此 `.openai/hosting.json` 诚实保留 `project_id: null`，没有捏造 Sites 项目。生产发布改用 GitHub Pages 的 HTTPS 项目站点，不是 localhost、局域网地址、确认中间页或临时隧道。`.openai/deployment.json` 记录实际提供商、公开 URL 和发布源分支。
 
 页面右上角“评审说明”会显示精简路径、精确版本和同一份能力边界。社交预览图为 `assets/social-preview.jpg`（1200×630）。
 
