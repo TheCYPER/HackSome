@@ -162,7 +162,7 @@ MVP memory 是人可以直接审查的 Markdown snapshot，固定包含：
 - [x] telemetry 能观察每次 wake 的 memory revision/action/bytes/staleness，
       且不会记录 snapshot 正文。
 - [x] feature flag 关闭时，现有 Lead/Worker/Verifier 行为和历史 Team 均保持兼容。
-- [ ] Lead YAML 声明 `session: refresh`，连续 wake 均以空 resume token 启动，
+- [x] Lead YAML 声明 `session: refresh`，连续 wake 均以空 resume token 启动，
       且旧 session 文件不会被读取或覆盖。
 - [ ] 至少在一个代表 Team 上完成不少于三轮 batch-drain 试验：没有重复 Goal、
       没有丢失已知安全/隐私不变量，并比较启用前后的 README/全树重复读取次数
