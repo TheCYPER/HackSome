@@ -10,3 +10,7 @@ dist/
 .hacksome/
 runs/
 
+# Local browser snapshots and generated visual artifacts
+/.playwright-cli/
+/output/playwright/
+/assets/visual-concepts/
