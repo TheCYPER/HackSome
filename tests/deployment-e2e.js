@@ -4,7 +4,7 @@ const { firefox } = require("/usr/local/lib/python3.12/dist-packages/playwright/
 const { server } = require("../server");
 
 const FIREFOX_PATH = "/home/kasm-user/.cache/ms-playwright/firefox-1509/firefox/firefox";
-const BUILD = "2026.07.25-production-v6";
+const BUILD = "2026.07.25-production-v7";
 const PRODUCTION_URL = "https://thecyper.github.io/HackSome/?deployment=static-review";
 const PRODUCTION_PREVIEW = "https://thecyper.github.io/HackSome/assets/social-preview.jpg";
 const STORAGE_KEY = "relay-rehearsal-demo-v1";
@@ -54,6 +54,8 @@ async function navigateWithRetries(page, url) {
         route.abort();
       });
       assert(await navigateWithRetries(realPage, reviewURL), `clean ${viewport.width}px public real-household page initializes`);
+      assert(await realPage.getByRole("button", { name: /恢复加密备份/ }).isVisible(), `clean ${viewport.width}px first launch exposes encrypted recovery`);
+      assert(await realPage.evaluate(() => Boolean(window.crypto?.subtle && window.RelayRecovery?.KDF_ITERATIONS === 310000 && window.RelayRecovery?.ENVELOPE_VERSION === 1)), `public ${viewport.width}px loads the reviewed Web Crypto recovery module`);
       const cleanState = await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
       assert(cleanState?.mode === null, `clean ${viewport.width}px storage begins at mode choice`);
       await realPage.getByRole("button", { name: /在电脑上建立我的接班彩排/ }).click();
@@ -64,6 +66,13 @@ async function navigateWithRetries(page, url) {
       assert(await realPage.getByRole("heading", { name: "先把需要联系的人放进来" }).isVisible(), `public ${viewport.width}px shows actionable real-household onboarding`);
       assert(await realPage.evaluate(() => window.scrollY === 0), `public ${viewport.width}px onboarding starts at its visible heading`);
       assert(await realPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `real onboarding has no ${viewport.width}px horizontal overflow`);
+      if (viewport.width === 320) {
+        await realPage.locator(".top-avatar").click();
+        assert(await realPage.getByRole("button", { name: /创建加密备份/ }).isVisible(), "320px settings expose encrypted backup");
+        assert(await realPage.getByRole("button", { name: /恢复备份/ }).isVisible(), "320px settings expose encrypted restore");
+        assert((await realPage.locator(".profile-recovery").innerText()).includes("复盘用于阅读，不能恢复"), "settings distinguish review export from recovery backup");
+        await realPage.getByRole("button", { name: "关闭" }).click();
+      }
       await realPage.reload({ waitUntil: "domcontentloaded" });
       await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
       assert((await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY))?.mode === "real", `public ${viewport.width}px onboarding resumes from browser storage`);
@@ -152,6 +161,7 @@ async function navigateWithRetries(page, url) {
     });
     await page.reload({ waitUntil: "networkidle" });
     assert(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "public shell is service-worker controlled before offline validation");
+    assert(await page.evaluate(() => caches.match("./recovery.js?v=20260725-recovery-v1").then(Boolean)), "offline shell contains the exact recovery module");
     const controlledSecurityHeaders = await page.evaluate(async () => {
       const response = await fetch(location.href.split("#")[0], { cache: "no-store" });
       return Object.fromEntries(response.headers.entries());

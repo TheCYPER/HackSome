@@ -8,7 +8,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'self'" />
     <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <meta name="description" content="接班彩排——把一次令人焦虑的大交班，拆成几次可撤回的小练习。" />
-    <meta name="relay-build" content="2026.07.25-production-v6" />
+    <meta name="relay-build" content="2026.07.25-production-v7" />
     <link rel="canonical" href="https://thecyper.github.io/HackSome/?deployment=static-review" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="zh_CN" />
@@ -25,7 +25,7 @@
     <title>接班彩排 · 把“有人帮忙”练成“我敢离开”</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260725-production-v6" />
+    <link rel="stylesheet" href="./styles.css?v=20260725-production-v7" />
   </head>
   <body>
     <svg class="svg-sprite" aria-hidden="true">
@@ -46,6 +46,8 @@
       <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l3.5-.7L19 7.8a2.1 2.1 0 0 0-3-3L4.7 16.5Z"/></symbol>
       <symbol id="i-volume" viewBox="0 0 24 24"><path d="M5 9H2v6h3l5 4V5ZM14 9a4 4 0 0 1 0 6M17 6a8 8 0 0 1 0 12"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5"/><path d="M5 20h14"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0 5 5m-5-5-5 5"/><path d="M5 20h14"/></symbol>
       <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
       <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7ZM19 17l.7 2.3L22 20l-2.3.7L19 23l-.7-2.3L16 20l2.3-.7Z"/></symbol>
@@ -103,6 +105,7 @@
     <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"></div>
     <script src="./safety-policy.js?v=20260725-policy-v1" defer></script>
     <script src="./outcome-model.js?v=20260725-outcomes-v1" defer></script>
-    <script src="./app.js?v=20260725-production-v6" defer></script>
+    <script src="./recovery.js?v=20260725-recovery-v1" defer></script>
+    <script src="./app.js?v=20260725-production-v7" defer></script>
   </body>
 </html>

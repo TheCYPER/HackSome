@@ -14,6 +14,7 @@ const files = [
   "join.js",
   "safety-policy.js",
   "outcome-model.js",
+  "recovery.js",
   "manifest.webmanifest",
   "sw.js",
 ];

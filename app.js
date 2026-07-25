@@ -7,13 +7,15 @@ const SafetyPolicy = window.RelaySafetyPolicy;
 if (!SafetyPolicy?.VERSION) throw new Error("Matching safety policy failed to load");
 const OutcomeModel = window.RelayOutcomeModel;
 if (!OutcomeModel?.VERSION) throw new Error("Outcome model failed to load");
+const Recovery = window.RelayRecovery;
+if (!Recovery?.ENVELOPE_VERSION) throw new Error("Recovery module failed to load");
 const SOURCE_IDS = Object.freeze({
   CAREGIVER: "caregiver",
   RECIPIENT: "recipient",
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v6";
+const APP_BUILD = "2026.07.25-production-v7";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -159,6 +161,7 @@ let companionDegraded = false;
 let companionPending = false;
 let companionPolicyBlocked = false;
 let companionRefreshPromise = null;
+let pendingRecovery = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -1666,7 +1669,23 @@ function render() {
     if (!(state.mode === "demo" && currentPage === "home")) {
       $("#app")?.insertAdjacentHTML("afterbegin", householdStatusBarMarkup());
     }
+    if (state.mode === "real") {
+      const reminder = backupReminderMarkup();
+      if (reminder) $("#app")?.insertAdjacentHTML("afterbegin", reminder);
+    }
   }
+}
+
+function backupReminderMarkup() {
+  const lastBackupAt = state.meta?.lastBackupAt;
+  const lastBackupTime = lastBackupAt ? new Date(lastBackupAt).getTime() : 0;
+  const ageDays = lastBackupTime ? Math.floor((Date.now() - lastBackupTime) / 86_400_000) : null;
+  if (ageDays != null && Number.isFinite(ageDays) && ageDays < 30) return "";
+  return `<section class="backup-reminder" aria-label="加密备份提醒">
+    <span>${icon("i-lock")}</span>
+    <div><b>${ageDays == null ? "还没有为这个真实家庭创建加密备份" : `加密备份已经 ${ageDays} 天未更新`}</b><small>备份只在本浏览器加密后下载；密码不会保存，忘记后无法恢复。</small></div>
+    <button class="btn btn-secondary btn-small" data-action="recovery-center">现在备份</button>
+  </section>`;
 }
 
 function householdStatusBarMarkup() {
@@ -1693,6 +1712,7 @@ function renderModeChoice() {
       <div class="mode-grid">
         <button class="mode-card demo-mode-card" data-action="choose-demo"><span class="mode-icon">${icon("i-play")}</span><span class="mode-tag">2–3 分钟 · 一键进入</span><h2>体验演示家庭 · 周岚家庭</h2><p>带着角色说明走完“在旁观察 → 短时离开 → 安静离班”，现场看到匹配、缺口、红线、回看与下一档建议。</p><strong>开始评审导览 ${icon("i-arrow")}</strong></button>
         <button class="mode-card real-mode-card" data-action="${realModeAction}"><span class="mode-icon">${icon("i-home")}</span><span class="mode-tag">${realModeTag}</span><h2>${realModeTitle}</h2><p>${realModeCopy}</p><strong>从空白开始 ${icon("i-arrow")}</strong></button>
+        <button class="mode-card recovery-mode-card" data-action="begin-restore"><span class="mode-icon">${icon("i-lock")}</span><span><span class="mode-tag">已有真实家庭 · 本地恢复</span><h2>恢复加密备份</h2><p>选择接班彩排生成的加密备份并输入原密码。家庭复盘 JSON 不能恢复；读取、解密和检查都只在本设备完成。</p><strong>选择备份文件 ${icon("i-arrow")}</strong></span></button>
       </div>
       <div class="choice-safety">${icon("i-shield")}${HOSTED_STATIC_REVIEW ? `公开评审版 · ${APP_BUILD} · 演示样本与真实家庭空白流程明确分开；真实内容只存当前浏览器，不创建远端房间。` : "演示数据始终标为“演示”；真实家庭长期内容留在照护者设备。直接联系电话不会被通知规则屏蔽，本应用不生成医疗决定。"}</div>
     </main>
@@ -2343,6 +2363,7 @@ function openModal(content, className = "") {
 function closeModal() {
   $("#modal-root").innerHTML = "";
   document.body.style.overflow = "";
+  pendingRecovery = null;
   previousFocus?.focus?.();
 }
 
@@ -2775,6 +2796,321 @@ function showNotifications() {
   openModal(`${modalHead("QUIET INBOX", "2 件事情，等你方便时再看")}<div class="modal-body"><div class="history-list"><div class="history-item"><span class="history-check">${icon("i-check")}</span><span><b>${escapeHTML(state.family.relayName)}确认了红线规则</b><small>紧急联系路径仍然保留</small></span><small>10:24</small></div>${second}</div></div><footer class="modal-footer"><button class="btn btn-primary" data-action="close-modal">知道了</button></footer>`);
 }
 
+function recoveryStatusMarkup() {
+  const lastBackupAt = state.meta?.lastBackupAt;
+  const lastRecovery = state.meta?.lastRecovery;
+  return `<div class="recovery-status">
+    <div><small>最近加密备份</small><b>${lastBackupAt ? formatTimestamp(lastBackupAt) : "尚未创建"}</b></div>
+    <div><small>最近恢复</small><b>${lastRecovery?.restoredAt ? formatTimestamp(lastRecovery.restoredAt) : "没有恢复记录"}</b></div>
+    ${lastRecovery?.auditId ? `<div><small>恢复审计标记</small><code>${escapeHTML(lastRecovery.auditId)}</code></div>` : ""}
+  </div>`;
+}
+
+function recoveryErrorText(error) {
+  if (error instanceof Recovery.RecoveryError) return error.message;
+  return "无法完成本地备份或恢复；当前家庭没有被修改";
+}
+
+function setRecoveryFormStatus(message, error = false) {
+  const status = $("#recovery-form-status");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("error", error);
+}
+
+function showRecoveryCenter() {
+  if (state.mode === "demo") {
+    toast("演示家庭与真实家庭备份严格分开；请先退出演示");
+    return;
+  }
+  const canBackup = state.mode === "real";
+  openModal(`${modalHead("ENCRYPTED RECOVERY", "真实家庭的本地加密备份")}<div class="modal-body recovery-center">
+    <div class="recovery-crypto-proof">${icon("i-lock")}<div><b>先在本设备加密，再下载文件</b><p>使用 PBKDF2-SHA-256（310,000 次）从密码派生密钥，并用 AES-256-GCM 加密和校验。密码、明文家庭数据和恢复文件都不会上传。</p></div></div>
+    ${state.mode === "real" ? recoveryStatusMarkup() : `<div class="source-proof">${icon("i-shield")}当前是空白设备。恢复不会把备份里的旧同意自动变成当前同意；被照护者需要在这台设备上重新当面确认。</div>`}
+    <div class="recovery-choice-grid">
+      <button type="button" data-action="begin-backup" ${canBackup ? "" : "disabled"}><span>${icon("i-download")}</span><b>创建加密备份</b><small>${canBackup ? "包含真实家庭、指导与历史；剥离活动会话和双机能力" : "先建立真实家庭后才能备份"}</small></button>
+      <button type="button" data-action="begin-restore"><span>${icon("i-upload")}</span><b>恢复加密备份</b><small>严格检查格式、密码、篡改、版本、大小和安全策略后再覆盖</small></button>
+    </div>
+    <div class="safety-note">${icon("i-alert")}家庭复盘 JSON / PDF 不能用于恢复。忘记备份密码后，本应用和任何服务器都无法替你解密。</div>
+  </div><footer class="modal-footer"><button class="btn btn-primary" data-action="close-modal">完成</button></footer>`, "modal-wide recovery-modal");
+}
+
+function showCreateBackup() {
+  if (state.mode !== "real") {
+    toast(state.mode === "demo" ? "演示家庭不会进入真实备份" : "请先建立真实家庭");
+    return;
+  }
+  openModal(`${modalHead("CREATE ENCRYPTED BACKUP", "设置一个只用于这份备份的密码")}<form id="backup-form"><div class="modal-body">
+    <div class="form-grid">
+      <div class="field"><label for="backup-passphrase">备份密码（至少 ${Recovery.MIN_PASSPHRASE_LENGTH} 个字符）</label><input id="backup-passphrase" name="passphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="new-password"></div>
+      <div class="field"><label for="backup-passphrase-confirm">再次输入密码</label><input id="backup-passphrase-confirm" name="confirmPassphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="new-password"></div>
+    </div>
+    <label class="confirm-item"><input type="checkbox" name="understands" required><span><b>我明白密码不会保存在应用里</b><small>忘记密码就无法恢复；不要把密码和备份文件放在同一处。</small></span></label>
+    <div class="source-proof">${icon("i-shield")}进行中的彩排、倒计时、双机房间、邀请能力和令牌不会进入文件。进行中的历史只会以保守的“中途结束”快照保存。</div>
+    <p id="recovery-form-status" class="recovery-form-status" role="status" aria-live="polite"></p>
+  </div><footer class="modal-footer"><button type="button" class="btn btn-secondary" data-action="recovery-center">返回</button><button class="btn btn-primary" type="submit">加密并下载</button></footer></form>`, "modal-wide recovery-modal");
+  $("#backup-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const passphrase = String(form.elements.passphrase.value || "");
+    if (passphrase !== String(form.elements.confirmPassphrase.value || "")) {
+      setRecoveryFormStatus("两次输入的密码不一致", true);
+      return;
+    }
+    const submit = form.querySelector("button[type='submit']");
+    submit.disabled = true;
+    form.setAttribute("aria-busy", "true");
+    setRecoveryFormStatus("正在本设备派生密钥并加密…");
+    try {
+      const authority = resolveAuthorityRecord(state.recipientConsent);
+      const backupState = applyAuthorityRecord(structuredClone(state), authority);
+      const backup = await Recovery.createEncryptedBackup({
+        state: backupState,
+        authority,
+        passphrase,
+        appBuild: APP_BUILD,
+        now: nowISO(),
+      });
+      const blob = new Blob([backup], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `接班彩排-加密备份-${new Date().toISOString().slice(0, 10)}.relaybackup.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      state.meta = { ...(state.meta || {}), lastBackupAt: nowISO() };
+      saveState();
+      closeModal();
+      render();
+      toast("加密备份已在本设备生成；请把密码与文件分开保管");
+    } catch (error) {
+      setRecoveryFormStatus(recoveryErrorText(error), true);
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    } finally {
+      form.elements.passphrase.value = "";
+      form.elements.confirmPassphrase.value = "";
+    }
+  });
+}
+
+function authorityForRecovery(importedAuthority) {
+  const current = readAuthorityRecord();
+  const cleanDevice = state.mode !== "real";
+  const importedRevision = Math.max(1, Number(importedAuthority.revision) || 1);
+  const currentRevision = Math.max(0, Number(current?.revision) || 0);
+  const revision = Math.max(importedRevision, currentRevision);
+  if (current?.status === "withdrawn") {
+    return {
+      authority: {
+        schemaVersion: 1,
+        status: "withdrawn",
+        revision,
+        changedAt: current.changedAt || current.withdrawnAt || nowISO(),
+        grantedAt: null,
+        withdrawnAt: current.withdrawnAt || nowISO(),
+      },
+      consentGate: cleanDevice ? "clean-device-reconsent-required" : "current-withdrawal-preserved",
+    };
+  }
+  if (importedAuthority.status === "withdrawn") {
+    return {
+      authority: { ...importedAuthority, schemaVersion: 1, revision, status: "withdrawn" },
+      consentGate: "backup-withdrawal-preserved",
+    };
+  }
+  if (cleanDevice) {
+    return {
+      authority: {
+        schemaVersion: 1,
+        status: "withdrawn",
+        revision: revision + 1,
+        changedAt: nowISO(),
+        grantedAt: null,
+        withdrawnAt: nowISO(),
+      },
+      consentGate: "clean-device-reconsent-required",
+    };
+  }
+  if (current?.status === "granted" && currentRevision >= importedRevision) {
+    return { authority: current, consentGate: "current-grant-newer" };
+  }
+  return { authority: importedAuthority, consentGate: "backup-grant-restored-on-current-household" };
+}
+
+function prepareRecoveredHousehold(result) {
+  const sourceState = result.payload.state;
+  if (sourceState.schemaVersion > SCHEMA_VERSION) {
+    throw new Recovery.RecoveryError("unsupported_state_version", "这个备份来自更新的数据版本，当前应用不能安全恢复");
+  }
+  const sourceUsableGuides = (sourceState.guides || []).filter((guide) => guide?.status === "usable").length;
+  const sourceSessions = (sourceState.sessions || []).length;
+  let next = migrateState(structuredClone(sourceState));
+  if (next.mode !== "real" || next.sessions.some((record) => record.demo === true)) {
+    throw new Recovery.RecoveryError("demo_backup_rejected", "恢复内容包含演示数据，已拒绝覆盖真实家庭");
+  }
+  next.activeRest = null;
+  next.activeRehearsal = null;
+  next.appliedRemoteSessionIds = [];
+  const selected = authorityForRecovery(result.payload.authority);
+  next = applyAuthorityRecord(next, selected.authority);
+  next.sessions = normalizeOutcomeSessions(next.sessions);
+  next.gaps = normalizeGaps(next.gaps);
+  next.debriefs = normalizeDebriefs(next.debriefs);
+  syncCompatibilityProgress(next);
+  const restoredAt = nowISO();
+  const auditId = crypto.randomUUID ? `recovery-${crypto.randomUUID()}` : `recovery-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  next.meta = {
+    ...(next.meta || {}),
+    updatedAt: Date.now(),
+    lastBackupAt: null,
+    lastRecovery: {
+      auditId,
+      restoredAt,
+      envelopeCreatedAt: result.envelope.createdAt,
+      sourceBuild: result.payload.sourceBuild,
+      envelopeVersion: result.envelope.version,
+      consentGate: selected.consentGate,
+      sourceSessions,
+      restoredSessions: next.sessions.length,
+      guidesRequiringReview: Math.max(0, sourceUsableGuides - usableGuides(next).length),
+    },
+  };
+  Recovery.validateRecoveryState(next);
+  const serializedState = JSON.stringify(next);
+  if (new TextEncoder().encode(serializedState).byteLength > Recovery.MAX_PAYLOAD_BYTES) {
+    throw new Recovery.RecoveryError("payload_too_large", "恢复后的家庭数据超过本地大小限制");
+  }
+  return {
+    state: next,
+    authority: selected.authority,
+    serializedState,
+    serializedAuthority: JSON.stringify(selected.authority),
+    summary: {
+      caregiverName: next.family.caregiverName || "未填写照护者",
+      recipientName: next.family.recipientName || "未填写被照护者",
+      guides: next.guides.length,
+      sessions: next.sessions.length,
+      auditId,
+      consentGate: selected.consentGate,
+      sourceBuild: result.payload.sourceBuild,
+      createdAt: result.envelope.createdAt,
+      guidesRequiringReview: next.meta.lastRecovery.guidesRequiringReview,
+    },
+  };
+}
+
+function storageSnapshot(keys) {
+  return new Map(keys.map((key) => [key, localStorage.getItem(key)]));
+}
+
+function restoreStorageSnapshot(snapshot) {
+  for (const [key, value] of snapshot.entries()) {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  }
+}
+
+function commitRecoveredHousehold(prepared) {
+  const keys = [STORAGE_KEY, AUTHORITY_KEY, COMPANION_KEY];
+  const before = storageSnapshot(keys);
+  try {
+    localStorage.setItem(STORAGE_KEY, prepared.serializedState);
+    localStorage.setItem(AUTHORITY_KEY, prepared.serializedAuthority);
+    localStorage.removeItem(COMPANION_KEY);
+    const committedState = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const committedAuthority = JSON.parse(localStorage.getItem(AUTHORITY_KEY));
+    if (committedState?.meta?.lastRecovery?.auditId !== prepared.summary.auditId || committedAuthority?.revision !== prepared.authority.revision || committedAuthority?.status !== prepared.authority.status) {
+      throw new Error("recovery commit verification failed");
+    }
+  } catch (error) {
+    try {
+      restoreStorageSnapshot(before);
+    } catch { /* A browser storage failure is reported below; in-memory state remains unchanged. */ }
+    throw new Recovery.RecoveryError("atomic_commit_failed", "浏览器未能完整写入；已保留恢复前的家庭");
+  }
+  state = prepared.state;
+  session = null;
+  restSession = null;
+  clearInterval(companionPollHandle);
+  clearInterval(companionCountdownHandle);
+  clearTimeout(companionSnapshotSyncHandle);
+  companionPollHandle = null;
+  companionCountdownHandle = null;
+  companionSnapshotSyncHandle = null;
+  companionSession = null;
+  companionRoom = null;
+  companionDegraded = false;
+  companionPending = false;
+  currentPage = "home";
+  history.replaceState(null, "", "#home");
+}
+
+function showRecoveryConfirmation(prepared) {
+  pendingRecovery = prepared;
+  const gateMessage = prepared.summary.consentGate === "backup-grant-restored-on-current-household"
+    ? "当前设备已有同一家庭的较新有效同意；恢复后仍会按授权版本重新校验。"
+    : "备份里的旧同意不会在这台设备自动生效；恢复后必须把设备交给本人重新当面确认。";
+  openModal(`${modalHead("CONFIRM RECOVERY", "最后确认：完整覆盖这台设备上的家庭？")}<div class="modal-body recovery-confirm">
+    <div class="recovery-summary-grid">
+      <div><small>主要照护者</small><b>${escapeHTML(prepared.summary.caregiverName)}</b></div>
+      <div><small>被照护者</small><b>${escapeHTML(prepared.summary.recipientName)}</b></div>
+      <div><small>指导 / 历史</small><b>${prepared.summary.guides} 条 / ${prepared.summary.sessions} 次</b></div>
+      <div><small>来源版本</small><b>${escapeHTML(prepared.summary.sourceBuild)}</b></div>
+    </div>
+    <div class="source-proof">${icon("i-shield")}${escapeHTML(gateMessage)}</div>
+    ${prepared.summary.guidesRequiringReview ? `<div class="safety-note">${icon("i-alert")}${prepared.summary.guidesRequiringReview} 条原本可用的指导在当前策略 / 授权下不再可用，已降为复核或撤销状态。</div>` : ""}
+    <div class="recovery-audit-preview"><small>成功后写入恢复审计标记</small><code>${escapeHTML(prepared.summary.auditId)}</code></div>
+    <label class="confirm-item"><input type="checkbox" id="final-recovery-confirm"><span><b>我确认覆盖当前真实家庭</b><small>只有完整解密、迁移、策略复核和写入都成功才会替换；失败时保持原样。</small></span></label>
+    <p id="recovery-form-status" class="recovery-form-status" role="status" aria-live="polite"></p>
+  </div><footer class="modal-footer"><button class="btn btn-secondary" data-action="close-modal">取消，保留当前家庭</button><button class="btn btn-danger" data-action="confirm-recovery">确认覆盖并恢复</button></footer>`, "modal-wide recovery-modal");
+  pendingRecovery = prepared;
+}
+
+function showRestoreBackup() {
+  if (state.mode === "demo") {
+    toast("演示家庭不能导入或覆盖真实家庭备份");
+    return;
+  }
+  pendingRecovery = null;
+  openModal(`${modalHead("RESTORE ENCRYPTED BACKUP", "选择加密备份并在本设备解密")}<form id="restore-form"><div class="modal-body">
+    <div class="field"><label for="recovery-file">加密备份文件（最大 2 MB）</label><input id="recovery-file" name="backupFile" type="file" accept=".json,.relaybackup.json,application/json" required><span class="field-help">只接受“接班彩排-加密备份…”文件；家庭复盘 JSON 会被明确拒绝。</span></div>
+    <div class="field"><label for="recovery-passphrase">原备份密码</label><input id="recovery-passphrase" name="passphrase" type="password" minlength="${Recovery.MIN_PASSPHRASE_LENGTH}" maxlength="256" required autocomplete="current-password"></div>
+    <label class="confirm-item"><input type="checkbox" name="overwriteUnderstood" required><span><b>我知道成功后会完整覆盖当前家庭</b><small>活动会话、双机房间与邀请能力不会恢复；旧同意还要通过当前设备的自主权门。</small></span></label>
+    <div class="source-proof">${icon("i-lock")}文件先经过大小、格式、版本和字段限制，再验证 AES-GCM 完整性；全部通过后才会显示最终覆盖摘要。</div>
+    <p id="recovery-form-status" class="recovery-form-status" role="status" aria-live="polite"></p>
+  </div><footer class="modal-footer"><button type="button" class="btn btn-secondary" data-action="${state.mode === "real" ? "recovery-center" : "close-modal"}">取消</button><button class="btn btn-primary" type="submit">本地解密并检查</button></footer></form>`, "modal-wide recovery-modal");
+  $("#restore-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = form.elements.backupFile.files?.[0];
+    if (!file) {
+      setRecoveryFormStatus("请选择备份文件", true);
+      return;
+    }
+    if (file.size > Recovery.MAX_ENVELOPE_BYTES) {
+      setRecoveryFormStatus("备份文件超过 2 MB 限制，未读取也未修改家庭", true);
+      return;
+    }
+    const submit = form.querySelector("button[type='submit']");
+    submit.disabled = true;
+    form.setAttribute("aria-busy", "true");
+    setRecoveryFormStatus("正在本设备解密、验证并重新应用安全策略…");
+    try {
+      const text = await file.text();
+      const result = await Recovery.decryptEncryptedBackup(text, String(form.elements.passphrase.value || ""));
+      const prepared = prepareRecoveredHousehold(result);
+      form.elements.passphrase.value = "";
+      showRecoveryConfirmation(prepared);
+    } catch (error) {
+      form.elements.passphrase.value = "";
+      setRecoveryFormStatus(recoveryErrorText(error), true);
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
+  });
+}
+
 function showProfile() {
   const family = state.family;
   const consentRevisionAtOpen = state.recipientConsent.revision;
@@ -2793,6 +3129,7 @@ function showProfile() {
     </div>
     ${consentControl}
     <div class="source-proof">${icon("i-shield")}被照护者当前状态：${isRecipientAuthorized() ? `已同意参与 · 授权版本 ${state.recipientConsent.revision}` : `已撤回参与 · 撤回版本 ${state.recipientConsent.revision}`}。重新同意后仍需重新建立指导并确认每次接班。</div>
+    ${state.mode === "real" ? `<section class="profile-recovery"><div><span class="modal-kicker">ENCRYPTED RECOVERY</span><h3>加密备份与恢复</h3><p>完整家庭备份与脱敏复盘是两种不同文件。备份在本地加密，可恢复；复盘用于阅读，不能恢复。</p></div>${recoveryStatusMarkup()}<div class="profile-recovery-actions"><button type="button" class="btn btn-secondary" data-action="begin-backup">${icon("i-download")}创建加密备份</button><button type="button" class="btn btn-secondary" data-action="begin-restore">${icon("i-upload")}恢复备份</button></div></section>` : ""}
     <div class="danger-zone"><span><b>被照护者自主权</b><small>撤回会删除由本人提供的指导；移除会同时清空姓名。</small></span><div><button type="button" class="text-button danger-text" data-action="withdraw-recipient">撤回本人内容与参与</button><button type="button" class="text-button danger-text" data-action="remove-recipient">从家庭中移除</button></div></div>
   </div><footer class="modal-footer"><button type="button" class="btn btn-ghost danger-text" data-action="request-mode-reset">${state.mode === "demo" ? "重置或退出演示" : "清空家庭 / 返回模式选择"}</button><button type="button" class="btn btn-secondary" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit">保存家庭设置</button></footer></form>`, "modal-wide");
   $("#family-form").addEventListener("submit", (event) => {
@@ -3088,6 +3425,29 @@ document.addEventListener("click", async (event) => {
   else if (action === "backdrop-close" && event.target === trigger) closeModal();
   else if (action === "close-modal") closeModal();
   else if (action === "profile") showProfile();
+  else if (action === "recovery-center") showRecoveryCenter();
+  else if (action === "begin-backup") showCreateBackup();
+  else if (action === "begin-restore") showRestoreBackup();
+  else if (action === "confirm-recovery") {
+    if (!pendingRecovery) { toast("恢复检查已失效，请重新选择备份"); closeModal(); return; }
+    if (!$("#final-recovery-confirm")?.checked) {
+      setRecoveryFormStatus("请先确认完整覆盖当前家庭", true);
+      return;
+    }
+    const prepared = pendingRecovery;
+    trigger.disabled = true;
+    setRecoveryFormStatus("正在以单次事务写入家庭与授权记录…");
+    try {
+      commitRecoveredHousehold(prepared);
+      closeModal();
+      render();
+      if (state.onboarding?.status !== "complete") revealOnboardingStep();
+      toast(isRecipientAuthorized() ? "加密备份已恢复并写入审计标记" : "备份已恢复；旧同意未自动生效，请由本人重新当面确认");
+    } catch (error) {
+      setRecoveryFormStatus(recoveryErrorText(error), true);
+      trigger.disabled = false;
+    }
+  }
   else if (action === "request-mode-reset") showDataResetConfirm();
   else if (action === "confirm-reset-demo") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); resetDemoState(); closeModal(); render(); toast("演示家庭已重置"); }
   else if (action === "confirm-reset-choice") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); resetToModeChoice(); closeModal(); render(); }
@@ -3509,7 +3869,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v6", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v7", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {

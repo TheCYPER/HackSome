@@ -1,14 +1,15 @@
-const CACHE = "relay-rehearsal-production-20260725-v6";
+const CACHE = "relay-rehearsal-production-20260725-v7";
 const ASSETS = [
   "./index.html",
   "./index.html?deployment=static-review",
-  "./styles.css?v=20260725-production-v6",
+  "./styles.css?v=20260725-production-v7",
   "./safety-policy.js?v=20260725-policy-v1",
   "./outcome-model.js?v=20260725-outcomes-v1",
-  "./app.js?v=20260725-production-v6",
+  "./recovery.js?v=20260725-recovery-v1",
+  "./app.js?v=20260725-production-v7",
   "./join.html",
-  "./companion.css?v=20260725-production-v6",
-  "./join.js?v=20260725-production-v6",
+  "./companion.css?v=20260725-production-v7",
+  "./join.js?v=20260725-production-v7",
   "./assets/favicon.svg",
   "./assets/social-preview.jpg",
   "./manifest.webmanifest",
