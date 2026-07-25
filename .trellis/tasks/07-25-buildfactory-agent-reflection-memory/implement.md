@@ -54,7 +54,7 @@
 - [x] 默认先关闭；pilot 通过后再决定是否在同一 PR 中切为默认开启。
 - [x] 将已验证的 local-network Compose/Docker build overlay 迁移到 canonical
       `ops/build/`，不得提交 account/state 或本机绝对路径。
-- [ ] 对仍在线的四个 Compose project 使用 canonical branch source 原地重建
+- [x] 对仍在线的四个 Compose project 使用 canonical branch source 原地重建
       static services，保留 Team state/account 和动态 Worker/Verifier。
 
 ## 6. Verification
