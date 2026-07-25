@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "node scripts/prepare-sites.cjs && vinext build",
+    "build": "node scripts/clean-build.cjs && node scripts/prepare-sites.cjs && vinext build",
     "build:sites": "npm run build",
     "dev:sites": "node scripts/prepare-sites.cjs && vinext dev",
     "start:sites": "vinext start",
-    "check": "node --check safety-policy.js && node --check outcome-model.js && node --check app.js && node --check join.js && node --check server.js && node --check tests/outcomes.js && node --check tests/outcome-e2e.js && node --check tests/no-shadow-policy.js && node --check tests/policy-cases.js && node --check tests/policy-adversarial.js && node --check tests/e2e.js && node --check tests/judge-e2e.js && node --check tests/deployment-e2e.js && node --check tests/e2e-full.js",
+    "check": "node --check safety-policy.js && node --check outcome-model.js && node --check app.js && node --check join.js && node --check server.js && node --check scripts/clean-build.cjs && node --check tests/outcomes.js && node --check tests/outcome-e2e.js && node --check tests/no-shadow-policy.js && node --check tests/policy-cases.js && node --check tests/policy-adversarial.js && node --check tests/e2e.js && node --check tests/judge-e2e.js && node --check tests/deployment-e2e.js && node --check tests/e2e-full.js",
     "test:outcomes": "node tests/outcomes.js && node tests/outcome-e2e.js",
     "test:policy": "node tests/no-shadow-policy.js && node tests/policy-adversarial.js",
     "test:e2e": "node tests/e2e.js && node tests/judge-e2e.js && node tests/deployment-e2e.js",

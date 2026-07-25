@@ -4,9 +4,10 @@ const { firefox } = require("/usr/local/lib/python3.12/dist-packages/playwright/
 const { server } = require("../server");
 
 const FIREFOX_PATH = "/home/kasm-user/.cache/ms-playwright/firefox-1509/firefox/firefox";
-const BUILD = "2026.07.25-production-v3";
+const BUILD = "2026.07.25-production-v4";
 const PRODUCTION_URL = "https://thecyper.github.io/HackSome/?deployment=static-review";
 const PRODUCTION_PREVIEW = "https://thecyper.github.io/HackSome/assets/social-preview.jpg";
+const STORAGE_KEY = "relay-rehearsal-demo-v1";
 const suppliedReviewURL = String(process.env.BASE_URL || "").trim();
 
 function assert(condition, message) {
@@ -21,6 +22,20 @@ async function listen() {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
+async function navigateWithRetries(page, url) {
+  const attempts = suppliedReviewURL ? 5 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: "networkidle" });
+      await page.waitForFunction(() => document.documentElement.dataset.deploymentMode === "hosted-static-review", null, { timeout: 4_000 });
+      return true;
+    } catch {
+      if (attempt < attempts) await page.waitForTimeout(attempt * 700);
+    }
+  }
+  return false;
+}
+
 (async () => {
   const localServer = !suppliedReviewURL;
   const localOrigin = localServer ? await listen() : "";
@@ -29,6 +44,31 @@ async function listen() {
   const joinURL = new URL("./join.html?room=fake&deployment=static-review", reviewURL).href;
   const browser = await firefox.launch({ headless: true, executablePath: FIREFOX_PATH });
   try {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 760 }]) {
+      const realContext = await browser.newContext({ viewport });
+      const realPage = await realContext.newPage();
+      realPage.setDefaultTimeout(10_000);
+      let realApiRequests = 0;
+      await realPage.route("**/api/**", (route) => {
+        realApiRequests += 1;
+        route.abort();
+      });
+      assert(await navigateWithRetries(realPage, reviewURL), `clean ${viewport.width}px public real-household page initializes`);
+      const cleanState = await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
+      assert(cleanState?.mode === null, `clean ${viewport.width}px storage begins at mode choice`);
+      await realPage.getByRole("button", { name: /在电脑上建立我的接班彩排/ }).click();
+      await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
+      const realState = await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
+      assert(realState?.mode === "real" && realState?.onboarding?.step === 1 && realState?.guides?.length === 0 && realState?.sessions?.length === 0, `public ${viewport.width}px entry persists honest real mode at onboarding 1/6`);
+      assert(await realPage.getByRole("heading", { name: "先把需要联系的人放进来" }).isVisible(), `public ${viewport.width}px shows actionable real-household onboarding`);
+      assert(await realPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `real onboarding has no ${viewport.width}px horizontal overflow`);
+      await realPage.reload({ waitUntil: "domcontentloaded" });
+      await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
+      assert((await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY))?.mode === "real", `public ${viewport.width}px onboarding resumes from browser storage`);
+      assert(realApiRequests === 0, `public ${viewport.width}px real onboarding makes no room API requests (saw ${realApiRequests})`);
+      await realContext.close();
+    }
+
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     let apiRequests = 0;
@@ -38,17 +78,7 @@ async function listen() {
       apiRequests += 1;
       route.abort();
     });
-    let initialized = false;
-    for (let attempt = 1; attempt <= (suppliedReviewURL ? 5 : 1); attempt += 1) {
-      try {
-        await page.goto(reviewURL, { waitUntil: "networkidle" });
-        await page.waitForFunction(() => document.documentElement.dataset.deploymentMode === "hosted-static-review", null, { timeout: 4_000 });
-        initialized = true;
-        break;
-      } catch {
-        if (attempt < (suppliedReviewURL ? 5 : 1)) await page.waitForTimeout(attempt * 700);
-      }
-    }
+    const initialized = await navigateWithRetries(page, reviewURL);
     assert(initialized, `public scripts initialize after bounded TLS retries (${failedRequests.slice(-8).join(" | ") || "no failed request detail"})`);
     assert(await page.locator("html").getAttribute("data-deployment-mode") === "hosted-static-review", "forced hosted build advertises its deployment mode");
     assert(await page.locator('meta[name="relay-build"]').getAttribute("content") === BUILD, "document exposes the exact review build");
@@ -58,17 +88,22 @@ async function listen() {
     assert(socialPreview === PRODUCTION_PREVIEW, "social preview metadata points to the immutable public asset");
     const preview = await page.request.get(localPreviewURL);
     assert(preview.ok() && (await preview.body()).length > 100_000, "social preview asset is publicly served");
-
-    await page.getByRole("button", { name: /在电脑上建立我的接班彩排/ }).click();
-    assert(await page.getByRole("heading", { name: /本地完整体验/ }).isVisible(), "public real-family entry hands off to local full experience");
-    const localInstructions = await page.locator("#modal-root").innerText();
-    assert(localInstructions.includes("npm start") && localInstructions.includes("局域网IP:4173") && localInstructions.includes("不会假装提供远端配对"), "in-product handoff includes exact start, LAN, and honesty boundaries");
-    await page.getByRole("button", { name: "知道了" }).click();
+    assert(await page.locator('meta[name="referrer"]').getAttribute("content") === "no-referrer", "initial public document enforces no-referrer in document policy");
+    const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute("content");
+    assert(csp.includes("default-src 'self'") && csp.includes("object-src 'none'") && csp.includes("connect-src 'self'"), "initial public document has a restrictive same-origin CSP");
+    assert(await page.locator('meta[http-equiv="X-Content-Type-Options"]').getAttribute("content") === "nosniff", "public source declares its no-sniff deployment policy");
+    if (localServer) {
+      const localHeaders = (await page.request.get(reviewURL)).headers();
+      assert(localHeaders["content-security-policy"]?.includes("frame-ancestors 'none'"), "local production server returns CSP");
+      assert(localHeaders["referrer-policy"] === "no-referrer" && localHeaders["x-content-type-options"] === "nosniff", "local production server returns referrer and no-sniff headers");
+    }
 
     await page.getByRole("button", { name: /体验演示家庭/ }).click();
     await page.getByRole("button", { name: "打开评审说明" }).click();
     const reviewBrief = await page.locator("#modal-root").innerText();
-    assert(reviewBrief.includes("建议 2–3 分钟路径") && reviewBrief.includes(BUILD) && reviewBrief.includes("当前页面不会请求 /api/rooms"), "compact review brief exposes path, build, and hosted boundary");
+    assert(reviewBrief.includes("问题") && reviewBrief.includes("目标用户") && reviewBrief.includes("核心机制"), "compact review brief states problem, target user, and core mechanism");
+    assert(reviewBrief.includes("产品观察") && reviewBrief.includes("参与者自述") && reviewBrief.includes("打开拨号”不等于电话接通"), "review brief distinguishes observed actions from participant self-report");
+    assert(reviewBrief.includes("真实家庭公开路径") && reviewBrief.includes("建议 2–3 分钟演示路径") && reviewBrief.includes(BUILD) && reviewBrief.includes("当前页面不会请求 /api/rooms"), "review brief exposes both paths, exact build, and hosted boundary");
     await page.getByRole("button", { name: "开始查看" }).click();
     await page.getByRole("button", { name: "演示模式：从头重播三分钟评审导览" }).click();
     assert(await page.locator(".judge-demo-top").isVisible(), "clean-storage demo onboarding can be replayed from the public header");
@@ -94,6 +129,16 @@ async function listen() {
     });
     await page.reload({ waitUntil: "networkidle" });
     assert(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "public shell is service-worker controlled before offline validation");
+    const controlledSecurityHeaders = await page.evaluate(async () => {
+      const response = await fetch(location.href.split("#")[0], { cache: "no-store" });
+      return Object.fromEntries(response.headers.entries());
+    });
+    assert(controlledSecurityHeaders["content-security-policy"]?.includes("frame-ancestors 'none'"), "controlled production response returns CSP");
+    assert(controlledSecurityHeaders["referrer-policy"] === "no-referrer" && controlledSecurityHeaders["x-content-type-options"] === "nosniff", "controlled production response returns referrer and no-sniff headers");
+    const controlledHeaders = (await page.request.get(reviewURL)).headers();
+    if (localServer) {
+      assert(controlledHeaders["content-security-policy"] && controlledHeaders["referrer-policy"] === "no-referrer" && controlledHeaders["x-content-type-options"] === "nosniff", "direct local response preserves all three security headers");
+    }
     const cachedPublicRequests = await page.evaluate(async () => {
       const keys = await caches.keys();
       const requests = await Promise.all(keys.map(async (key) => (await caches.open(key)).keys()));
@@ -126,7 +171,7 @@ async function listen() {
     assert(await joinPage.getByRole("heading", { name: "公开评审版不连接临时双机房间" }).isVisible(), "direct substitute URL also fails closed to the hosted boundary");
     assert(joinApiRequests === 0, `hosted substitute page makes no room API requests (saw ${joinApiRequests})`);
     await context.close();
-    console.log("Deployment E2E passed: exact canonical build, social preview, replay/onboarding, review brief, static no-API boundary, offline shell, local/LAN handoff, and desktop/390/320 layouts");
+    console.log("Deployment E2E passed: exact canonical build, clean-storage real onboarding at desktop/390/320, expanded review brief, document/security policy, social preview, demo replay, static no-API boundary, offline shell, and honest local/LAN pairing handoff");
   } finally {
     await browser.close();
     if (localServer) await new Promise((resolve) => server.close(resolve));

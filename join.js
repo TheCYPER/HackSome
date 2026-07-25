@@ -4,7 +4,7 @@ const SafetyPolicy = window.RelaySafetyPolicy;
 if (!SafetyPolicy?.VERSION) throw new Error("Matching safety policy failed to load");
 const app = document.getElementById("join-app");
 const banner = document.getElementById("connection-banner");
-const APP_BUILD = "2026.07.25-production-v3";
+const APP_BUILD = "2026.07.25-production-v4";
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
   if (!host || host === "localhost" || host === "::1" || host.endsWith(".local")) return true;
@@ -300,7 +300,7 @@ function renderHostedBoundary() {
   clearInterval(pollHandle);
   clearInterval(countdownHandle);
   banner.classList.add("hidden");
-  app.innerHTML = `<section class="join-page"><article class="join-card"><span class="join-kicker">PUBLIC REVIEW BUILD · ${APP_BUILD}</span><h1>公开评审版不连接临时双机房间</h1><p>这个页面不会读取邀请、恢复凭证或请求 <code>/api/rooms</code>。公开链接只用于评审脚本化演示与单机产品逻辑，不会假装替班者已经在线。</p><div class="join-safety"><span>◎</span><div><strong>本地完整体验</strong>在项目目录运行 <code>npm start</code>，再让照护者与替班者手机访问同一个 <code>http://电脑局域网IP:4173</code> 地址。</div></div><a class="join-button coral" href="./index.html?deployment=static-review">返回公开评审导览</a></article><article class="join-card urgent-panel"><h2>为什么这样分开</h2><p>当前 Node 房间服务只适合黑客松期间同一局域网内的短时内存彩排。真正的公网双机服务还需要 HTTPS、持久会话、速率限制与受管部署。</p></article></section>`;
+  app.innerHTML = `<section class="join-page"><article class="join-card"><span class="join-kicker">PUBLIC REVIEW BUILD · ${APP_BUILD}</span><h1>公开评审版不连接临时双机房间</h1><p>这个页面不会读取邀请、恢复凭证或请求 <code>/api/rooms</code>。公开链接提供真实家庭单机流程与脚本化演示，但不会假装替班者已经在线。</p><div class="join-safety"><span>◎</span><div><strong>本地完整体验</strong>在项目目录运行 <code>npm start</code>，再让照护者与替班者手机访问同一个 <code>http://电脑局域网IP:4173</code> 地址。</div></div><a class="join-button coral" href="./index.html?deployment=static-review">返回公开版</a></article><article class="join-card urgent-panel"><h2>为什么这样分开</h2><p>当前 Node 房间服务只适合黑客松期间同一局域网内的短时内存彩排。真正的公网双机服务还需要 HTTPS、持久会话、速率限制与受管部署。</p></article></section>`;
 }
 
 function render() {

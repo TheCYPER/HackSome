@@ -1,31 +1,48 @@
-const CACHE = "relay-rehearsal-production-20260725-v3";
+const CACHE = "relay-rehearsal-production-20260725-v4";
 const ASSETS = [
   "./index.html",
   "./index.html?deployment=static-review",
-  "./styles.css?v=20260725-production-v3",
+  "./styles.css?v=20260725-production-v4",
   "./safety-policy.js?v=20260725-policy-v1",
   "./outcome-model.js?v=20260725-outcomes-v1",
-  "./app.js?v=20260725-production-v3",
+  "./app.js?v=20260725-production-v4",
   "./join.html",
-  "./companion.css?v=20260725-production-v3",
-  "./join.js?v=20260725-production-v3",
+  "./companion.css?v=20260725-production-v4",
+  "./join.js?v=20260725-production-v4",
   "./assets/favicon.svg",
   "./assets/social-preview.jpg",
   "./manifest.webmanifest",
 ];
 const OPTIONAL_ASSETS = ["./"];
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'self'",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "Permissions-Policy": "camera=(), geolocation=(), microphone=(self)",
+};
+
+async function withSecurityHeaders(response) {
+  if (!response || response.type === "opaque" || response.status === 0) return response;
+  const headers = new Headers(response.headers);
+  Object.entries(SECURITY_HEADERS).forEach(([name, value]) => headers.set(name, value));
+  return new Response(await response.arrayBuffer(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then(async (cache) => {
     await Promise.all(ASSETS.map(async (url) => {
       const response = await fetch(url, { cache: "reload" });
       if (!response.ok) throw new Error(`Unable to cache ${url}`);
-      await cache.put(url, response);
+      await cache.put(url, await withSecurityHeaders(response));
     }));
     await Promise.all(OPTIONAL_ASSETS.map(async (url) => {
       try {
         const response = await fetch(url, { cache: "reload" });
-        if (response.ok) await cache.put(url, response);
+        if (response.ok) await cache.put(url, await withSecurityHeaders(response));
       } catch { /* Subpath CDNs may not expose a directory response. */ }
     }));
   }));
@@ -53,13 +70,15 @@ self.addEventListener("fetch", (event) => {
     try {
       const response = await fetch(event.request, { cache: "no-store" });
       if (response.ok) {
+        const secured = await withSecurityHeaders(response);
         const cache = await caches.open(CACHE);
-        await cache.put(event.request, response.clone());
+        await cache.put(event.request, secured.clone());
+        return secured;
       }
-      return response;
+      return withSecurityHeaders(response);
     } catch {
       const cached = await caches.match(event.request, { ignoreSearch: false });
-      if (cached) return cached;
+      if (cached) return withSecurityHeaders(cached);
       if (event.request.mode === "navigate") {
         return url.pathname.endsWith("/join.html") ? caches.match("./join.html") : caches.match("./index.html");
       }

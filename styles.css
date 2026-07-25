@@ -532,6 +532,14 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
 .review-route { padding: 15px; border-radius: 15px; color: white; background: var(--ink); }
 .review-route b { font-size: 13px; }
 .review-route ol { margin: 10px 0 0; padding-left: 20px; color: #dce5e2; font-size: 10px; line-height: 1.7; }
+.review-overview-grid, .review-evidence-grid, .review-route-grid { display: grid; gap: 8px; }
+.review-overview-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.review-evidence-grid, .review-route-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.review-overview-grid > div, .review-evidence-grid > div { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #faf8f3; }
+.review-overview-grid small, .review-overview-grid b, .review-overview-grid p, .review-evidence-grid small, .review-evidence-grid b, .review-evidence-grid p { display: block; overflow-wrap: anywhere; }
+.review-overview-grid small, .review-evidence-grid small { margin-bottom: 5px; color: var(--coral-dark); font-size: 8px; font-weight: 850; }
+.review-overview-grid b, .review-evidence-grid b { font-size: 10px; line-height: 1.5; }
+.review-overview-grid p, .review-evidence-grid p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
 .capability-matrix { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
 .capability-matrix > div { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #faf8f3; }
 .capability-matrix small, .capability-matrix b { display: block; overflow-wrap: anywhere; }
@@ -674,7 +682,7 @@ svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColo
   .topbar-actions .demo-chip svg { width: 12px; height: 12px; }
   .review-brief-button { height: 29px; padding: 0 8px; }
   .review-brief-button span { display: none; }
-  .capability-matrix { grid-template-columns: 1fr; }
+  .review-overview-grid, .review-evidence-grid, .review-route-grid, .capability-matrix { grid-template-columns: 1fr; }
   .top-avatar { display: inline-grid; }
   #app { padding: 22px 16px 28px; }
   .mobile-nav { position: fixed; inset: auto 0 0 0; height: calc(66px + env(safe-area-inset-bottom)); padding: 6px 10px env(safe-area-inset-bottom); z-index: 80; display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line); background: rgba(255,253,248,.96); backdrop-filter: blur(20px); }

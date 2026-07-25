@@ -13,7 +13,7 @@ const SOURCE_IDS = Object.freeze({
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v3";
+const APP_BUILD = "2026.07.25-production-v4";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -1680,19 +1680,19 @@ function householdStatusBarMarkup() {
 }
 
 function renderModeChoice() {
-  const realModeAction = HOSTED_STATIC_REVIEW ? "show-local-full-experience" : "choose-real";
-  const realModeTag = HOSTED_STATIC_REVIEW ? "本地完整体验 · 不上传家庭数据" : "真实家庭 · 诚实空白";
+  const realModeAction = "choose-real";
+  const realModeTag = HOSTED_STATIC_REVIEW ? "公开版单机彩排 · 本设备保存" : "真实家庭 · 诚实空白";
   const realModeTitle = HOSTED_STATIC_REVIEW ? "在电脑上建立我的接班彩排" : "建立我的接班彩排";
-  const realModeCopy = HOSTED_STATIC_REVIEW ? "真实家庭设置和双机房间只在你自己的电脑与局域网中运行。查看两步启动方法；公开评审版不会收集真实家庭信息。" : "没有预填成员、演示消息、完成记录或成功结论。约 8 分钟，只准备第一次低风险在旁练习。";
+  const realModeCopy = HOSTED_STATIC_REVIEW ? "直接从空白开始 1 / 6 设置；姓名、电话、同意与记录只保存在当前浏览器，不上传。第一次可在这台设备完成；只有两台手机配对需要本地 npm/LAN。" : "没有预填成员、演示消息、完成记录或成功结论。约 8 分钟，只准备第一次低风险在旁练习。";
   $("#app").innerHTML = `<div class="choice-page">
     <header class="choice-brand"><span class="brand-mark"><span></span><span></span></span><span><b>接班彩排</b><small>把大交班拆成可以撤回的小练习</small></span></header>
     <main class="choice-main">
       <div class="choice-copy"><span class="page-kicker">第一次使用</span><h1>先选一条适合现在的路</h1><h2>把“愿意帮忙”，练成一次可撤回的接班</h2><p>接班彩排不替代微信、电话或紧急服务。它把口头意愿变成有来源、可归属、可撤回的低风险交接证据，再用这些证据保护一小段真正不被普通消息打断的休息。</p></div>
       <div class="mode-grid">
         <button class="mode-card demo-mode-card" data-action="choose-demo"><span class="mode-icon">${icon("i-play")}</span><span class="mode-tag">2–3 分钟 · 一键进入</span><h2>体验演示家庭 · 周岚家庭</h2><p>带着角色说明走完“在旁观察 → 短时离开 → 安静离班”，现场看到匹配、缺口、红线、回看与下一档建议。</p><strong>开始评审导览 ${icon("i-arrow")}</strong></button>
-        <button class="mode-card real-mode-card" data-action="${realModeAction}"><span class="mode-icon">${icon("i-home")}</span><span class="mode-tag">${realModeTag}</span><h2>${realModeTitle}</h2><p>${realModeCopy}</p><strong>${HOSTED_STATIC_REVIEW ? "查看本地启动方法" : "从空白开始"} ${icon("i-arrow")}</strong></button>
+        <button class="mode-card real-mode-card" data-action="${realModeAction}"><span class="mode-icon">${icon("i-home")}</span><span class="mode-tag">${realModeTag}</span><h2>${realModeTitle}</h2><p>${realModeCopy}</p><strong>从空白开始 ${icon("i-arrow")}</strong></button>
       </div>
-      <div class="choice-safety">${icon("i-shield")}${HOSTED_STATIC_REVIEW ? `公开评审版 · ${APP_BUILD} · 只使用脚本化样本，不创建远端房间或收集真实家庭资料。` : "演示数据始终标为“演示”；真实家庭长期内容留在照护者设备。直接联系电话不会被通知规则屏蔽，本应用不生成医疗决定。"}</div>
+      <div class="choice-safety">${icon("i-shield")}${HOSTED_STATIC_REVIEW ? `公开评审版 · ${APP_BUILD} · 演示样本与真实家庭空白流程明确分开；真实内容只存当前浏览器，不创建远端房间。` : "演示数据始终标为“演示”；真实家庭长期内容留在照护者设备。直接联系电话不会被通知规则屏蔽，本应用不生成医疗决定。"}</div>
     </main>
   </div>`;
 }
@@ -2105,7 +2105,7 @@ function renderHome() {
   const recent = normalizeOutcomeSessions(state.sessions).filter((record) => record.status !== "legacy").at(-1);
   const hasLegacyOnly = state.sessions.length > 0 && !recent;
   const primaryAction = HOSTED_STATIC_REVIEW && stage !== "observe"
-    ? `<button class="btn btn-primary" data-action="show-local-full-experience">${icon("i-home")}本地完整体验 · 双机配对</button><button class="btn btn-ghost" data-action="start-rehearsal">公开版单机演示</button>`
+    ? `<button class="btn btn-primary" data-action="show-local-full-experience">${icon("i-home")}本地完整体验 · 双机配对</button><button class="btn btn-ghost" data-action="start-rehearsal">${state.mode === "demo" ? "公开版单机演示" : "公开版单机彩排"}</button>`
     : stage === "quiet-handoff"
     ? `<button class="btn btn-primary" data-action="companion-primary">${icon("i-phone")}双机开始安静接班</button><button class="btn btn-ghost" data-nav="rest">同机安静接班</button>`
     : twoDeviceRecommended
@@ -2494,7 +2494,7 @@ function showGapReview(id) {
   if (!gap) { toast("这条情境已经处理"); return; }
   const medicalRisk = SafetyPolicy.classifyFields([gap.query, gap.lastProposedTitle, gap.lastProposedInstruction]).highRisk;
   const sources = availableGuideSources({ professionalOnly: medicalRisk });
-  openModal(`${modalHead("CONFIRM A GAP", medicalRisk ? "保持医疗待确认并立即联系" : "把待确认问题变成可用指导")}<form id="gap-form"><div class="modal-body"><div class="form-grid"><div class="field field-full"><label for="gap-title">现场遇到的情境</label><input id="gap-title" name="title" required maxlength="40" value="${escapeHTML(gap.query.slice(0, 40))}"></div><div class="field field-full"><label for="gap-answer">${medicalRisk ? "补充现场记录（不会成为指导）" : "明确确认的处理方式"}</label><textarea id="gap-answer" name="answer" required maxlength="220" placeholder="${medicalRisk ? "可记录已联系情况；这里填写的文字不会变成可搜索指导" : "由当前获授权的人明确说明后再填写"}"></textarea></div><div class="field"><label for="gap-source">内容来源</label><select id="gap-source" name="sourceId" ${medicalRisk ? "disabled" : ""}><option value="">${medicalRisk ? "浏览器无可创建的专业引用" : "请选择真实来源"}</option>${sources.map((source) => `<option value="${source.id}">${escapeHTML(source.label)}</option>`).join("")}</select></div><div class="field"><label for="gap-level">何时联系</label><select id="gap-level" name="level" ${medicalRisk ? "disabled" : ""}><option value="here">现场可处理</option><option value="later">稍后告知</option><option value="now" ${medicalRisk ? "selected" : ""}>立即联系</option></select></div></div><div class="source-proof" id="gap-risk-proof">${icon(medicalRisk ? "i-alert" : "i-shield")}${medicalRisk ? "这是医疗或高风险问题。浏览器不能把任意文字标成专业来源；它会继续留在待确认清单并保持立即联系。" : "保存后才会进入指导库，并保留稳定来源、确认记录和时间。"}</div><div class="direct-call-row"><a class="btn btn-secondary btn-small" href="${phoneHref(state.family.caregiverPhone)}">${icon("i-phone")}立即联系${escapeHTML(state.family.caregiverName)}</a><a class="btn btn-danger btn-small" href="${phoneHref(state.family.emergencyService)}">紧急危险 · ${escapeHTML(state.family.emergencyService)}</a></div></div><footer class="modal-footer"><button type="button" class="btn btn-secondary" data-action="close-modal">继续待确认</button><button type="submit" class="btn btn-primary">${medicalRisk ? "保存记录并继续待确认" : "确认并加入指导库"}</button></footer></form>`, "modal-wide");
+  openModal(`${modalHead("CONFIRM A GAP", medicalRisk ? "保持医疗待确认并立即联系" : "把待确认问题变成可用指导")}<form id="gap-form"><div class="modal-body"><div class="form-grid"><div class="field field-full"><label for="gap-title">现场遇到的情境</label><input id="gap-title" name="title" required maxlength="40" value="${escapeHTML(gap.query.slice(0, 40))}"></div><div class="field field-full"><label for="gap-answer">${medicalRisk ? "补充现场记录（不会成为指导）" : "明确确认的处理方式"}</label><textarea id="gap-answer" name="answer" required maxlength="220" placeholder="${medicalRisk ? "可记录已联系情况；这里填写的文字不会变成可搜索指导" : "由当前获授权的人明确说明后再填写"}"></textarea></div><div class="field"><label for="gap-source">内容来源</label><select id="gap-source" name="sourceId" ${medicalRisk ? "disabled" : ""}><option value="">${medicalRisk ? "浏览器无可创建的专业引用" : "请选择真实来源"}</option>${sources.map((source) => `<option value="${source.id}">${escapeHTML(source.label)}</option>`).join("")}</select></div><div class="field"><label for="gap-level">何时联系</label><select id="gap-level" name="level" ${medicalRisk ? "disabled" : ""}><option value="here">现场可处理</option><option value="later">稍后告知</option><option value="now" ${medicalRisk ? "selected" : ""}>立即联系</option></select></div></div><div class="source-proof" id="gap-risk-proof">${icon(medicalRisk ? "i-alert" : "i-shield")}${medicalRisk ? "这是医疗或高风险问题。浏览器不能把任意文字标成专业来源；它会继续留在待确认清单并保持立即联系。" : "保存后才会进入指导库，并保留稳定来源、确认记录和时间。"}</div><div class="direct-call-row"><a class="btn btn-secondary btn-small" href="${phoneHref(state.family.caregiverPhone)}">${icon("i-phone")}立即联系${escapeHTML(state.family.caregiverName)}</a><a class="btn btn-danger btn-small" href="${phoneHref(state.family.emergencyService)}">紧急危险 · ${escapeHTML(state.family.emergencyService)}</a></div></div><footer class="modal-footer"><button type="button" class="btn btn-secondary" data-action="close-modal">继续待确认</button><button type="button" class="btn btn-primary" data-action="submit-gap">${medicalRisk ? "保存记录并继续待确认" : "确认并加入指导库"}</button></footer></form>`, "modal-wide");
   const gapForm = $("#gap-form");
   const gapLevelField = $("#gap-level");
   const gapSourceField = $("#gap-source");
@@ -2610,7 +2610,24 @@ function showLocalFullExperience() {
 }
 
 function showReviewBrief() {
-  openModal(`${modalHead("REVIEW BRIEF", "评审说明 · 先看什么、哪里是真边界")}<div class="modal-body review-brief"><div class="review-build-row"><span class="status-pill recommended">${HOSTED_STATIC_REVIEW ? "公开评审版" : "本地完整体验"}</span><code>${APP_BUILD}</code></div><div class="review-route"><b>建议 2–3 分钟路径</b><ol><li>选择“体验演示家庭”，看三种角色与当前授权。</li><li>依次查看严格匹配、普通缺口、医疗/红线升级与三方署名回看。</li><li>确认下一档理由、安静队列、撤回和脱敏导出。</li></ol></div><div class="capability-matrix"><div><small>公开链接</small><b>演示导览 · 单机逻辑 · 历史与撤回</b></div><div><small>本地 npm start</small><b>以上全部 + 同一局域网双机房间</b></div><div><small>公开版明确不含</small><b>远端配对 · 后台推送 · 临床判断</b></div></div><p class="review-boundary">${HOSTED_STATIC_REVIEW ? "当前页面不会请求 /api/rooms；所有双机入口都改为本地完整体验说明。" : "当前为本地完整体验；房间仍是黑客松级短时内存服务，不是生产远端照护基础设施。"}</p></div><footer class="modal-footer"><button class="btn btn-secondary" data-action="show-local-full-experience">本地完整体验</button><button class="btn btn-primary" data-action="close-modal">开始查看</button></footer>`, "modal-wide");
+  openModal(`${modalHead("REVIEW BRIEF", "评审说明 · 问题、机制、证据与真实边界")}<div class="modal-body review-brief">
+    <div class="review-build-row"><span class="status-pill recommended">${HOSTED_STATIC_REVIEW ? "公开评审版" : "本地完整体验"}</span><code>${APP_BUILD}</code></div>
+    <div class="review-overview-grid">
+      <div><small>问题</small><b>“有人愿意帮忙”不等于照护者真的敢离开</b><p>一次大交班风险太高，口头意愿也不能证明替班已经可用。</p></div>
+      <div><small>目标用户</small><b>主要家庭照护者 + 替班者</b><p>被照护者以可拒绝、可跳过、可撤回的方式参与授权。</p></div>
+      <div><small>核心机制</small><b>三次可撤回的小彩排</b><p>在旁观察 → 短时离开 → 安静接班；每次只用有来源、仍获授权的做法，证据不足就保持保守。</p></div>
+    </div>
+    <div class="review-evidence-grid">
+      <div><small>产品观察 · 可核对操作</small><b>经过时间、勾选步骤、普通更新队列、未决缺口、红线事件、打开联系操作</b><p>“打开拨号”不等于电话接通；产品不推断未记录的完成或照护质量。</p></div>
+      <div><small>参与者自述 · 不冒充观察</small><b>照护者、替班者与被照护者亲自提交的同意、感受、信心和下一步选择</b><p>自述单独标记；一次现场完成不会自动升级。</p></div>
+    </div>
+    <div class="review-route-grid">
+      <div class="review-route"><b>真实家庭公开路径</b><ol><li>选“在电脑上建立我的接班彩排”。</li><li>确认直接进入第 1 / 6 步、没有预填成功数据。</li><li>刷新后仍从本浏览器继续；双机才需要本地 npm/LAN。</li></ol></div>
+      <div class="review-route"><b>建议 2–3 分钟演示路径</b><ol><li>选择“体验演示家庭”，看三种角色与当前授权。</li><li>查看严格匹配、普通缺口、红线升级与三方署名。</li><li>确认下一档理由、安静队列、撤回和脱敏导出。</li></ol></div>
+    </div>
+    <div class="capability-matrix"><div><small>公开链接</small><b>真实家庭单机设置/彩排 + 演示导览 + 历史与撤回</b></div><div><small>本地 npm start</small><b>以上全部 + 同一局域网双机房间</b></div><div><small>公开版明确不含</small><b>远端配对 · 后台推送 · 临床判断</b></div></div>
+    <p class="review-boundary">${HOSTED_STATIC_REVIEW ? "真实家庭长期内容只保存在当前浏览器；当前页面不会请求 /api/rooms。只有双机配对入口交接到本地完整体验。" : "当前为本地完整体验；房间仍是黑客松级短时内存服务，不是生产远端照护基础设施。"}</p>
+  </div><footer class="modal-footer"><button class="btn btn-secondary" data-action="show-local-full-experience">本地完整体验</button><button class="btn btn-primary" data-action="close-modal">开始查看</button></footer>`, "modal-wide");
 }
 
 function showStageOneReview() {
@@ -2948,9 +2965,10 @@ document.addEventListener("click", async (event) => {
   const action = trigger.dataset.action;
   const focusJudgeStep = () => requestAnimationFrame(() => $("#judge-step-title")?.focus({ preventScroll: false }));
   if (action === "choose-demo") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); resetDemoState(); currentPage = "home"; history.replaceState(null, "", "#home"); render(); focusJudgeStep(); toast("已进入明确标注的演示家庭"); }
-  else if (action === "choose-real") { if (HOSTED_STATIC_REVIEW) { showLocalFullExperience(); return; } if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); startRealHousehold(); render(); }
+  else if (action === "choose-real") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); startRealHousehold(); render(); }
   else if (action === "show-local-full-experience") showLocalFullExperience();
   else if (action === "review-brief") showReviewBrief();
+  else if (action === "submit-gap") $("#gap-form")?.requestSubmit();
   else if (action === "restart-judge" || action === "judge-restart") {
     if (state.mode !== "demo") return;
     if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion();
@@ -3463,7 +3481,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v3", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v4", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {

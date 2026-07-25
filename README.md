@@ -4,23 +4,29 @@
 
 ## 评审入口与部署能力
 
-当前提交版本是 `2026.07.25-production-v3`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
+当前提交版本是 `2026.07.25-production-v4`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
 
 - **Production status:** `LIVE — GitHub Pages`（2026-07-25 UTC）
 - **Production URL:** <https://thecyper.github.io/HackSome/?deployment=static-review>
 - **Deployment identity:** 已授权仓库的发布分支 `TheCYPER/HackSome:gh-pages`；发布提交使用与本地发布 HEAD 完全相同的根 Git tree，不修改该仓库默认分支
-- **Public verification:** `BASE_URL='<上方 Production URL>' node tests/deployment-e2e.js` 覆盖干净存储、评审导览重播、公开配对边界、离线壳层以及桌面 / 390 / 320 三宽度
+- **Public verification:** `BASE_URL='<上方 Production URL>' node tests/deployment-e2e.js` 分别用干净浏览器存储覆盖桌面 / 390 / 320 三宽度的真实家庭 1 / 6 设置与刷新续接，并检查评审导览重播、公开配对边界、隐私策略和离线壳层
 
 | 能力 | 公开评审版（静态托管） | 本地完整体验（`npm start`） |
 | --- | --- | --- |
 | 2–3 分钟演示导览、三种角色、严格匹配、普通/医疗缺口 | 可用 | 可用 |
-| 单机在旁观察 / 短时离开、结果历史、撤回、脱敏导出 | 可用；只保存在当前浏览器 | 可用；只保存在当前浏览器 |
+| 空白真实家庭 1 / 6 设置、单机在旁观察 / 短时离开、结果历史、撤回、脱敏导出 | 可用；只保存在当前浏览器，不上传 | 可用；只保存在当前浏览器 |
 | 两台手机创建 / 加入短时房间 | **不提供**；所有入口显示“本地完整体验”，不会请求 `/api/rooms` | 可用；两台设备需访问同一台电脑的局域网地址 |
 | 后台推送、持久远端会话、临床判断 | 不提供 | 不提供 |
 
 `npm run build` 同时保留 Sites 兼容的 vinext 构建；但本工作区的 Sites 连接器返回 `sites_access_disabled`，因此 `.openai/hosting.json` 诚实保留 `project_id: null`，没有捏造 Sites 项目。生产发布改用 GitHub Pages 的 HTTPS 项目站点，不是 localhost、局域网地址、确认中间页或临时隧道。`.openai/deployment.json` 记录实际提供商、公开 URL 和发布源分支。
 
 页面右上角“评审说明”会显示精简路径、精确版本和同一份能力边界。社交预览图为 `assets/social-preview.jpg`（1200×630）。
+
+### 生产隐私与响应策略
+
+首个公开 HTML 自身声明同源 CSP（脚本、连接、图片、Worker 等默认仅限本站）和 `no-referrer`，因此即使 GitHub Pages 的固定边缘层不能由仓库添加自定义响应头，首次干净访问也会立即受浏览器文档策略约束。Service Worker 接管后的在线与离线响应会统一带上 `Content-Security-Policy`、`Referrer-Policy: no-referrer`、`X-Content-Type-Options: nosniff` 和 `Permissions-Policy`；`tests/deployment-e2e.js` 会从页面内受控 `fetch` 验证这些实际响应头。`_headers` 保存同一份托管清单，供支持自定义响应头的静态提供商直接采用；本地 Node 服务从第一次响应开始就下发这些头。
+
+GitHub Pages 的首个网络响应头由平台控制，本仓库没有伪称能改写它。当前页面不加载第三方脚本、字体或分析服务，所有静态资源均由同一 HTTPS origin 以明确 MIME 类型提供；真实家庭字段只写入当前浏览器的 `localStorage`。
 
 ## 运行
 
@@ -43,7 +49,7 @@ npm start
 首次启动不会自动创建演示数据，而是提供两个明确入口：
 
 - **体验演示家庭**：一键载入周岚家庭、5 条有来源的演示指导和 4 条明确标记为演示的结果记录（完成、中途结束、双方选择不同、双方选择延长）。适合快速查看诚实结果、严格匹配、待确认缺口、离班通知和撤回。
-- **建立我的接班彩排**：从真正空白的“我的家庭”开始。不会带入演示成员、日期、指导、消息、结果记录或阶段结论。
+- **在电脑上建立我的接班彩排**：公开 URL 直接从真正空白的“我的家庭”进入第 1 / 6 步；刷新后从当前浏览器续接。不会带入演示成员、日期、指导、消息、结果记录或阶段结论，也不会请求房间 API。只有两台手机真实配对需要本地 `npm start` 与同一局域网。
 
 演示入口会先打开一条约 2–3 分钟的评审导览，并始终显示“演示模式 · 脚本化样本 · 非真实家庭”。导览在同一页说明主要照护者、替班者和被照护者各自能做什么，依次展示在旁观察、短时离开和安静离班；顶部“演示模式 · 重播”可随时一键恢复演示种子。完整家庭工作区、单机路径、双机邀请、历史和脱敏导出仍可按需展开。
 

@@ -1100,6 +1100,8 @@ function serveStatic(request, response, url) {
       "Content-Length": stat.size,
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
+      "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'self'",
+      "Permissions-Policy": "camera=(), geolocation=(), microphone=(self)",
       "Cache-Control": pathname.endsWith(".html") ? "no-store" : "public, max-age=60",
     };
     response.writeHead(200, headers);
