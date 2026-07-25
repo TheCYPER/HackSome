@@ -1,7 +1,7 @@
 {
   "provider": "GitHub Pages",
   "status": "live",
-  "build": "2026.07.25-production-v4",
+  "build": "2026.07.25-production-v5",
   "production_url": "https://thecyper.github.io/HackSome/?deployment=static-review",
   "source_repository": "TheCYPER/HackSome",
   "source_branch": "gh-pages",

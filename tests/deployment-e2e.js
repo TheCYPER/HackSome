@@ -4,7 +4,7 @@ const { firefox } = require("/usr/local/lib/python3.12/dist-packages/playwright/
 const { server } = require("../server");
 
 const FIREFOX_PATH = "/home/kasm-user/.cache/ms-playwright/firefox-1509/firefox/firefox";
-const BUILD = "2026.07.25-production-v4";
+const BUILD = "2026.07.25-production-v5";
 const PRODUCTION_URL = "https://thecyper.github.io/HackSome/?deployment=static-review";
 const PRODUCTION_PREVIEW = "https://thecyper.github.io/HackSome/assets/social-preview.jpg";
 const STORAGE_KEY = "relay-rehearsal-demo-v1";
@@ -58,9 +58,11 @@ async function navigateWithRetries(page, url) {
       assert(cleanState?.mode === null, `clean ${viewport.width}px storage begins at mode choice`);
       await realPage.getByRole("button", { name: /在电脑上建立我的接班彩排/ }).click();
       await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();
+      await realPage.waitForFunction(() => window.scrollY === 0);
       const realState = await realPage.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE_KEY);
       assert(realState?.mode === "real" && realState?.onboarding?.step === 1 && realState?.guides?.length === 0 && realState?.sessions?.length === 0, `public ${viewport.width}px entry persists honest real mode at onboarding 1/6`);
       assert(await realPage.getByRole("heading", { name: "先把需要联系的人放进来" }).isVisible(), `public ${viewport.width}px shows actionable real-household onboarding`);
+      assert(await realPage.evaluate(() => window.scrollY === 0), `public ${viewport.width}px onboarding starts at its visible heading`);
       assert(await realPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `real onboarding has no ${viewport.width}px horizontal overflow`);
       await realPage.reload({ waitUntil: "domcontentloaded" });
       await realPage.locator(".page-kicker").filter({ hasText: "第 1 / 6 步" }).waitFor();

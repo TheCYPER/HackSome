@@ -4,7 +4,7 @@
 
 ## 评审入口与部署能力
 
-当前提交版本是 `2026.07.25-production-v4`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
+当前提交版本是 `2026.07.25-production-v5`。产品明确区分两种运行形态；公开页面不会把缺失的远端房间服务伪装成可用能力。
 
 - **Production status:** `LIVE — GitHub Pages`（2026-07-25 UTC）
 - **Production URL:** <https://thecyper.github.io/HackSome/?deployment=static-review>

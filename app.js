@@ -13,7 +13,7 @@ const SOURCE_IDS = Object.freeze({
   RELAY: "relay",
   PROFESSIONAL: "professional-community-nurse",
 });
-const APP_BUILD = "2026.07.25-production-v4";
+const APP_BUILD = "2026.07.25-production-v5";
 
 function isLocalExperienceHost(hostname = location.hostname) {
   const host = String(hostname || "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -1644,9 +1644,11 @@ function renderNav() {
 function render() {
   clearInterval(tickHandle);
   tickHandle = null;
+  const onboardingActive = state.mode === "real" && state.onboarding?.status !== "complete" && !session;
   document.body.classList.toggle("mode-choice", !state.mode);
-  document.body.classList.toggle("onboarding-mode", state.mode === "real" && state.onboarding?.status !== "complete" && !session);
+  document.body.classList.toggle("onboarding-mode", onboardingActive);
   document.body.classList.toggle("hosted-static", HOSTED_STATIC_REVIEW);
+  document.documentElement.style.scrollBehavior = onboardingActive ? "auto" : "";
   if (!state.mode) { renderModeChoice(); return; }
   renderNav();
   const meta = navItems.find((item) => item.id === currentPage);
@@ -2965,10 +2967,26 @@ document.addEventListener("click", async (event) => {
   const action = trigger.dataset.action;
   const focusJudgeStep = () => requestAnimationFrame(() => $("#judge-step-title")?.focus({ preventScroll: false }));
   if (action === "choose-demo") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); resetDemoState(); currentPage = "home"; history.replaceState(null, "", "#home"); render(); focusJudgeStep(); toast("已进入明确标注的演示家庭"); }
-  else if (action === "choose-real") { if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion(); startRealHousehold(); render(); }
+  else if (action === "choose-real") {
+    if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion();
+    startRealHousehold();
+    currentPage = "home";
+    history.replaceState(null, "", "#home");
+    render();
+    const revealOnboardingStart = () => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      $("#app")?.focus({ preventScroll: true });
+    };
+    revealOnboardingStart();
+    requestAnimationFrame(() => requestAnimationFrame(revealOnboardingStart));
+    setTimeout(revealOnboardingStart, 120);
+  }
   else if (action === "show-local-full-experience") showLocalFullExperience();
   else if (action === "review-brief") showReviewBrief();
-  else if (action === "submit-gap") $("#gap-form")?.requestSubmit();
+  else if (action === "submit-gap") {
+    const gapForm = $("#gap-form");
+    if (gapForm) gapForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  }
   else if (action === "restart-judge" || action === "judge-restart") {
     if (state.mode !== "demo") return;
     if (companionRoom && !["revoked", "expired", "ended", "invalidated"].includes(companionRoom.status)) await revokeCompanion();
@@ -3481,7 +3499,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", async () => {
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
-      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v4", { updateViaCache: "none" });
+      const registration = await navigator.serviceWorker.register("./sw.js?v=20260725-production-v5", { updateViaCache: "none" });
       await registration.update();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (hadController && !sessionStorage.getItem("relay-sw-reloaded")) {
