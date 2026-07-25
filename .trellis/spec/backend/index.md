@@ -14,7 +14,7 @@
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Useful Idea 工作流合同](./agent-workflow-contracts.md) | Useful route 的 Prompt、Hub、绝对 gate 与 Idea Card | Active |
-| [Creative Idea 工作流合同](./creative-agent-workflow-contracts.md) | Creative C0–C7、Idea Memory、C6 人审与确定性发布 | Active |
+| [Creative Idea 工作流合同](./creative-agent-workflow-contracts.md) | Creative C0–C7、software-first Demo gate、Idea Memory、C6 唯一人审与确定性发布 | Active |
 | [Hackathon Team Runtime 合同](./hackathon-team-runtime-contracts.md) | Build 阶段的 Goal、Worker 连续性、超时清理与恢复 | Active |
 | [Pitch 工作流合同](./pitch-workflow-contracts.md) | Project snapshot、四角色串行交接、Chromium 检查与自动发布 | Active |
 

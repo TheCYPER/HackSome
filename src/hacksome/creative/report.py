@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, Literal, Mapping, Sequence
 
-from hacksome.artifacts import title_of, validate_markdown
+from hacksome.artifacts import ArtifactError, title_of, validate_markdown
 from hacksome.creative.artifacts import (
     CHALLENGE_BRIEF_HEADINGS,
     CONCEPT_HEADINGS,
     CREATIVE_BRIEF_HEADINGS,
     FINAL_IDEA_CARD_HEADINGS,
+    LEGACY_CONCEPT_HEADINGS,
+    LEGACY_CREATIVE_BRIEF_HEADINGS,
     NOVELTY_SCAN_HEADINGS,
     compose_final_idea_card,
 )
@@ -27,6 +29,10 @@ from hacksome.creative.contracts import (
     CREATIVE_PROMPT_POLICY_VERSION,
     CREATIVE_REPORT_POLICY_VERSION,
     CREATIVE_STAGE_POLICY_VERSION,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
+    LEGACY_CREATIVE_REPORT_POLICY_VERSION,
+    LEGACY_CREATIVE_STAGE_POLICY_VERSION,
     DispositionOutcome,
     DispositionStage,
     StableReasonCode,
@@ -70,6 +76,7 @@ _EMPTY_BATCH_REASONS = frozenset(
     {
         ZeroReasonCode.NO_CONCEPTS_GENERATED.value,
         ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value,
+        ZeroReasonCode.ALL_CANDIDATES_FAILED_CONCEPT_SCREEN.value,
         ZeroReasonCode.SHORTLIST_EMPTY.value,
     }
 )
@@ -194,9 +201,8 @@ class ConceptRevisionProjection:
             raise CreativeReportError(
                 f"Concept revision hash mismatch: {self.revision_ref}"
             )
-        validate_markdown(
+        _validate_concept_markdown(
             self.markdown,
-            required_h2=CONCEPT_HEADINGS,
             label=f"Creative Concept {self.revision_ref}",
         )
         _reject_local_path(self.markdown, f"Concept {self.revision_ref}")
@@ -365,9 +371,8 @@ class FinalIdeaProjection:
         _require_sha(self.sha256, "Final Idea sha256")
         if sha256_text(self.markdown) != self.sha256:
             raise CreativeReportError(f"Final Idea hash mismatch: {self.idea_id}")
-        validate_markdown(
+        _validate_concept_markdown(
             self.markdown,
-            required_h2=CONCEPT_HEADINGS,
             label=f"Final Idea {self.idea_id}",
         )
         _reject_local_path(self.markdown, f"Final Idea {self.idea_id}")
@@ -493,14 +498,47 @@ class CreativeReportProjection:
         _require_ref(self.run_id, "run_id")
         if self.producer_kind not in {"live", "fixture"}:
             raise CreativeReportError("producer_kind must be live or fixture")
-        if self.route_contract_version != CREATIVE_CONTRACT_VERSION:
+        policy_versions = {
+            CREATIVE_CONTRACT_VERSION: (
+                CREATIVE_PROMPT_POLICY_VERSION,
+                CREATIVE_STAGE_POLICY_VERSION,
+                CREATIVE_REPORT_POLICY_VERSION,
+            ),
+            LEGACY_CREATIVE_CONTRACT_VERSION: (
+                LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
+                LEGACY_CREATIVE_STAGE_POLICY_VERSION,
+                LEGACY_CREATIVE_REPORT_POLICY_VERSION,
+            ),
+        }
+        expected_policies = policy_versions.get(self.route_contract_version)
+        if expected_policies is None:
             raise CreativeReportError("unsupported Creative contract version")
-        if self.prompt_policy_version != CREATIVE_PROMPT_POLICY_VERSION:
-            raise CreativeReportError("unsupported Prompt policy version")
-        if self.stage_policy_version != CREATIVE_STAGE_POLICY_VERSION:
-            raise CreativeReportError("unsupported stage policy version")
-        if self.report_policy_version != CREATIVE_REPORT_POLICY_VERSION:
-            raise CreativeReportError("unsupported report policy version")
+        if (
+            self.prompt_policy_version,
+            self.stage_policy_version,
+            self.report_policy_version,
+        ) != expected_policies:
+            raise CreativeReportError(
+                "Creative route policy versions do not match its contract"
+            )
+        concept_headings = (
+            LEGACY_CONCEPT_HEADINGS
+            if self.route_contract_version == LEGACY_CREATIVE_CONTRACT_VERSION
+            else CONCEPT_HEADINGS
+        )
+        for concept in self.concepts:
+            for revision in concept.ordered_revisions:
+                validate_markdown(
+                    revision.markdown,
+                    required_h2=concept_headings,
+                    label=f"Creative Concept {revision.revision_ref}",
+                )
+        for idea in self.final_ideas:
+            validate_markdown(
+                idea.markdown,
+                required_h2=concept_headings,
+                label=f"Final Idea {idea.idea_id}",
+            )
         _require_ref(self.challenge_ref, "challenge_ref")
         _require_sha(self.challenge_sha256, "challenge_sha256")
         if sha256_text(self.challenge_markdown) != self.challenge_sha256:
@@ -517,7 +555,12 @@ class CreativeReportProjection:
             raise CreativeReportError("Creative Brief hash mismatch")
         validate_markdown(
             self.creative_brief_markdown,
-            required_h2=CREATIVE_BRIEF_HEADINGS,
+            required_h2=(
+                LEGACY_CREATIVE_BRIEF_HEADINGS
+                if self.route_contract_version
+                == LEGACY_CREATIVE_CONTRACT_VERSION
+                else CREATIVE_BRIEF_HEADINGS
+            ),
             label="Creative Brief",
         )
         _reject_local_path(self.creative_brief_markdown, "Creative Brief")
@@ -538,6 +581,22 @@ class CreativeReportProjection:
         if self.zero_reason_code is not None:
             if self.zero_reason_code not in _ZERO_REASONS:
                 raise CreativeReportError("zero_reason_code is invalid")
+            if (
+                self.route_contract_version == LEGACY_CREATIVE_CONTRACT_VERSION
+                and self.zero_reason_code
+                == ZeroReasonCode.ALL_CANDIDATES_FAILED_CONCEPT_SCREEN.value
+            ):
+                raise CreativeReportError(
+                    "Creative v1 cannot use the v2 Concept Screen zero reason"
+                )
+            if (
+                self.route_contract_version == CREATIVE_CONTRACT_VERSION
+                and self.zero_reason_code
+                == ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value
+            ):
+                raise CreativeReportError(
+                    "Creative v2 cannot use the legacy Hook zero reason"
+                )
             if self.final_ideas:
                 raise CreativeReportError(
                     "zero_reason_code cannot accompany Final Ideas"
@@ -810,10 +869,13 @@ def _validate_zero_reason_semantics(
         return
     if not projection.concepts:
         raise CreativeReportError(f"{reason} requires at least one Concept")
-    if reason == ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value:
+    if reason in {
+        ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value,
+        ZeroReasonCode.ALL_CANDIDATES_FAILED_CONCEPT_SCREEN.value,
+    }:
         if latest_outcomes != {DispositionOutcome.ELIMINATED}:
             raise CreativeReportError(
-                "all_candidates_failed_hook requires every latest revision "
+                f"{reason} requires every latest revision "
                 "to be eliminated at C4"
             )
         return
@@ -1181,7 +1243,12 @@ def _report_markdown_bytes(
     _append_exact_sections(
         lines,
         projection.creative_brief_markdown,
-        CREATIVE_BRIEF_HEADINGS,
+        (
+            LEGACY_CREATIVE_BRIEF_HEADINGS
+            if projection.route_contract_version
+            == LEGACY_CREATIVE_CONTRACT_VERSION
+            else CREATIVE_BRIEF_HEADINGS
+        ),
     )
     lines.extend(["## Creative Territories", ""])
     if projection.territories:
@@ -1510,6 +1577,10 @@ def _memory_record_payload(
                     reason_evidence=reason_evidence,
                     evidence_refs=terminal.evidence_refs,
                     classification=classification,
+                    include_software_fields=(
+                        projection.route_contract_version
+                        == CREATIVE_CONTRACT_VERSION
+                    ),
                 )
             )
     for idea in sorted(projection.final_ideas, key=lambda item: item.idea_id):
@@ -1534,11 +1605,20 @@ def _memory_record_payload(
                     )
                 ),
                 classification="positive",
+                include_software_fields=(
+                    projection.route_contract_version
+                    == CREATIVE_CONTRACT_VERSION
+                ),
             )
         )
     entries.sort(key=lambda item: str(item["memory_entry_id"]))
     payload = {
-        "memory_schema_version": 1,
+        "memory_schema_version": (
+            1
+            if projection.route_contract_version
+            == LEGACY_CREATIVE_CONTRACT_VERSION
+            else 2
+        ),
         "source_run_id": projection.run_id,
         "source_route": {
             "id": "creative",
@@ -1579,6 +1659,7 @@ def _memory_entry(
     reason_evidence: Sequence[Mapping[str, str]],
     evidence_refs: Sequence[str],
     classification: str,
+    include_software_fields: bool,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "memory_entry_id": memory_entry_id,
@@ -1613,6 +1694,23 @@ def _memory_entry(
         "evidence_refs": sorted(evidence_refs),
         "classification": classification,
     }
+    if include_software_fields:
+        payload.update(
+            {
+                "software_core_and_runtime": extract_exact_markdown_section(
+                    markdown,
+                    "Software Core and Runtime",
+                ),
+                "share_trigger_and_artifact": extract_exact_markdown_section(
+                    markdown,
+                    "Share Trigger and Artifact",
+                ),
+                "minimum_hackathon_demo": extract_exact_markdown_section(
+                    markdown,
+                    "Minimum Hackathon Demo",
+                ),
+            }
+        )
     return {
         "capsule_sha256": sha256_json(payload),
         **payload,
@@ -1688,6 +1786,26 @@ def _require_unique_text(values: Sequence[str], label: str) -> None:
 def _reject_local_path(value: str, label: str) -> None:
     if _LOCAL_PATH.search(value):
         raise CreativeReportError(f"{label} contains an absolute local path")
+
+
+def _validate_concept_markdown(markdown: str, *, label: str) -> None:
+    """Accept exact v2 or frozen v1 Concept section contracts."""
+
+    try:
+        validate_markdown(
+            markdown,
+            required_h2=CONCEPT_HEADINGS,
+            label=label,
+        )
+    except ArtifactError as current_error:
+        try:
+            validate_markdown(
+                markdown,
+                required_h2=LEGACY_CONCEPT_HEADINGS,
+                label=label,
+            )
+        except ArtifactError:
+            raise current_error
 
 
 __all__ = [

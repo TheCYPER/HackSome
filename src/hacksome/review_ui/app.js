@@ -12,17 +12,38 @@ const REACTION_LABELS = {
 };
 const REACTION_VALUES = ["yes", "maybe", "no"];
 const REACTION_VALUE_LABELS = { yes: "是", maybe: "也许", no: "否" };
+const SHARE_IMPULSE_LABELS = {
+  immediate: "会立刻点开 / 转发 / 拉人来试",
+  maybe: "也许会分享",
+  no: "不会分享",
+};
+const DEMO_CONFIDENCE_LABELS = {
+  yes: "相信比赛时间内能跑起来",
+  maybe: "对 Demo 可行性不确定",
+  no: "不相信比赛时间内能跑起来",
+};
+const CARD_DECISION_LABELS = {
+  reject: "不成立",
+  revise: "需要修改",
+  keep: "保留",
+  taste_veto: "Taste veto",
+};
+const CARD_DECISIONS = ["reject", "revise", "keep"];
 
 const state = {
   snapshot: null,
   profile: null,
-  currentConceptIndex: 0,
+  activeConceptRef: null,
+  directoryOpen: false,
+  isTransitioning: false,
+  navigationHistory: [],
   currentPairIndex: 0,
   pairMode: false,
   pairPreference: null,
   draft: null,
   staleDraft: false,
   submittedReviewId: null,
+  editingAfterReveal: false,
   resolutionId: null,
 };
 
@@ -83,6 +104,10 @@ function safeRemoveStorage(key) {
 
 function getRound() {
   return asObject(asObject(state.snapshot).round);
+}
+
+function reviewSchemaVersion() {
+  return Number(asObject(state.snapshot).schema_version) === 1 ? 1 : 2;
 }
 
 function getConcepts() {
@@ -170,13 +195,59 @@ async function registerReviewerSession() {
 
 function emptyDraft() {
   return {
+    schema_version: reviewSchemaVersion(),
     round_sha256: text(getRound().sha256),
     review_id: randomId(),
     reviewer_name: text(state.profile.reviewer_name),
+    active_concept_ref: "",
     concept_reviews: {},
     pairwise: {},
     overall_comment: "",
   };
+}
+
+function reviewHasDecision(review) {
+  return [...CARD_DECISIONS, "taste_veto"].includes(text(asObject(review).recommendation));
+}
+
+function resolveInitialActiveRef(draft) {
+  const concepts = getConcepts();
+  const refs = new Set(concepts.map(conceptRef));
+  const savedRef = text(asObject(draft).active_concept_ref);
+  if (savedRef && refs.has(savedRef)) {
+    return savedRef;
+  }
+  const reviews = asObject(asObject(draft).concept_reviews);
+  const firstUndecided = concepts.find(
+    (concept) => !reviewHasDecision(reviews[conceptRef(concept)]),
+  );
+  return firstUndecided ? conceptRef(firstUndecided) : conceptRef(concepts[0] || {});
+}
+
+function setActiveConceptRef(ref, { persist = true } = {}) {
+  state.activeConceptRef = ref || null;
+  if (state.draft && !state.staleDraft) {
+    state.draft.active_concept_ref = ref || "";
+    if (persist) {
+      saveDraft();
+    }
+  }
+}
+
+function normalizeConceptDraft(value) {
+  const draft = asObject(value);
+  if (reviewSchemaVersion() >= 2) {
+    if (!["immediate", "maybe", "no"].includes(draft.share_impulse)) {
+      draft.share_impulse = "maybe";
+    }
+    if (!["yes", "maybe", "no"].includes(draft.demo_confidence)) {
+      draft.demo_confidence = "maybe";
+    }
+  } else {
+    delete draft.share_impulse;
+    delete draft.demo_confidence;
+  }
+  return draft;
 }
 
 function loadDraft() {
@@ -184,27 +255,38 @@ function loadDraft() {
   const currentHash = text(getRound().sha256);
   if (!saved.round_sha256) {
     state.draft = emptyDraft();
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
     return;
   }
   if (saved.round_sha256 !== currentHash) {
     state.draft = saved;
     state.staleDraft = true;
+    state.activeConceptRef = resolveInitialActiveRef(saved);
     byId("stale-warning").hidden = false;
     byId("submit-review").disabled = true;
     return;
   }
+  const conceptReviews = Object.fromEntries(
+    Object.entries(asObject(saved.concept_reviews)).map(([ref, review]) => [
+      ref,
+      normalizeConceptDraft(review),
+    ]),
+  );
   state.draft = {
     ...emptyDraft(),
     ...saved,
-    concept_reviews: asObject(saved.concept_reviews),
+    schema_version: reviewSchemaVersion(),
+    concept_reviews: conceptReviews,
     pairwise: asObject(saved.pairwise),
   };
+  setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
 }
 
 function saveDraft() {
   if (!state.draft || state.staleDraft) {
     return;
   }
+  state.draft.schema_version = reviewSchemaVersion();
   state.draft.round_sha256 = text(getRound().sha256);
   safeWriteStorage(DRAFT_KEY, state.draft);
 }
@@ -224,83 +306,13 @@ function makeTextElement(tag, className, value) {
   return element;
 }
 
-function renderConceptList() {
-  const list = byId("concept-list");
-  list.replaceChildren();
-  const concepts = getConcepts();
-  concepts.forEach((concept, index) => {
-    const item = document.createElement("li");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.index = String(index);
-    button.setAttribute("aria-current", index === state.currentConceptIndex ? "true" : "false");
-    const title = makeTextElement("span", "list-title", conceptTitle(concept));
-    button.append(title);
-    button.addEventListener("click", () => {
-      storeCurrentConceptDraft();
-      state.currentConceptIndex = index;
-      state.pairMode = false;
-      render();
-      byId("concept-stage").focus();
-    });
-    item.append(button);
-    list.append(item);
-  });
-}
-
-function renderConcept() {
-  const concepts = getConcepts();
-  const concept = concepts[state.currentConceptIndex];
-  const card = byId("concept-card");
-  if (!concept) {
-    card.hidden = true;
-    return;
-  }
-  card.hidden = state.pairMode;
-  byId("concept-id").textContent = conceptRef(concept);
-  byId("concept-territory").textContent = text(
-    concept.primary_territory_ref,
-    text(concept.territory),
-  );
-  byId("concept-hash").textContent = `sha256 ${shortHash(conceptHash(concept))}`;
-  byId("concept-hook").textContent = fieldText(concept, "hook", "one_sentence_hook", "title");
-  byId("concept-first-impression").textContent = fieldText(
-    concept,
-    "first_impression",
-    "first_thirty_seconds",
-  );
-  byId("concept-action").textContent = fieldText(concept, "audience_action", "action");
-  byId("concept-reveal").textContent = fieldText(
-    concept,
-    "reveal",
-    "setup_reveal_aftertaste",
-  );
-  byId("concept-mechanism").textContent = fieldText(concept, "core_mechanism", "mechanism");
-  byId("concept-demo").textContent = fieldText(
-    concept,
-    "minimum_hackathon_demo",
-    "minimum_demo",
-  );
-  byId("concept-novelty").textContent = fieldText(
-    concept,
-    "novelty",
-    "novelty_and_references",
-  );
-  byId("concept-risks").textContent = fieldText(
-    concept,
-    "risks",
-    "assumptions_confusion_and_risks",
-  );
-}
-
-function currentConceptDraft() {
-  const concept = getConcepts()[state.currentConceptIndex];
+function conceptDraft(concept) {
   if (!concept || !state.draft) {
     return {};
   }
   const ref = conceptRef(concept);
   if (!state.draft.concept_reviews[ref]) {
-    state.draft.concept_reviews[ref] = {
+    const review = {
       concept_ref: ref,
       concept_sha256: conceptHash(concept),
       one_sentence_retell: "",
@@ -314,76 +326,792 @@ function currentConceptDraft() {
       recommendation: "no_opinion",
       comment: "",
     };
+    if (reviewSchemaVersion() >= 2) {
+      review.share_impulse = "maybe";
+      review.demo_confidence = "maybe";
+    }
+    state.draft.concept_reviews[ref] = review;
   }
-  return state.draft.concept_reviews[ref];
+  // Migrate a bound v1 browser draft in place without discarding the user's
+  // text. The round hash remains the stale-draft authority.
+  return normalizeConceptDraft(state.draft.concept_reviews[ref]);
 }
 
-function storeCurrentConceptDraft() {
-  const draft = currentConceptDraft();
-  if (!draft || state.staleDraft) {
-    return;
-  }
-  draft.one_sentence_retell = byId("retell").value;
-  draft.share_target = byId("share-target").value;
-  draft.recommendation = byId("recommendation").value;
-  draft.comment = byId("comment").value;
-  state.draft.overall_comment = byId("overall-comment").value;
-  persistProfileName(byId("reviewer-name").value.trim());
-  saveDraft();
+function conceptDraftIsComplete(concept) {
+  return Boolean(text(conceptDraft(concept).one_sentence_retell).trim());
 }
 
-function renderReactionChips() {
-  const container = byId("reaction-chips");
-  container.replaceChildren();
-  const draft = currentConceptDraft();
+function reviewedConceptCount() {
+  return getConcepts().filter(conceptDraftIsComplete).length;
+}
+
+function conceptDecision(concept) {
+  return text(conceptDraft(concept).recommendation, "no_opinion");
+}
+
+function conceptStatusLabel(concept) {
+  const decision = conceptDecision(concept);
+  if (CARD_DECISION_LABELS[decision]) {
+    return CARD_DECISION_LABELS[decision];
+  }
+  return conceptDraftIsComplete(concept) ? "已写复述" : "待判断";
+}
+
+function activeConceptIndex() {
+  const concepts = getConcepts();
+  const index = concepts.findIndex(
+    (concept) => conceptRef(concept) === state.activeConceptRef,
+  );
+  return index >= 0 ? index : concepts.length ? 0 : -1;
+}
+
+function renderConceptList() {
+  const list = byId("concept-list");
+  list.replaceChildren();
+  const concepts = getConcepts();
+  const activeIndex = activeConceptIndex();
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  concepts.forEach((concept, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.index = String(index);
+    button.dataset.complete = conceptDraftIsComplete(concept) ? "true" : "false";
+    button.dataset.decision = conceptDecision(concept);
+    button.setAttribute(
+      "aria-label",
+      `跳到项目 ${index + 1}：${conceptTitle(concept)}，${conceptStatusLabel(concept)}`,
+    );
+    if (!isCurator && index === activeIndex) {
+      button.setAttribute("aria-current", "true");
+    }
+    button.append(
+      makeTextElement(
+        "span",
+        "list-number",
+        String(index + 1).padStart(2, "0"),
+      ),
+      makeTextElement("span", "list-title", conceptTitle(concept)),
+      makeTextElement("span", "list-status", conceptStatusLabel(concept)),
+    );
+    button.addEventListener("click", () => {
+      if (isCurator) {
+        const card = byId(`concept-card-${index + 1}`);
+        if (card) {
+          card.focus();
+        }
+        return;
+      }
+      showConceptAt(index, { announce: true, remember: true });
+    });
+    item.append(button);
+    list.append(item);
+  });
+}
+
+function appendFactCopy(parent, label, value) {
+  parent.append(
+    makeTextElement("p", "fact-label", label),
+    makeTextElement("p", "fact-copy", value),
+  );
+}
+
+function createFactPanel(title) {
+  const panel = document.createElement("section");
+  panel.className = "fact-panel";
+  panel.append(makeTextElement("h3", "", title));
+  return panel;
+}
+
+function createExperienceStep(label, value, step) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "experience-step";
+  wrapper.dataset.step = step;
+  wrapper.append(
+    makeTextElement("p", "fact-label", label),
+    makeTextElement("p", "fact-copy", value),
+  );
+  return wrapper;
+}
+
+function appendSelectOptions(select, choices, selectedValue) {
+  choices.forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === selectedValue;
+    select.append(option);
+  });
+}
+
+function bindReviewField(element, index, fieldName) {
+  element.dataset.conceptIndex = String(index);
+  element.dataset.reviewField = fieldName;
+  element.name = fieldName;
+}
+
+function createCharacterNote(inputId, help, maximum) {
+  const note = document.createElement("p");
+  note.className = "field-note";
+  if (help) {
+    note.append(makeTextElement("span", "", help));
+  }
+  const countWrap = document.createElement("span");
+  const count = makeTextElement("span", "", "0");
+  count.dataset.countFor = inputId;
+  countWrap.append(count, document.createTextNode(` / ${maximum}`));
+  note.append(countWrap);
+  return note;
+}
+
+function createReactionGroups(index, draft) {
+  const container = document.createElement("div");
+  container.className = "reaction-groups";
   const reactions = asObject(draft.reactions);
   REACTION_NAMES.forEach((name) => {
     const wrapper = document.createElement("div");
     wrapper.className = "reaction-group";
     wrapper.setAttribute("role", "group");
     wrapper.setAttribute("aria-label", REACTION_LABELS[name]);
+    wrapper.append(makeTextElement("p", "reaction-group-name", REACTION_LABELS[name]));
     REACTION_VALUES.forEach((value) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "reaction-chip";
+      button.dataset.conceptIndex = String(index);
       button.dataset.reaction = name;
       button.dataset.value = value;
       button.setAttribute("aria-pressed", reactions[name] === value ? "true" : "false");
-      button.textContent = `${REACTION_LABELS[name]} · ${REACTION_VALUE_LABELS[value]}`;
-      button.addEventListener("click", () => {
-        draft.reactions[name] = value;
-        saveDraft();
-        renderReactionChips();
-      });
+      button.textContent = REACTION_VALUE_LABELS[value];
       wrapper.append(button);
     });
     container.append(wrapper);
   });
+  return container;
+}
+
+function createConceptReviewSection(concept, index) {
+  const draft = conceptDraft(concept);
+  const section = document.createElement("section");
+  section.className = "project-review-section";
+  section.dataset.conceptIndex = String(index);
+  const titleId = `review-sheet-title-${index + 1}`;
+  section.setAttribute("aria-labelledby", titleId);
+
+  const heading = document.createElement("header");
+  heading.className = "review-sheet-heading";
+  const headingCopy = document.createElement("div");
+  headingCopy.append(
+    makeTextElement("p", "eyebrow", `你的评审 / 项目 ${String(index + 1).padStart(2, "0")}`),
+  );
+  const title = makeTextElement("h3", "", "这张项目卡自己的回执");
+  title.id = titleId;
+  headingCopy.append(
+    title,
+    makeTextElement(
+      "p",
+      "",
+      "先用自己的话复述，再留下建议；最后用卡片底部的三个动作完成判断。",
+    ),
+  );
+  const status = makeTextElement(
+    "span",
+    "concept-review-status",
+    conceptDraftIsComplete(concept) ? "草稿已记" : "可跳过",
+  );
+  status.dataset.complete = conceptDraftIsComplete(concept) ? "true" : "false";
+  heading.append(headingCopy, status);
+  section.append(heading);
+
+  const fields = document.createElement("div");
+  fields.className = "project-review-fields";
+
+  const retellWrap = document.createElement("div");
+  retellWrap.className = "field field-full";
+  const retellId = `retell-${index + 1}`;
+  const retellLabel = document.createElement("label");
+  retellLabel.htmlFor = retellId;
+  retellLabel.textContent = "一句话复述";
+  const retell = document.createElement("textarea");
+  retell.id = retellId;
+  retell.maxLength = 400;
+  retell.rows = 3;
+  retell.value = text(draft.one_sentence_retell);
+  retell.setAttribute("aria-describedby", `${retellId}-note`);
+  bindReviewField(retell, index, "one_sentence_retell");
+  const retellNote = createCharacterNote(
+    retellId,
+    "不看原文时，你会怎样讲给下一位？",
+    400,
+  );
+  retellNote.id = `${retellId}-note`;
+  retellWrap.append(retellLabel, retell, retellNote);
+  fields.append(retellWrap);
+
+  const shareWrap = document.createElement("div");
+  shareWrap.className = "field";
+  const shareId = `share-target-${index + 1}`;
+  const shareLabel = document.createElement("label");
+  shareLabel.htmlFor = shareId;
+  shareLabel.textContent = "立刻想到想发给谁？";
+  const shareTarget = document.createElement("input");
+  shareTarget.id = shareId;
+  shareTarget.maxLength = 200;
+  shareTarget.placeholder = "一个具体的人或一类明确的朋友";
+  shareTarget.value = text(draft.share_target);
+  bindReviewField(shareTarget, index, "share_target");
+  shareWrap.append(
+    shareLabel,
+    shareTarget,
+    createCharacterNote(shareId, "选“会，立刻”时必填。", 200),
+  );
+  fields.append(shareWrap);
+
+  if (reviewSchemaVersion() >= 2) {
+    const signalGrid = document.createElement("div");
+    signalGrid.className = "signal-grid";
+
+    const impulseWrap = document.createElement("div");
+    impulseWrap.className = "field";
+    const impulseId = `share-impulse-${index + 1}`;
+    const impulseLabel = document.createElement("label");
+    impulseLabel.htmlFor = impulseId;
+    impulseLabel.textContent = "你会马上点开、转发或拉人来试吗？";
+    const impulse = document.createElement("select");
+    impulse.id = impulseId;
+    bindReviewField(impulse, index, "share_impulse");
+    appendSelectOptions(
+      impulse,
+      [
+        ["immediate", "会，立刻"],
+        ["maybe", "也许，要再看看"],
+        ["no", "不会"],
+      ],
+      text(draft.share_impulse, "maybe"),
+    );
+    impulseWrap.append(impulseLabel, impulse);
+
+    const confidenceWrap = document.createElement("div");
+    confidenceWrap.className = "field";
+    const confidenceId = `demo-confidence-${index + 1}`;
+    const confidenceLabel = document.createElement("label");
+    confidenceLabel.htmlFor = confidenceId;
+    confidenceLabel.textContent = "这个最小 Demo 能在比赛时间内跑起来吗？";
+    const confidence = document.createElement("select");
+    confidence.id = confidenceId;
+    bindReviewField(confidence, index, "demo_confidence");
+    appendSelectOptions(
+      confidence,
+      [
+        ["yes", "相信能"],
+        ["maybe", "不确定"],
+        ["no", "不相信能"],
+      ],
+      text(draft.demo_confidence, "maybe"),
+    );
+    confidenceWrap.append(confidenceLabel, confidence);
+    signalGrid.append(impulseWrap, confidenceWrap);
+    fields.append(signalGrid);
+  }
+
+  const reactionDetails = document.createElement("details");
+  reactionDetails.className = "review-more";
+  const reactionSummary = document.createElement("summary");
+  reactionSummary.textContent = "补充第一反应：惊喜、好玩、神秘或困惑";
+  const reactionFieldset = document.createElement("fieldset");
+  reactionFieldset.className = "reaction-fieldset";
+  const reactionLegend = document.createElement("legend");
+  reactionLegend.textContent = "分别选择你的第一反应";
+  reactionFieldset.append(reactionLegend, createReactionGroups(index, draft));
+  reactionDetails.append(reactionSummary, reactionFieldset);
+  fields.append(reactionDetails);
+
+  const commentWrap = document.createElement("div");
+  commentWrap.className = "field field-full";
+  const commentId = `comment-${index + 1}`;
+  const commentLabel = document.createElement("label");
+  commentLabel.htmlFor = commentId;
+  commentLabel.textContent = "评价、疑问或具体修改建议";
+  const comment = document.createElement("textarea");
+  comment.id = commentId;
+  comment.maxLength = 4000;
+  comment.rows = 3;
+  comment.value = text(draft.comment);
+  bindReviewField(comment, index, "comment");
+  commentWrap.append(
+    commentLabel,
+    comment,
+    createCharacterNote(commentId, "这段会与本项目绑定，不会混到其他卡。", 4000),
+  );
+  fields.append(commentWrap);
+
+  const actionError = makeTextElement("p", "card-action-error", "");
+  actionError.id = `card-action-error-${index + 1}`;
+  actionError.hidden = true;
+  actionError.setAttribute("role", "alert");
+
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  const later = document.createElement("button");
+  later.type = "button";
+  later.className = "later-action";
+  later.dataset.cardAction = "later";
+  later.dataset.conceptIndex = String(index);
+  later.textContent = "稍后再看";
+  actions.append(later);
+
+  [
+    ["reject", "✕", "不成立"],
+    ["revise", "△", "需要修改"],
+    ["keep", "✓", "保留"],
+  ].forEach(([value, symbol, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `decision-action decision-${value}`;
+    button.dataset.cardAction = value;
+    button.dataset.conceptIndex = String(index);
+    button.setAttribute("aria-pressed", text(draft.recommendation) === value ? "true" : "false");
+    button.append(
+      makeTextElement("span", "decision-symbol", symbol),
+      makeTextElement("span", "decision-label", label),
+    );
+    actions.append(button);
+  });
+
+  section.append(fields, actionError, actions);
+  return section;
+}
+
+function createConceptReviewCard(concept, index, total) {
+  const card = document.createElement("article");
+  card.id = `concept-card-${index + 1}`;
+  card.className = "project-review-card";
+  card.tabIndex = -1;
+  card.dataset.conceptIndex = String(index);
+  card.dataset.decision = conceptDecision(concept);
+  card.setAttribute("aria-labelledby", `concept-title-${index + 1}`);
+
+  const header = document.createElement("header");
+  header.className = "project-file-header";
+  header.append(
+    makeTextElement(
+      "span",
+      "file-number",
+      `${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`,
+    ),
+  );
+
+  const heading = document.createElement("div");
+  heading.className = "project-heading";
+  const title = makeTextElement("h2", "", conceptTitle(concept));
+  title.id = `concept-title-${index + 1}`;
+  title.tabIndex = -1;
+  const hook = fieldText(concept, "hook", "one_sentence_hook", "title");
+  const lede =
+    hook === conceptTitle(concept)
+      ? fieldText(concept, "first_impression", "first_thirty_seconds")
+      : hook;
+  heading.append(title, makeTextElement("p", "project-hook", lede));
+
+  const binding = document.createElement("div");
+  binding.className = "project-binding";
+  binding.append(
+    makeTextElement("p", "concept-id", conceptRef(concept)),
+    makeTextElement(
+      "p",
+      "territory-label",
+      text(concept.primary_territory_ref, text(concept.territory)),
+    ),
+    makeTextElement("p", "hash-label", `sha256 ${shortHash(conceptHash(concept))}`),
+  );
+  header.append(heading, binding);
+  card.append(header);
+
+  const facts = document.createElement("div");
+  facts.className = "project-facts";
+
+  const experience = createFactPanel("用户做什么");
+  appendFactCopy(
+    experience,
+    "真实输入与动作",
+    fieldText(
+      concept,
+      "audience_action",
+      "action",
+      "first_thirty_seconds",
+      "hook",
+    ),
+  );
+
+  const software = createFactPanel("软件如何回应");
+  appendFactCopy(
+    software,
+    "可观察的核心转换",
+    fieldText(
+      concept,
+      "software_core_and_runtime",
+      "core_mechanism",
+      "mechanism",
+    ),
+  );
+
+  const share = createFactPanel("为何会再试 / 分享");
+  appendFactCopy(
+    share,
+    "重复循环与可转发物",
+    fieldText(
+      concept,
+      "share_trigger_and_artifact",
+      "why_someone_may_share_it",
+    ),
+  );
+  facts.append(experience, software, share);
+  card.append(facts);
+
+  const details = document.createElement("details");
+  details.className = "source-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "查看其余原始材料：机制、先例与风险";
+  const detailGrid = document.createElement("div");
+  detailGrid.className = "source-detail-grid";
+  [
+    [
+      "体验路径与 Reveal",
+      [
+        fieldText(concept, "first_impression", "first_thirty_seconds"),
+        fieldText(concept, "reveal", "setup_reveal_aftertaste"),
+      ].join("\n\n"),
+    ],
+    [
+      "软件核心与运行入口 / 最小 Demo",
+      [
+        fieldText(
+          concept,
+          "software_core_and_runtime",
+          "core_mechanism",
+          "mechanism",
+        ),
+        fieldText(concept, "minimum_hackathon_demo", "minimum_demo"),
+      ].join("\n\n"),
+    ],
+    [
+      "分享触发与可转发物",
+      fieldText(
+        concept,
+        "share_trigger_and_artifact",
+        "why_someone_may_share_it",
+      ),
+    ],
+    [
+      "先例与差异",
+      fieldText(concept, "novelty", "novelty_and_references"),
+    ],
+    [
+      "尚未解决",
+      fieldText(concept, "risks", "assumptions_confusion_and_risks"),
+    ],
+  ].forEach(([label, value]) => {
+    const section = document.createElement("section");
+    section.append(
+      makeTextElement("h4", "", label),
+      makeTextElement("p", "", value),
+    );
+    detailGrid.append(section);
+  });
+  details.append(summary, detailGrid);
+  card.append(details);
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (!isCurator) {
+    card.append(createConceptReviewSection(concept, index));
+  }
+  return card;
+}
+
+function renderConceptCards() {
+  const target = byId("concept-review-cards");
+  target.replaceChildren();
+  const concepts = getConcepts();
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (isCurator) {
+    concepts.forEach((concept, index) => {
+      target.append(createConceptReviewCard(concept, index, concepts.length));
+    });
+    return;
+  }
+  let index = activeConceptIndex();
+  if (index < 0 && concepts.length) {
+    index = 0;
+    setActiveConceptRef(conceptRef(concepts[0]), { persist: false });
+  }
+  const concept = concepts[index];
+  if (concept) {
+    const card = createConceptReviewCard(concept, index, concepts.length);
+    card.classList.add("is-active");
+    target.append(card);
+  }
+}
+
+function setDirectoryOpen(open, { focus = false } = {}) {
+  state.directoryOpen = Boolean(open);
+  const index = byId("concept-index");
+  const toggle = byId("toggle-concept-directory");
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  index.hidden = isCurator ? !getConcepts().length || state.pairMode : !state.directoryOpen;
+  toggle.setAttribute("aria-expanded", state.directoryOpen ? "true" : "false");
+  if (focus && state.directoryOpen) {
+    const active = byId("concept-list").querySelector('[aria-current="true"]');
+    const first = byId("concept-list").querySelector("button");
+    (active || first || byId("close-concept-directory")).focus();
+  }
+}
+
+function renderActiveCardMeta() {
+  const concepts = getConcepts();
+  const index = activeConceptIndex();
+  const concept = concepts[index];
+  byId("active-concept-position").textContent = concept
+    ? `${String(index + 1).padStart(2, "0")} / ${String(concepts.length).padStart(2, "0")}`
+    : "00 / 00";
+  byId("active-concept-status").textContent = concept
+    ? conceptStatusLabel(concept)
+    : "等待项目";
+  byId("previous-concept").disabled =
+    !concept || (index <= 0 && !state.navigationHistory.length);
+  setDirectoryOpen(state.directoryOpen);
+}
+
+function focusActiveConcept() {
+  const index = activeConceptIndex();
+  const title = byId(`concept-title-${index + 1}`);
+  if (title) {
+    title.focus();
+  }
+}
+
+function announceActiveConcept() {
+  const concepts = getConcepts();
+  const index = activeConceptIndex();
+  const concept = concepts[index];
+  if (!concept) {
+    return;
+  }
+  byId("relay-announcer").textContent =
+    `第 ${index + 1} 张，共 ${concepts.length} 张：${conceptTitle(concept)}。${
+      conceptStatusLabel(concept)
+    }。`;
+}
+
+function renderReviewerDeck({ focus = false, announce = false } = {}) {
+  renderConceptCards();
+  renderConceptList();
+  renderRoundMeta();
+  renderActiveCardMeta();
+  updateAllCounts();
+  if (announce) {
+    announceActiveConcept();
+  }
+  if (focus) {
+    globalThis.requestAnimationFrame(focusActiveConcept);
+  }
+}
+
+function showConceptAt(index, { announce = false, remember = false } = {}) {
+  const concepts = getConcepts();
+  if (
+    state.isTransitioning ||
+    index < 0 ||
+    index >= concepts.length ||
+    text(asObject(asObject(state.snapshot).viewer).role) === "curator"
+  ) {
+    return;
+  }
+  syncConceptReviewFields();
+  const currentRef = state.activeConceptRef;
+  const nextRef = conceptRef(concepts[index]);
+  if (remember && currentRef && currentRef !== nextRef) {
+    state.navigationHistory.push(currentRef);
+  }
+  setActiveConceptRef(nextRef);
+  state.directoryOpen = false;
+  renderReviewerDeck({ focus: true, announce });
+}
+
+function previousConcept() {
+  const concepts = getConcepts();
+  if (!concepts.length || state.isTransitioning) {
+    return;
+  }
+  const fromHistory = state.navigationHistory.pop();
+  if (fromHistory) {
+    const historyIndex = concepts.findIndex(
+      (concept) => conceptRef(concept) === fromHistory,
+    );
+    if (historyIndex >= 0) {
+      showConceptAt(historyIndex, { announce: true, remember: false });
+      return;
+    }
+  }
+  const index = activeConceptIndex();
+  if (index > 0) {
+    showConceptAt(index - 1, { announce: true, remember: false });
+  }
+}
+
+function nextSequentialIndex(index) {
+  const count = getConcepts().length;
+  if (count < 2) {
+    return index;
+  }
+  return (index + 1) % count;
+}
+
+function nextUndecidedIndex(index) {
+  const concepts = getConcepts();
+  for (let offset = 1; offset <= concepts.length; offset += 1) {
+    const candidateIndex = (index + offset) % concepts.length;
+    if (!reviewHasDecision(conceptDraft(concepts[candidateIndex]))) {
+      return candidateIndex;
+    }
+  }
+  return -1;
+}
+
+function finishCardAction(action) {
+  if (state.isTransitioning || state.staleDraft) {
+    return;
+  }
+  const index = activeConceptIndex();
+  const concept = getConcepts()[index];
+  if (!concept) {
+    return;
+  }
+  syncConceptReviewFields();
+  const draft = conceptDraft(concept);
+  const error = byId(`card-action-error-${index + 1}`);
+  if (action !== "later" && !text(draft.one_sentence_retell).trim()) {
+    error.textContent = "先用一句话复述这个项目，再完成判断。";
+    error.hidden = false;
+    byId(`retell-${index + 1}`).focus();
+    setPageState("这张卡还缺一句话复述。", "error");
+    return;
+  }
+  error.hidden = true;
+  if (CARD_DECISIONS.includes(action)) {
+    draft.recommendation = action;
+    saveDraft();
+  }
+
+  const card = byId(`concept-card-${index + 1}`);
+  state.isTransitioning = true;
+  card.dataset.exit = action;
+  card.classList.add("is-leaving");
+  card.querySelectorAll("button, input, select, textarea").forEach((control) => {
+    control.disabled = true;
+  });
+
+  const reducedMotion = globalThis.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  globalThis.setTimeout(() => {
+    state.isTransitioning = false;
+    const nextIndex =
+      action === "later" ? nextSequentialIndex(index) : nextUndecidedIndex(index);
+    if (nextIndex >= 0 && (nextIndex !== index || getConcepts().length > 1)) {
+      showConceptAt(nextIndex, { announce: true, remember: true });
+      setPageState(
+        action === "later"
+          ? "这张卡已留在草稿里，先接下一张。"
+          : `${conceptTitle(concept)} 已标记为“${CARD_DECISION_LABELS[action]}”；可以随时返回修改。`,
+        "success",
+      );
+      return;
+    }
+    renderReviewerDeck({ focus: false, announce: true });
+    if (action === "later") {
+      setPageState("本轮只有这一张卡；可以继续填写或直接提交已有回执。");
+      focusActiveConcept();
+      return;
+    }
+    setPageState("所有项目都已有判断；可以回看修改，或提交整批回执。", "success");
+    byId("submit-review").focus();
+  }, reducedMotion ? 0 : 430);
+}
+
+function syncConceptReviewFields() {
+  if (!state.draft || state.staleDraft) {
+    return;
+  }
+  document.querySelectorAll("[data-review-field]").forEach((element) => {
+    const index = Number(element.dataset.conceptIndex);
+    const concept = getConcepts()[index];
+    if (!concept) {
+      return;
+    }
+    conceptDraft(concept)[element.dataset.reviewField] = element.value;
+  });
+}
+
+function storeReviewDraft() {
+  if (!state.draft || state.staleDraft) {
+    return;
+  }
+  syncConceptReviewFields();
+  state.draft.reviewer_name = byId("reviewer-name").value.trim();
+  state.draft.overall_comment = byId("overall-comment").value;
+  persistProfileName(state.draft.reviewer_name);
+  saveDraft();
 }
 
 function restoreForm() {
-  const draft = currentConceptDraft();
-  byId("reviewer-name").value = text(state.draft.reviewer_name, state.profile.reviewer_name);
-  byId("retell").value = text(draft.one_sentence_retell);
-  byId("share-target").value = text(draft.share_target);
-  byId("recommendation").value = text(draft.recommendation, "no_opinion");
-  byId("comment").value = text(draft.comment);
+  byId("reviewer-name").value = text(
+    state.draft.reviewer_name,
+    state.profile.reviewer_name,
+  );
   byId("overall-comment").value = text(state.draft.overall_comment);
-  renderReactionChips();
   updateAllCounts();
 }
 
 function updateCount(inputId, countId) {
-  byId(countId).textContent = String(byId(inputId).value.length);
+  const input = byId(inputId);
+  const count = byId(countId);
+  if (input && count) {
+    count.textContent = String(input.value.length);
+  }
 }
 
 function updateAllCounts() {
-  updateCount("retell", "retell-count");
-  updateCount("share-target", "share-target-count");
-  updateCount("comment", "comment-count");
+  document.querySelectorAll("[data-count-for]").forEach((count) => {
+    const input = byId(count.dataset.countFor);
+    count.textContent = input ? String(input.value.length) : "0";
+  });
   updateCount("overall-comment", "overall-comment-count");
   updateCount("pair-reason", "pair-reason-count");
   updateCount("coverage-override", "coverage-override-count");
+}
+
+function updateConceptReviewStatus(index) {
+  const concept = getConcepts()[index];
+  if (!concept) {
+    return;
+  }
+  const complete = conceptDraftIsComplete(concept);
+  const card = byId(`concept-card-${index + 1}`);
+  const status = card ? card.querySelector(".concept-review-status") : null;
+  if (status) {
+    status.dataset.complete = complete ? "true" : "false";
+    status.textContent = complete ? "草稿已记" : "可跳过";
+  }
+  const indexButton = byId("concept-list").querySelector(`[data-index="${index}"]`);
+  if (indexButton) {
+    indexButton.dataset.complete = complete ? "true" : "false";
+    indexButton.dataset.decision = conceptDecision(concept);
+    const listStatus = indexButton.querySelector(".list-status");
+    if (listStatus) {
+      listStatus.textContent = conceptStatusLabel(concept);
+    }
+  }
+  renderRoundMeta();
+  renderActiveCardMeta();
 }
 
 function renderRoundMeta() {
@@ -392,17 +1120,22 @@ function renderRoundMeta() {
   byId("round-status").textContent = status === "closed" ? "本轮已关闭" : "本轮正在接力";
   byId("round-status").dataset.status = status;
   const concepts = getConcepts();
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
   byId("relay-position").textContent = concepts.length
-    ? `${String(state.currentConceptIndex + 1).padStart(2, "0")} / ${String(
-        concepts.length,
-      ).padStart(2, "0")}`
+    ? isCurator
+      ? `${String(concepts.length).padStart(2, "0")} 项`
+      : `${String(reviewedConceptCount()).padStart(2, "0")} / ${String(
+          concepts.length,
+        ).padStart(2, "0")}`
     : "00 / 00";
   byId("profile-label").textContent = text(state.profile.reviewer_name, "尚未登记");
   const coverage = asObject(asObject(state.snapshot).coverage_summary);
   const covered = Number(coverage.covered_concept_count || 0);
   const reviewerCount = Number(coverage.reviewer_count || 0);
   byId("coverage-summary").textContent =
-    `匿名覆盖：${covered}/${concepts.length} 个候选 · ${reviewerCount} 位评审者`;
+    isCurator
+      ? `匿名覆盖：${covered}/${concepts.length} 个项目 · ${reviewerCount} 位评审者`
+      : `你的草稿：${reviewedConceptCount()}/${concepts.length} 个项目 · 团队已有 ${reviewerCount} 位评审者`;
 }
 
 function pairRefs(pair) {
@@ -522,16 +1255,52 @@ function renderTeamWall() {
     const card = document.createElement("article");
     card.className = "wall-receipt";
     card.append(makeTextElement("p", "eyebrow", text(entry.reviewer_name, "匿名队友")));
-    card.append(makeTextElement("strong", "", text(entry.one_sentence_retell, "未填写复述")));
-    card.append(
-      makeTextElement(
-        "p",
-        "",
-        text(entry.share_target) ? `想递给：${entry.share_target}` : "没有填写分享对象",
-      ),
-    );
-    if (text(entry.comment)) {
-      card.append(makeTextElement("p", "", entry.comment));
+    asArray(entry.concept_reviews).forEach((review) => {
+      card.append(
+        makeTextElement(
+          "strong",
+          "",
+          `${text(review.concept_ref, "候选")}：${text(
+            review.one_sentence_retell,
+            "未填写复述",
+          )}`,
+        ),
+      );
+      const impulse = text(review.share_impulse);
+      const confidence = text(review.demo_confidence);
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          impulse
+            ? SHARE_IMPULSE_LABELS[impulse] || impulse
+            : "旧版回执：未记录分享冲动",
+        ),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "",
+          text(review.share_target)
+            ? `想到的人：${review.share_target}`
+            : "没有填写分享对象",
+        ),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          confidence
+            ? DEMO_CONFIDENCE_LABELS[confidence] || confidence
+            : "旧版回执：未记录 Demo 信心",
+        ),
+      );
+      if (text(review.comment)) {
+        card.append(makeTextElement("p", "", review.comment));
+      }
+    });
+    if (text(entry.overall_comment)) {
+      card.append(makeTextElement("p", "", `整体补充：${entry.overall_comment}`));
     }
     content.append(card);
   });
@@ -543,23 +1312,64 @@ function renderReceiptState() {
     state.submittedReviewId = text(viewer.latest_review_id);
   }
   const submitted = Boolean(viewer.has_submitted || state.submittedReviewId);
-  byId("receipt-form-wrap").hidden = submitted;
-  byId("receipt-signal").hidden = !submitted;
+  const isCurator = text(viewer.role) === "curator";
+  const showReceipt =
+    submitted && !state.editingAfterReveal && !state.pairMode && !isCurator;
+  byId("review-form").classList.toggle("is-submitted", showReceipt);
+  byId("receipt-signal").hidden = !showReceipt;
   if (!submitted) {
     return;
   }
-  const current = currentConceptDraft();
-  byId("receipt-signature").textContent =
-    `${text(state.profile.reviewer_name, "你")} 复述：${text(
-      current.one_sentence_retell,
-      "已提交本轮回执",
-    )}`;
-  byId("receipt-target").textContent = text(current.share_target)
-    ? `想递给：${current.share_target}`
-    : "这次没有指定分享对象。";
-  const concept = getConcepts()[state.currentConceptIndex];
+  const reviewed = getConcepts()
+    .map((concept, index) => ({ concept, index, review: conceptDraft(concept) }))
+    .filter(({ review }) => text(review.one_sentence_retell).trim());
+  byId("receipt-signature").textContent = reviewed.length
+    ? `${text(state.profile.reviewer_name, "你")} 已提交 ${reviewed.length} 张项目回执`
+    : `${text(state.profile.reviewer_name, "你")} 的本轮回执已提交`;
+  const projects = byId("receipt-projects");
+  projects.replaceChildren();
+  reviewed.forEach(({ concept, index, review }) => {
+    const row = document.createElement("article");
+    row.className = "receipt-project-row";
+    row.append(
+      makeTextElement("span", "file-number", String(index + 1).padStart(2, "0")),
+    );
+    const copy = document.createElement("div");
+    copy.append(
+      makeTextElement(
+        "strong",
+        "",
+        `${conceptTitle(concept)}：${text(review.one_sentence_retell)}`,
+      ),
+      makeTextElement(
+        "p",
+        "",
+        text(review.share_target)
+          ? `${SHARE_IMPULSE_LABELS[text(review.share_impulse)] || "分享信号"} · 想到：${
+              review.share_target
+            }`
+          : SHARE_IMPULSE_LABELS[text(review.share_impulse)] ||
+              "这次没有指定分享对象。",
+      ),
+    );
+    row.append(copy);
+    projects.append(row);
+  });
+  if (!reviewed.length) {
+    projects.append(
+      makeTextElement(
+        "p",
+        "",
+        "页面刷新后，本轮精确回执仍保存在 append-only ledger；详细文本可在 Team Wall 查看。",
+      ),
+    );
+  }
+  const round = getRound();
   byId("receipt-binding").textContent =
-    `✓ 已绑定 ${conceptRef(concept)} / ${shortHash(conceptHash(concept))}`;
+    `✓ 每个项目分别绑定 exact revision / hash · ${text(
+      round.id,
+      text(round.round_id),
+    )} / ${shortHash(round.sha256)}`;
 }
 
 function renderCurator() {
@@ -572,6 +1382,7 @@ function renderCurator() {
   const curation = asObject(asObject(state.snapshot).curation);
   renderCuratorCoverage(curation);
   renderCuratorMemory(curation);
+  renderCuratorFeasibility(curation);
   renderResolutionActions(curation);
   byId("curator-name").value = text(state.profile.reviewer_name);
   const round = getRound();
@@ -612,10 +1423,71 @@ function renderCuratorCoverage(curation) {
           `${text(review.concept_ref)}：${text(review.one_sentence_retell)}`,
         ),
       );
-      card.append(makeTextElement("p", "", `想递给：${text(review.share_target, "未填写")}`));
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          text(review.share_impulse)
+            ? SHARE_IMPULSE_LABELS[review.share_impulse] || review.share_impulse
+            : "旧版回执：未记录分享冲动",
+        ),
+      );
+      card.append(
+        makeTextElement("p", "", `想到的人：${text(review.share_target, "未填写")}`),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          text(review.demo_confidence)
+            ? DEMO_CONFIDENCE_LABELS[review.demo_confidence] || review.demo_confidence
+            : "旧版回执：未记录 Demo 信心",
+        ),
+      );
       card.append(makeTextElement("p", "", text(review.comment)));
     });
     receiptsTarget.append(card);
+  });
+}
+
+function renderCuratorFeasibility(curation) {
+  const target = byId("curator-feasibility");
+  target.replaceChildren();
+  const rows = asArray(curation.feasibility_evidence);
+  if (!rows.length) {
+    target.append(
+      makeTextElement(
+        "p",
+        "",
+        "本轮没有 C4F 证据（旧版 waiting run 仍可继续评审）。",
+      ),
+    );
+    return;
+  }
+  rows.forEach((row) => {
+    const card = document.createElement("article");
+    card.className = "feasibility-note";
+    card.append(makeTextElement("p", "eyebrow", text(row.concept_ref)));
+    card.append(
+      makeTextElement(
+        "strong",
+        "",
+        `机器 C4F：${text(row.overall_decision, "unknown")}`,
+      ),
+    );
+    asArray(row.dimensions).forEach((dimension) => {
+      const reason = text(dimension.reason_code);
+      card.append(
+        makeTextElement(
+          "p",
+          "",
+          `${text(dimension.dimension)} · ${text(dimension.verdict)}${
+            reason ? ` · ${reason}` : ""
+          }\n${text(dimension.evidence)}`,
+        ),
+      );
+    });
+    target.append(card);
   });
 }
 
@@ -749,22 +1621,33 @@ function renderResolutionActions(curation) {
 
 function render() {
   const concepts = getConcepts();
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (
+    concepts.length &&
+    !concepts.some((concept) => conceptRef(concept) === state.activeConceptRef)
+  ) {
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
+  }
+  document.body.classList.toggle("is-curator", isCurator);
+  byId("review-form").hidden = !concepts.length || state.pairMode;
+  byId("relay-controller").hidden = isCurator;
+  byId("active-concept-stage").classList.toggle("is-curator-deck", isCurator);
   if (!concepts.length) {
-    byId("concept-card").hidden = true;
-    byId("review-panel").hidden = true;
     setPageState("本轮没有待审候选；工作流会直接进入零 Idea 报告。");
   } else {
-    byId("review-panel").hidden =
-      text(asObject(asObject(state.snapshot).viewer).role) === "curator";
     setPageState(
       state.pairMode
         ? "Pairwise 完全可选；跳过不会被解释为平局或拒绝。"
-        : "先看 Concept，再留下自己的独立复述。",
+        : isCurator
+          ? "策展模式会显示完整机器证据；候选档案仍保留原始项目上下文。"
+          : "当前卡的描述与回执属于同一个项目；判断后会接到下一张。",
     );
   }
+  renderConceptCards();
   renderRoundMeta();
   renderConceptList();
-  renderConcept();
+  renderActiveCardMeta();
+  setDirectoryOpen(isCurator ? true : state.directoryOpen);
   renderPairMode();
   restoreForm();
   renderTeamWall();
@@ -773,7 +1656,7 @@ function render() {
 }
 
 function buildReviewPayload() {
-  storeCurrentConceptDraft();
+  storeReviewDraft();
   const conceptReviews = Object.values(asObject(state.draft.concept_reviews)).filter(
     (review) => text(review.one_sentence_retell).trim(),
   );
@@ -783,22 +1666,55 @@ function buildReviewPayload() {
   if (!conceptReviews.length) {
     throw new Error("至少为一个候选留下一句话复述。");
   }
+  const immediateWithoutTarget =
+    reviewSchemaVersion() >= 2 &&
+    conceptReviews.find(
+      (review) =>
+        review.share_impulse === "immediate" && !text(review.share_target).trim(),
+    );
+  if (immediateWithoutTarget) {
+    const index = getConcepts().findIndex(
+      (concept) => conceptRef(concept) === immediateWithoutTarget.concept_ref,
+    );
+    if (index >= 0 && index !== activeConceptIndex()) {
+      showConceptAt(index, { announce: true, remember: true });
+    }
+    globalThis.requestAnimationFrame(() => {
+      const input = byId(`share-target-${index + 1}`);
+      if (input) {
+        input.focus();
+      }
+    });
+    throw new Error("选择“会立刻发”时，请在对应项目卡里填写具体分享对象。");
+  }
   const pairwise = Object.values(asObject(state.draft.pairwise)).filter((pair) =>
     ["left", "right", "both", "neither", "cannot_compare"].includes(pair.preference),
   );
   const round = getRound();
-  return {
+  const normalizedReviews = conceptReviews.map((review) => {
+    const result = { ...review };
+    if (reviewSchemaVersion() < 2) {
+      delete result.share_impulse;
+      delete result.demo_confidence;
+    }
+    return result;
+  });
+  const payload = {
     review_id: text(state.draft.review_id),
     run_id: text(asObject(state.snapshot).run_id),
     round_id: text(round.id, text(round.round_id)),
     round_sha256: text(round.sha256),
     reviewer_id: state.profile.reviewer_id,
     reviewer_name: state.profile.reviewer_name,
-    concept_reviews: conceptReviews,
+    concept_reviews: normalizedReviews,
     pairwise,
     overall_comment: text(state.draft.overall_comment),
     supersedes_review_id: state.submittedReviewId,
   };
+  if (reviewSchemaVersion() >= 2) {
+    payload.schema_version = 2;
+  }
+  return payload;
 }
 
 async function submitReview(event) {
@@ -815,6 +1731,7 @@ async function submitReview(event) {
     const payload = buildReviewPayload();
     const result = await api("/api/reviews", { method: "POST", body: payload });
     state.submittedReviewId = text(result.review_id, payload.review_id);
+    state.editingAfterReveal = false;
     safeRemoveStorage(DRAFT_KEY);
     await refreshSnapshot();
     const signal = byId("receipt-signal");
@@ -995,15 +1912,71 @@ async function refreshSnapshot() {
 }
 
 function bindInputPersistence() {
-  ["reviewer-name", "retell", "share-target", "recommendation", "comment", "overall-comment"].forEach(
-    (id) => {
-      byId(id).addEventListener("input", () => {
-        storeCurrentConceptDraft();
-        updateAllCounts();
+  const cards = byId("concept-review-cards");
+  const persistConceptField = (event) => {
+    const target = event.target.closest("[data-review-field]");
+    if (!target || state.staleDraft) {
+      return;
+    }
+    const index = Number(target.dataset.conceptIndex);
+    const concept = getConcepts()[index];
+    if (!concept) {
+      return;
+    }
+    conceptDraft(concept)[target.dataset.reviewField] = target.value;
+    saveDraft();
+    updateAllCounts();
+    if (target.dataset.reviewField === "one_sentence_retell") {
+      updateConceptReviewStatus(index);
+    }
+  };
+  cards.addEventListener("input", persistConceptField);
+  cards.addEventListener("change", persistConceptField);
+  cards.addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-card-action]");
+    if (actionButton) {
+      finishCardAction(actionButton.dataset.cardAction);
+      return;
+    }
+    const button = event.target.closest(".reaction-chip");
+    if (!button || state.staleDraft) {
+      return;
+    }
+    const index = Number(button.dataset.conceptIndex);
+    const concept = getConcepts()[index];
+    if (!concept) {
+      return;
+    }
+    const draft = conceptDraft(concept);
+    draft.reactions[button.dataset.reaction] = button.dataset.value;
+    button
+      .closest(".reaction-group")
+      .querySelectorAll(".reaction-chip")
+      .forEach((candidate) => {
+        candidate.setAttribute(
+          "aria-pressed",
+          candidate.dataset.value === button.dataset.value ? "true" : "false",
+        );
       });
-      byId(id).addEventListener("change", storeCurrentConceptDraft);
-    },
-  );
+    saveDraft();
+  });
+
+  byId("reviewer-name").addEventListener("input", () => {
+    if (!state.draft || state.staleDraft) {
+      return;
+    }
+    state.draft.reviewer_name = byId("reviewer-name").value.trim();
+    persistProfileName(state.draft.reviewer_name);
+    saveDraft();
+  });
+  byId("overall-comment").addEventListener("input", () => {
+    if (!state.draft || state.staleDraft) {
+      return;
+    }
+    state.draft.overall_comment = byId("overall-comment").value;
+    saveDraft();
+    updateCount("overall-comment", "overall-comment-count");
+  });
   [
     ["pair-reason", "pair-reason-count"],
     ["coverage-override", "coverage-override-count"],
@@ -1015,19 +1988,29 @@ function bindInputPersistence() {
 function bindEvents() {
   byId("review-form").addEventListener("submit", submitReview);
   byId("resolution-form").addEventListener("submit", submitResolution);
+  byId("previous-concept").addEventListener("click", previousConcept);
+  byId("toggle-concept-directory").addEventListener("click", () => {
+    setDirectoryOpen(!state.directoryOpen, { focus: !state.directoryOpen });
+  });
+  byId("close-concept-directory").addEventListener("click", () => {
+    setDirectoryOpen(false);
+    byId("toggle-concept-directory").focus();
+  });
   byId("pair-mode-button").addEventListener("click", () => {
     if (!getPairs().length) {
       setPageState("本轮候选不足，或没有安排 pair；可以直接提交单项评审。");
       return;
     }
-    storeCurrentConceptDraft();
+    storeReviewDraft();
     state.pairMode = true;
     state.currentPairIndex = 0;
     render();
+    byId("pair-left").focus();
   });
   byId("leave-pair-mode").addEventListener("click", () => {
     state.pairMode = false;
     render();
+    byId("pair-mode-button").focus();
   });
   byId("pair-left").addEventListener("click", () => choosePairPreference("left"));
   byId("pair-right").addEventListener("click", () => choosePairPreference("right"));
@@ -1036,6 +2019,8 @@ function bindEvents() {
   byId("discard-stale-draft").addEventListener("click", () => {
     state.staleDraft = false;
     state.draft = emptyDraft();
+    state.navigationHistory = [];
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
     safeRemoveStorage(DRAFT_KEY);
     byId("stale-warning").hidden = true;
     byId("submit-review").disabled = false;
@@ -1046,10 +2031,36 @@ function bindEvents() {
     state.draft = emptyDraft();
     state.draft.review_id = randomId();
     state.submittedReviewId = previous;
-    byId("receipt-form-wrap").hidden = false;
-    byId("receipt-signal").hidden = true;
-    restoreForm();
-    byId("retell").focus();
+    state.editingAfterReveal = true;
+    state.navigationHistory = [];
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
+    render();
+    const index = activeConceptIndex();
+    const retell = byId(`retell-${index + 1}`);
+    (retell || byId("active-concept-stage")).focus();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.directoryOpen) {
+      event.preventDefault();
+      setDirectoryOpen(false);
+      byId("toggle-concept-directory").focus();
+      return;
+    }
+    const target = event.target;
+    const isEditing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement;
+    if (isEditing || !event.altKey || state.pairMode) {
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      previousConcept();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      finishCardAction("later");
+    }
   });
   bindInputPersistence();
 }
@@ -1064,8 +2075,12 @@ async function boot() {
     render();
   } catch (error) {
     setPageState(error.message, "error");
-    byId("concept-card").hidden = true;
-    byId("review-panel").hidden = true;
+    byId("concept-index").hidden = true;
+    byId("review-form").hidden = true;
+    byId("receipt-signal").hidden = true;
+    byId("pair-stage").hidden = true;
+    byId("team-wall").hidden = true;
+    byId("curator-workbench").hidden = true;
   }
 }
 

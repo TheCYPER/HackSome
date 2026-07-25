@@ -114,6 +114,8 @@ _REVIEWER_CONCEPT_FIELDS = frozenset(
         "risks",
         "setup_reveal_aftertaste",
         "sha256",
+        "share_trigger_and_artifact",
+        "software_core_and_runtime",
         "territory",
         "title",
     }
@@ -144,7 +146,10 @@ _TEAM_RECEIPT_FIELDS = frozenset(
         "pairwise",
         "recommendation",
         "reviewer_name",
+        "schema_version",
+        "share_impulse",
         "share_target",
+        "demo_confidence",
         "submitted_at",
     }
 )
@@ -152,9 +157,11 @@ _TEAM_CONCEPT_REVIEW_FIELDS = frozenset(
     {
         "comment",
         "concept_ref",
+        "demo_confidence",
         "one_sentence_retell",
         "reactions",
         "recommendation",
+        "share_impulse",
         "share_target",
     }
 )
@@ -1231,6 +1238,13 @@ def _validate_text(
 
 
 def _validate_review_payload_limits(payload: Mapping[str, Any]) -> None:
+    schema_version = payload.get("schema_version", 1)
+    if type(schema_version) is not int or schema_version not in {1, 2}:
+        raise ReviewHTTPError(
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+            "unsupported_review_schema",
+            "review.schema_version must be 1 or 2",
+        )
     _validate_text(
         payload.get("reviewer_name"),
         field="reviewer_name",
@@ -1265,6 +1279,33 @@ def _validate_review_payload_limits(payload: Mapping[str, Any]) -> None:
                 maximum=_TEXT_LIMITS[field],
                 path=path,
             )
+        if schema_version >= 2:
+            share_impulse = item.get("share_impulse")
+            demo_confidence = item.get("demo_confidence")
+            if share_impulse not in {"immediate", "maybe", "no"}:
+                raise ReviewHTTPError(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    "invalid_share_impulse",
+                    f"{path}.share_impulse must be immediate, maybe, or no",
+                )
+            if demo_confidence not in {"yes", "maybe", "no"}:
+                raise ReviewHTTPError(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    "invalid_demo_confidence",
+                    f"{path}.demo_confidence must be yes, maybe, or no",
+                )
+            share_target = item.get("share_target")
+            if share_impulse == "immediate" and (
+                not isinstance(share_target, str) or not share_target.strip()
+            ):
+                raise ReviewHTTPError(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    "share_target_required",
+                    (
+                        f"{path}.share_target is required when "
+                        "share_impulse is immediate"
+                    ),
+                )
     pairwise = payload.get("pairwise", [])
     if not isinstance(pairwise, list):
         raise ReviewHTTPError(

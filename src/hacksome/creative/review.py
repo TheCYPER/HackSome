@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Literal, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence, cast
 
 from hacksome.creative.contracts import (
     CreativeContractError,
@@ -56,31 +56,25 @@ ReviewBatchStatus = Literal["ready", "skipped_empty"]
 ReviewRoundStatus = Literal["open", "closed"]
 Independence = Literal["pre_reveal", "post_reveal"]
 ReactionValue = Literal["yes", "maybe", "no"]
-Recommendation = Literal[
-    "keep", "revise", "reject", "taste_veto", "no_opinion"
-]
-PairPreference = Literal[
-    "left", "right", "both", "neither", "cannot_compare"
-]
-ResolutionActionName = Literal[
-    "keep", "revise", "reject", "taste_veto", "merge"
-]
+ShareImpulse = Literal["immediate", "maybe", "no"]
+DemoConfidence = Literal["yes", "maybe", "no"]
+Recommendation = Literal["keep", "revise", "reject", "taste_veto", "no_opinion"]
+PairPreference = Literal["left", "right", "both", "neither", "cannot_compare"]
+ResolutionActionName = Literal["keep", "revise", "reject", "taste_veto", "merge"]
 
 _REACTION_KEYS = ("surprise", "fun", "mystery", "confusion")
 _REACTION_VALUES = frozenset({"yes", "maybe", "no"})
-_RECOMMENDATIONS = frozenset(
-    {"keep", "revise", "reject", "taste_veto", "no_opinion"}
-)
-_PAIR_PREFERENCES = frozenset(
-    {"left", "right", "both", "neither", "cannot_compare"}
-)
-_RESOLUTION_ACTIONS = frozenset(
-    {"keep", "revise", "reject", "taste_veto", "merge"}
-)
+_SHARE_IMPULSES = frozenset({"immediate", "maybe", "no"})
+_DEMO_CONFIDENCE_VALUES = frozenset({"yes", "maybe", "no"})
+_REVIEW_SCHEMA_VERSIONS = frozenset({1, 2})
+_RECOMMENDATIONS = frozenset({"keep", "revise", "reject", "taste_veto", "no_opinion"})
+_PAIR_PREFERENCES = frozenset({"left", "right", "both", "neither", "cannot_compare"})
+_RESOLUTION_ACTIONS = frozenset({"keep", "revise", "reject", "taste_veto", "merge"})
 _SKIP_REASONS = frozenset(
     {
         ZeroReasonCode.NO_CONCEPTS_GENERATED.value,
         ZeroReasonCode.ALL_CANDIDATES_FAILED_HOOK.value,
+        "all_candidates_failed_concept_screen",
         ZeroReasonCode.SHORTLIST_EMPTY.value,
     }
 )
@@ -135,9 +129,7 @@ class ConceptBinding:
         )
         return cls(
             concept_ref=_require_string(value["concept_ref"], "concept_ref"),
-            concept_sha256=_require_string(
-                value["concept_sha256"], "concept_sha256"
-            ),
+            concept_sha256=_require_string(value["concept_sha256"], "concept_sha256"),
         )
 
 
@@ -154,7 +146,9 @@ class ReviewPair:
     def __post_init__(self) -> None:
         _require_pattern(self.pair_id, _PAIR_ID, "pair_id")
         if self.left_ref == self.right_ref:
-            raise ReviewValidationError("a review pair cannot compare a Concept to itself")
+            raise ReviewValidationError(
+                "a review pair cannot compare a Concept to itself"
+            )
         for label, reference in (
             ("left_ref", self.left_ref),
             ("right_ref", self.right_ref),
@@ -193,9 +187,7 @@ class ReviewPair:
             left_ref=_require_string(value["left_ref"], "left_ref"),
             right_ref=_require_string(value["right_ref"], "right_ref"),
             left_sha256=_require_string(value["left_sha256"], "left_sha256"),
-            right_sha256=_require_string(
-                value["right_sha256"], "right_sha256"
-            ),
+            right_sha256=_require_string(value["right_sha256"], "right_sha256"),
         )
 
 
@@ -225,10 +217,14 @@ def canonical_adjacent_pairs(
         raise ReviewValidationError("human shortlist contains duplicate Concept refs")
     if len(ordered) < 2:
         return ()
-    indexes = [(0, 1)] if len(ordered) == 2 else [
-        *((index, index + 1) for index in range(len(ordered) - 1)),
-        (len(ordered) - 1, 0),
-    ]
+    indexes = (
+        [(0, 1)]
+        if len(ordered) == 2
+        else [
+            *((index, index + 1) for index in range(len(ordered) - 1)),
+            (len(ordered) - 1, 0),
+        ]
+    )
     return tuple(
         ReviewPair(
             pair_id=f"creative-pair-{index:03d}",
@@ -275,23 +271,34 @@ class ReviewBatch:
         _require_pattern(self.batch_id, _BATCH_ID, "batch_id")
         _require_safe_id(self.run_id, "run_id")
         if self.status not in {"ready", "skipped_empty"}:
-            raise ReviewValidationError("review batch status must be ready or skipped_empty")
+            raise ReviewValidationError(
+                "review batch status must be ready or skipped_empty"
+            )
         if len(self.concepts) > MAX_SHORTLIST:
             raise ReviewValidationError(
                 f"human shortlist cannot contain more than {MAX_SHORTLIST} Concepts"
             )
-        if tuple(sorted(self.concepts, key=lambda item: item.concept_ref)) != self.concepts:
+        if (
+            tuple(sorted(self.concepts, key=lambda item: item.concept_ref))
+            != self.concepts
+        ):
             raise ReviewValidationError("review batch Concepts must be sorted by ref")
         if len({item.concept_ref for item in self.concepts}) != len(self.concepts):
             raise ReviewValidationError("review batch contains duplicate Concept refs")
         if self.status == "ready":
             if not self.concepts:
-                raise ReviewValidationError("ready review batch requires at least one Concept")
+                raise ReviewValidationError(
+                    "ready review batch requires at least one Concept"
+                )
             if self.skip_reason is not None:
-                raise ReviewValidationError("ready review batch cannot have skip_reason")
+                raise ReviewValidationError(
+                    "ready review batch cannot have skip_reason"
+                )
         else:
             if self.concepts:
-                raise ReviewValidationError("skipped_empty batch cannot contain Concepts")
+                raise ReviewValidationError(
+                    "skipped_empty batch cannot contain Concepts"
+                )
             if self.skip_reason not in _SKIP_REASONS:
                 raise ReviewValidationError(
                     "skipped_empty batch requires a supported skip_reason"
@@ -385,11 +392,16 @@ class ReviewRound:
             raise ReviewValidationError(
                 f"review round requires 1 through {MAX_SHORTLIST} Concepts"
             )
-        if tuple(sorted(self.concepts, key=lambda item: item.concept_ref)) != self.concepts:
+        if (
+            tuple(sorted(self.concepts, key=lambda item: item.concept_ref))
+            != self.concepts
+        ):
             raise ReviewValidationError("review round Concepts must be sorted by ref")
         expected_pairs = canonical_adjacent_pairs(self.concepts)
         if self.pairs != expected_pairs:
-            raise ReviewValidationError("review round pairs are not the canonical adjacent set")
+            raise ReviewValidationError(
+                "review round pairs are not the canonical adjacent set"
+            )
         if self.status not in {"open", "closed"}:
             raise ReviewValidationError("review round status must be open or closed")
         if self.status == "open":
@@ -440,7 +452,9 @@ class ReviewRound:
         round_id: str = "creative-review-round-001",
     ) -> ReviewRound:
         if batch.status != "ready":
-            raise ReviewValidationError("cannot open a round for a skipped review batch")
+            raise ReviewValidationError(
+                "cannot open a round for a skipped review batch"
+            )
         return cls(
             round_id=round_id,
             run_id=batch.run_id,
@@ -482,9 +496,7 @@ class ReviewRound:
                 for item in _object_list(value["pairs"], "round pairs")
             ),
             status=_require_string(value["status"], "status"),  # type: ignore[arg-type]
-            resolution_id=_optional_string(
-                value["resolution_id"], "resolution_id"
-            ),
+            resolution_id=_optional_string(value["resolution_id"], "resolution_id"),
             resolution_sha256=_optional_string(
                 value["resolution_sha256"], "resolution_sha256"
             ),
@@ -512,12 +524,14 @@ class ConceptReview:
     concept_sha256: str
     one_sentence_retell: str
     share_target: str
+    share_impulse: ShareImpulse | None
+    demo_confidence: DemoConfidence | None
     reactions: Mapping[str, str]
     recommendation: Recommendation
     comment: str
 
     def fragment_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "feedback_ref": self.feedback_ref,
             "concept_ref": self.concept_ref,
             "concept_sha256": self.concept_sha256,
@@ -527,6 +541,11 @@ class ConceptReview:
             "recommendation": self.recommendation,
             "comment": self.comment,
         }
+        if self.share_impulse is not None:
+            payload["share_impulse"] = self.share_impulse
+        if self.demo_confidence is not None:
+            payload["demo_confidence"] = self.demo_confidence
+        return payload
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -568,6 +587,7 @@ class PairwiseReview:
 
 @dataclass(frozen=True, slots=True)
 class HumanReview:
+    schema_version: int
     review_id: str
     round_id: str
     round_sha256: str
@@ -591,7 +611,7 @@ class HumanReview:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "review_id": self.review_id,
             "round_id": self.round_id,
             "round_sha256": self.round_sha256,
@@ -608,9 +628,12 @@ class HumanReview:
             "overall_feedback_sha256": self.overall_feedback_sha256,
             "supersedes_review_id": self.supersedes_review_id,
         }
+        if self.schema_version >= 2:
+            payload["schema_version"] = self.schema_version
+        return payload
 
     def request_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "review_id": self.review_id,
             "round_id": self.round_id,
             "round_sha256": self.round_sha256,
@@ -636,6 +659,9 @@ class HumanReview:
             "overall_comment": self.overall_comment,
             "supersedes_review_id": self.supersedes_review_id,
         }
+        if self.schema_version >= 2:
+            payload["schema_version"] = self.schema_version
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -687,9 +713,7 @@ class ResolutionAction:
         return {
             "concept_ref": self.concept_ref,
             "action": self.action,
-            "approved_feedback": [
-                item.to_dict() for item in self.approved_feedback
-            ],
+            "approved_feedback": [item.to_dict() for item in self.approved_feedback],
             "curator_instruction": self.curator_instruction,
             "curator_instruction_sha256": self.curator_instruction_sha256,
             "reason": self.reason,
@@ -760,8 +784,7 @@ class HumanResolution:
                     "concept_ref": item.concept_ref,
                     "action": item.action,
                     "approved_feedback": [
-                        approved.to_dict()
-                        for approved in item.approved_feedback
+                        approved.to_dict() for approved in item.approved_feedback
                     ],
                     "curator_instruction": item.curator_instruction,
                     "reason": item.reason,
@@ -824,9 +847,7 @@ class ReviewSnapshot:
             ),
         }
         if include_reviews:
-            value["latest_reviews"] = [
-                item.to_dict() for item in self.latest_reviews
-            ]
+            value["latest_reviews"] = [item.to_dict() for item in self.latest_reviews]
         return value
 
 
@@ -854,6 +875,18 @@ class ReviewStore:
             raise ReviewValidationError("human review store requires a Creative run")
         if hub.run_id != review_round.run_id:
             raise ReviewStaleError("review round run_id does not match RunHub")
+        route = hub.load_state().get("route")
+        contract_version = (
+            route.get("contract_version") if isinstance(route, dict) else None
+        )
+        if contract_version == "1":
+            self.schema_version = 1
+        elif contract_version == "2":
+            self.schema_version = 2
+        else:
+            raise ReviewValidationError(
+                "human review store requires a supported Creative contract"
+            )
         self.hub = hub
         self.round = review_round
         self._clock = clock
@@ -888,6 +921,13 @@ class ReviewStore:
         """Append a first receipt or latest-only superseding edit."""
 
         request = _review_request(payload)
+        if (
+            _review_schema_version(request.get("schema_version"))
+            != self.schema_version
+        ):
+            raise ReviewValidationError(
+                "review schema_version does not match the run contract"
+            )
         request_hash = canonical_request_sha256(request)
         review_id = _require_safe_id(request["review_id"], "review_id")
         with self._lock:
@@ -946,9 +986,7 @@ class ReviewStore:
 
     def feedback_fragments(self) -> tuple[FeedbackFragment, ...]:
         with self._shared_read():
-            return self._feedback_fragments_unlocked(
-                self._latest_receipts_unlocked()
-            )
+            return self._feedback_fragments_unlocked(self._latest_receipts_unlocked())
 
     def snapshot(self) -> ReviewSnapshot:
         with self._shared_read():
@@ -976,9 +1014,7 @@ class ReviewStore:
 
         request = _resolution_request(payload)
         request_hash = canonical_request_sha256(request)
-        resolution_id = _require_safe_id(
-            request["resolution_id"], "resolution_id"
-        )
+        resolution_id = _require_safe_id(request["resolution_id"], "resolution_id")
         with self._lock:
             self.hub.reconcile_pending()
             existing_by_id = self._resolution_by_id(resolution_id)
@@ -1010,7 +1046,9 @@ class ReviewStore:
             try:
                 raw_wait = self.hub.load_raw_state().get("wait")
                 if raw_wait is not None and not isinstance(raw_wait, dict):
-                    raise ReviewValidationError("persisted wait state must be an object")
+                    raise ReviewValidationError(
+                        "persisted wait state must be an object"
+                    )
                 wait = dict(raw_wait) if isinstance(raw_wait, dict) else {}
                 persisted_round_id = wait.get("round_id")
                 persisted_round_sha256 = wait.get("round_sha256")
@@ -1062,6 +1100,7 @@ class ReviewStore:
         independence: Independence,
         submitted_at: str,
     ) -> HumanReview:
+        schema_version = _review_schema_version(request.get("schema_version"))
         review_id = _require_safe_id(request["review_id"], "review_id")
         reviewer_name = _free_text(
             request["reviewer_name"],
@@ -1070,46 +1109,76 @@ class ReviewStore:
             required=True,
             single_line=True,
         )
-        concept_rows = _object_list(
-            request["concept_reviews"], "concept_reviews"
-        )
+        concept_rows = _object_list(request["concept_reviews"], "concept_reviews")
         if len(concept_rows) > len(self.round.concepts):
             raise ReviewValidationError("too many concept reviews")
         concept_reviews: list[ConceptReview] = []
         seen_concepts: set[str] = set()
         for row in concept_rows:
+            concept_fields = {
+                "concept_ref",
+                "concept_sha256",
+                "one_sentence_retell",
+                "share_target",
+                "reactions",
+                "recommendation",
+                "comment",
+            }
+            if schema_version >= 2:
+                concept_fields.update({"share_impulse", "demo_confidence"})
             value = _exact_object(
                 row,
-                required={
-                    "concept_ref",
-                    "concept_sha256",
-                    "one_sentence_retell",
-                    "share_target",
-                    "reactions",
-                    "recommendation",
-                    "comment",
-                },
+                required=concept_fields,
                 label="concept review",
             )
             concept_ref = _require_string(value["concept_ref"], "concept_ref")
             if concept_ref in seen_concepts:
-                raise ReviewValidationError(
-                    f"duplicate concept review: {concept_ref}"
-                )
+                raise ReviewValidationError(f"duplicate concept review: {concept_ref}")
             seen_concepts.add(concept_ref)
             binding = self.round.bindings.get(concept_ref)
             if binding is None:
                 raise ReviewStaleError(f"unknown shortlist Concept: {concept_ref}")
             if value["concept_sha256"] != binding.concept_sha256:
-                raise ReviewStaleError(
-                    f"Concept hash changed for {concept_ref}"
-                )
+                raise ReviewStaleError(f"Concept hash changed for {concept_ref}")
             reactions = _reaction_mapping(value["reactions"])
             recommendation = _enum_string(
                 value["recommendation"],
                 _RECOMMENDATIONS,
                 "recommendation",
             )
+            share_target = _free_text(
+                value["share_target"],
+                "share_target",
+                maximum=MAX_SHARE_TARGET,
+            )
+            share_impulse = (
+                cast(
+                    ShareImpulse,
+                    _enum_string(
+                        value["share_impulse"],
+                        _SHARE_IMPULSES,
+                        "share_impulse",
+                    ),
+                )
+                if schema_version >= 2
+                else None
+            )
+            demo_confidence = (
+                cast(
+                    DemoConfidence,
+                    _enum_string(
+                        value["demo_confidence"],
+                        _DEMO_CONFIDENCE_VALUES,
+                        "demo_confidence",
+                    ),
+                )
+                if schema_version >= 2
+                else None
+            )
+            if share_impulse == "immediate" and not share_target.strip():
+                raise ReviewValidationError(
+                    "share_target is required when share_impulse is immediate"
+                )
             feedback_ref = f"{review_id}:concept:{concept_ref}"
             partial = ConceptReview(
                 feedback_ref=feedback_ref,
@@ -1121,11 +1190,9 @@ class ReviewStore:
                     "one_sentence_retell",
                     maximum=MAX_ONE_SENTENCE_RETELL,
                 ),
-                share_target=_free_text(
-                    value["share_target"],
-                    "share_target",
-                    maximum=MAX_SHARE_TARGET,
-                ),
+                share_target=share_target,
+                share_impulse=share_impulse,
+                demo_confidence=demo_confidence,
                 reactions=MappingProxyType(reactions),
                 recommendation=recommendation,  # type: ignore[arg-type]
                 comment=_free_text(
@@ -1207,9 +1274,7 @@ class ReviewStore:
             pairwise.append(
                 replace(
                     partial_pair,
-                    feedback_sha256=sha256_json(
-                        partial_pair.fragment_payload()
-                    ),
+                    feedback_sha256=sha256_json(partial_pair.fragment_payload()),
                 )
             )
 
@@ -1224,13 +1289,12 @@ class ReviewStore:
             "overall_comment": overall_comment,
         }
         return HumanReview(
+            schema_version=schema_version,
             review_id=review_id,
             round_id=self.round.round_id,
             round_sha256=self.round.round_sha256,
             run_id=self.round.run_id,
-            reviewer_id=_require_safe_id(
-                request["reviewer_id"], "reviewer_id"
-            ),
+            reviewer_id=_require_safe_id(request["reviewer_id"], "reviewer_id"),
             reviewer_name=reviewer_name,
             submitted_at=submitted_at,
             request_sha256=request_sha256,
@@ -1264,9 +1328,7 @@ class ReviewStore:
             required=True,
             single_line=True,
         )
-        uncovered = tuple(
-            item.concept_ref for item in coverage if not item.covered
-        )
+        uncovered = tuple(item.concept_ref for item in coverage if not item.covered)
         override = _optional_free_text(
             request["coverage_override_reason"],
             "coverage_override_reason",
@@ -1324,9 +1386,7 @@ class ReviewStore:
                     f"duplicate resolution action: {concept_ref}"
                 )
             seen_actions.add(concept_ref)
-            action_name = _enum_string(
-                value["action"], _RESOLUTION_ACTIONS, "action"
-            )
+            action_name = _enum_string(value["action"], _RESOLUTION_ACTIONS, "action")
             reason = _free_text(
                 value["reason"],
                 "action reason",
@@ -1358,9 +1418,7 @@ class ReviewStore:
                 "curator_instruction",
                 maximum=MAX_CURATOR_INSTRUCTION,
             )
-            instruction_hash = (
-                sha256_text(instruction) if instruction.strip() else None
-            )
+            instruction_hash = sha256_text(instruction) if instruction.strip() else None
             has_fragment_guidance = any(
                 fragments[item.feedback_ref].has_guidance for item in approved
             )
@@ -1395,9 +1453,7 @@ class ReviewStore:
                 "merge actions and merge group sources must match exactly"
             )
 
-        ordered_actions = tuple(
-            sorted(actions, key=lambda item: item.concept_ref)
-        )
+        ordered_actions = tuple(sorted(actions, key=lambda item: item.concept_ref))
         approved_set = sorted(
             {
                 (item.feedback_ref, item.feedback_sha256)
@@ -1417,9 +1473,7 @@ class ReviewStore:
                 "approved feedback and curator instructions exceed 24 KiB"
             )
         partial = HumanResolution(
-            resolution_id=_require_safe_id(
-                request["resolution_id"], "resolution_id"
-            ),
+            resolution_id=_require_safe_id(request["resolution_id"], "resolution_id"),
             run_id=self.round.run_id,
             curator_name=curator_name,
             round_id=self.round.round_id,
@@ -1449,12 +1503,18 @@ class ReviewStore:
     def _review_by_id(self, review_id: str) -> HumanReview | None:
         for raw in read_jsonl(self.reviews_path):
             if raw.get("review_id") == review_id:
-                return _human_review_from_record(raw, self.round)
+                return self._review_from_record(raw)
         return None
 
-    def _resolution_by_id(
-        self, resolution_id: str
-    ) -> HumanResolution | None:
+    def _review_from_record(self, raw: Mapping[str, Any]) -> HumanReview:
+        review = _human_review_from_record(raw, self.round)
+        if review.schema_version != self.schema_version:
+            raise ReviewValidationError(
+                "persisted review schema_version does not match the run contract"
+            )
+        return review
+
+    def _resolution_by_id(self, resolution_id: str) -> HumanResolution | None:
         for raw in read_jsonl(self.resolutions_path):
             if raw.get("resolution_id") == resolution_id:
                 return _human_resolution_from_record(raw, self.round)
@@ -1480,16 +1540,12 @@ class ReviewStore:
         resolution: HumanResolution,
     ) -> None:
         latest = self._latest_receipts_unlocked()
-        if resolution.latest_receipt_set_sha256 != latest_receipt_set_sha256(
-            latest
-        ):
+        if resolution.latest_receipt_set_sha256 != latest_receipt_set_sha256(latest):
             raise ReviewStaleError(
                 "persisted resolution latest receipt set hash mismatch"
             )
         coverage = _coverage(self.round, latest)
-        uncovered = tuple(
-            item.concept_ref for item in coverage if not item.covered
-        )
+        uncovered = tuple(item.concept_ref for item in coverage if not item.covered)
         if resolution.uncovered_concept_refs != uncovered:
             raise ReviewStaleError(
                 "persisted resolution uncovered Concept set mismatch"
@@ -1508,9 +1564,8 @@ class ReviewStore:
             for item in self._feedback_fragments_unlocked(latest)
         }
         action_refs = [item.concept_ref for item in resolution.actions]
-        if (
-            len(action_refs) != len(set(action_refs))
-            or set(action_refs) != set(self.round.bindings)
+        if len(action_refs) != len(set(action_refs)) or set(action_refs) != set(
+            self.round.bindings
         ):
             raise ReviewValidationError(
                 "persisted resolution must have exactly one action per Concept"
@@ -1523,17 +1578,13 @@ class ReviewStore:
         for group in parsed_groups:
             for source_ref in group.source_refs:
                 if source_ref in group_by_source:
-                    raise ReviewValidationError(
-                        "persisted merge groups overlap"
-                    )
+                    raise ReviewValidationError("persisted merge groups overlap")
                 group_by_source[source_ref] = group.merge_group_id
 
         approved_set: set[tuple[str, str]] = set()
         for action in resolution.actions:
             if action.action == "taste_veto" and not action.reason.strip():
-                raise ReviewValidationError(
-                    "persisted taste_veto lacks a reason"
-                )
+                raise ReviewValidationError("persisted taste_veto lacks a reason")
             expected_group = group_by_source.get(action.concept_ref)
             if action.action == "merge":
                 if (
@@ -1553,12 +1604,10 @@ class ReviewStore:
                 related_concept_ref=action.concept_ref,
             )
             approved_set.update(
-                (item.feedback_ref, item.feedback_sha256)
-                for item in approved
+                (item.feedback_ref, item.feedback_sha256) for item in approved
             )
             has_guidance = any(
-                fragment_index[item.feedback_ref].has_guidance
-                for item in approved
+                fragment_index[item.feedback_ref].has_guidance for item in approved
             )
             if (
                 action.action in {"revise", "merge"}
@@ -1569,9 +1618,7 @@ class ReviewStore:
                     "persisted revise/merge action lacks guidance"
                 )
         if {
-            item.concept_ref
-            for item in resolution.actions
-            if item.action == "merge"
+            item.concept_ref for item in resolution.actions if item.action == "merge"
         } != set(group_by_source):
             raise ReviewValidationError(
                 "persisted merge actions do not match merge group sources"
@@ -1589,7 +1636,7 @@ class ReviewStore:
 
     def _latest_receipts_unlocked(self) -> tuple[HumanReview, ...]:
         records = [
-            _human_review_from_record(raw, self.round)
+            self._review_from_record(raw)
             for raw in read_jsonl(self.reviews_path)
             if raw.get("round_id") == self.round.round_id
         ]
@@ -1739,8 +1786,16 @@ def _review_request(payload: Mapping[str, Any]) -> dict[str, Any]:
             "overall_comment",
             "supersedes_review_id",
         },
+        optional={"schema_version"},
         label="human review request",
     )
+    schema_version = _review_schema_version(request.get("schema_version"))
+    if schema_version >= 2:
+        request["schema_version"] = schema_version
+    else:
+        # Legacy v1 requests had no version field. Normalizing an explicitly
+        # supplied ``1`` back to that shape preserves historical request hashes.
+        request.pop("schema_version", None)
     request["concept_reviews"] = _sorted_object_rows(
         request["concept_reviews"],
         key="concept_ref",
@@ -1821,9 +1876,7 @@ def _approved_feedback(
         reference = _require_string(value["feedback_ref"], "feedback_ref")
         digest = _require_string(value["feedback_sha256"], "feedback_sha256")
         if reference in seen:
-            raise ReviewValidationError(
-                f"duplicate approved feedback ref: {reference}"
-            )
+            raise ReviewValidationError(f"duplicate approved feedback ref: {reference}")
         seen.add(reference)
         fragment = fragments.get(reference)
         if fragment is None:
@@ -1831,9 +1884,7 @@ def _approved_feedback(
                 f"approved feedback is not in the latest receipt set: {reference}"
             )
         if digest != fragment.feedback_sha256:
-            raise ReviewStaleError(
-                f"approved feedback hash changed: {reference}"
-            )
+            raise ReviewStaleError(f"approved feedback hash changed: {reference}")
         if related_concept_ref not in fragment.related_concept_refs:
             raise ReviewValidationError(
                 f"feedback {reference} is unrelated to {related_concept_ref}"
@@ -1869,10 +1920,7 @@ def _parse_merge_groups(
         if not isinstance(source_values, list):
             raise ReviewValidationError("merge group source_refs must be an array")
         source_refs = tuple(
-            sorted(
-                _require_string(item, "merge source ref")
-                for item in source_values
-            )
+            sorted(_require_string(item, "merge source ref") for item in source_values)
         )
         if len(source_refs) < 2:
             raise ReviewValidationError("merge group requires at least two sources")
@@ -1920,9 +1968,10 @@ def _human_review_from_record(
             "overall_feedback_sha256",
             "supersedes_review_id",
         },
-        optional={"created_at"},
+        optional={"created_at", "schema_version"},
         label="persisted human review",
     )
+    schema_version = _review_schema_version(value.get("schema_version"))
     if (
         value["run_id"] != review_round.run_id
         or value["round_id"] != review_round.round_id
@@ -1932,22 +1981,23 @@ def _human_review_from_record(
     review_id = _require_safe_id(value["review_id"], "review_id")
     concept_reviews: list[ConceptReview] = []
     seen_concepts: set[str] = set()
-    for raw_item in _object_list(
-        value["concept_reviews"], "persisted concept reviews"
-    ):
+    for raw_item in _object_list(value["concept_reviews"], "persisted concept reviews"):
+        concept_fields = {
+            "feedback_ref",
+            "feedback_sha256",
+            "concept_ref",
+            "concept_sha256",
+            "one_sentence_retell",
+            "share_target",
+            "reactions",
+            "recommendation",
+            "comment",
+        }
+        if schema_version >= 2:
+            concept_fields.update({"share_impulse", "demo_confidence"})
         item = _exact_object(
             raw_item,
-            required={
-                "feedback_ref",
-                "feedback_sha256",
-                "concept_ref",
-                "concept_sha256",
-                "one_sentence_retell",
-                "share_target",
-                "reactions",
-                "recommendation",
-                "comment",
-            },
+            required=concept_fields,
             label="persisted concept review",
         )
         binding = review_round.bindings.get(
@@ -1963,9 +2013,7 @@ def _human_review_from_record(
         reactions = _reaction_mapping(item["reactions"])
         review = ConceptReview(
             feedback_ref=_require_string(item["feedback_ref"], "feedback_ref"),
-            feedback_sha256=_require_string(
-                item["feedback_sha256"], "feedback_sha256"
-            ),
+            feedback_sha256=_require_string(item["feedback_sha256"], "feedback_sha256"),
             concept_ref=binding.concept_ref,
             concept_sha256=binding.concept_sha256,
             one_sentence_retell=_free_text(
@@ -1977,6 +2025,30 @@ def _human_review_from_record(
                 item["share_target"],
                 "share_target",
                 maximum=MAX_SHARE_TARGET,
+            ),
+            share_impulse=(
+                cast(
+                    ShareImpulse,
+                    _enum_string(
+                        item["share_impulse"],
+                        _SHARE_IMPULSES,
+                        "share_impulse",
+                    ),
+                )
+                if schema_version >= 2
+                else None
+            ),
+            demo_confidence=(
+                cast(
+                    DemoConfidence,
+                    _enum_string(
+                        item["demo_confidence"],
+                        _DEMO_CONFIDENCE_VALUES,
+                        "demo_confidence",
+                    ),
+                )
+                if schema_version >= 2
+                else None
             ),
             reactions=MappingProxyType(reactions),
             recommendation=_enum_string(
@@ -1990,6 +2062,10 @@ def _human_review_from_record(
                 maximum=MAX_CONCEPT_COMMENT,
             ),
         )
+        if review.share_impulse == "immediate" and not review.share_target.strip():
+            raise ReviewValidationError(
+                "persisted share_target is required when share_impulse is immediate"
+            )
         if review.feedback_ref != f"{review_id}:concept:{binding.concept_ref}":
             raise ReviewStaleError("persisted concept feedback ref mismatch")
         if review.feedback_sha256 != sha256_json(review.fragment_payload()):
@@ -2014,9 +2090,7 @@ def _human_review_from_record(
             },
             label="persisted pairwise review",
         )
-        pair = review_round.pair_index.get(
-            _require_string(item["pair_id"], "pair_id")
-        )
+        pair = review_round.pair_index.get(_require_string(item["pair_id"], "pair_id"))
         if pair is None or (
             item["left_ref"],
             item["right_ref"],
@@ -2036,9 +2110,7 @@ def _human_review_from_record(
         seen_pairs.add(pair.pair_id)
         pair_review = PairwiseReview(
             feedback_ref=_require_string(item["feedback_ref"], "feedback_ref"),
-            feedback_sha256=_require_string(
-                item["feedback_sha256"], "feedback_sha256"
-            ),
+            feedback_sha256=_require_string(item["feedback_sha256"], "feedback_sha256"),
             pair_id=pair.pair_id,
             left_ref=pair.left_ref,
             right_ref=pair.right_ref,
@@ -2049,15 +2121,11 @@ def _human_review_from_record(
                 _PAIR_PREFERENCES,
                 "preference",
             ),  # type: ignore[arg-type]
-            reason=_free_text(
-                item["reason"], "pair reason", maximum=MAX_PAIR_REASON
-            ),
+            reason=_free_text(item["reason"], "pair reason", maximum=MAX_PAIR_REASON),
         )
         if pair_review.feedback_ref != f"{review_id}:pair:{pair.pair_id}":
             raise ReviewStaleError("persisted pair feedback ref mismatch")
-        if pair_review.feedback_sha256 != sha256_json(
-            pair_review.fragment_payload()
-        ):
+        if pair_review.feedback_sha256 != sha256_json(pair_review.fragment_payload()):
             raise ReviewStaleError("persisted pair feedback hash mismatch")
         pairwise.append(pair_review)
 
@@ -2066,9 +2134,7 @@ def _human_review_from_record(
         "overall_comment",
         maximum=MAX_OVERALL_COMMENT,
     )
-    overall_ref = _require_string(
-        value["overall_feedback_ref"], "overall_feedback_ref"
-    )
+    overall_ref = _require_string(value["overall_feedback_ref"], "overall_feedback_ref")
     overall_hash = _require_string(
         value["overall_feedback_sha256"], "overall_feedback_sha256"
     )
@@ -2084,6 +2150,7 @@ def _human_review_from_record(
         "independence",
     )
     result = HumanReview(
+        schema_version=schema_version,
         review_id=review_id,
         round_id=review_round.round_id,
         round_sha256=review_round.round_sha256,
@@ -2097,9 +2164,7 @@ def _human_review_from_record(
             single_line=True,
         ),
         submitted_at=_timestamp(value["submitted_at"], "submitted_at"),
-        request_sha256=_require_sha256(
-            value["request_sha256"], "request_sha256"
-        ),
+        request_sha256=_require_sha256(value["request_sha256"], "request_sha256"),
         independence=independence,  # type: ignore[arg-type]
         concept_reviews=tuple(concept_reviews),
         pairwise=tuple(pairwise),
@@ -2149,9 +2214,7 @@ def _human_resolution_from_record(
     ):
         raise ReviewStaleError("persisted resolution has stale round binding")
     actions: list[ResolutionAction] = []
-    for raw_action in _object_list(
-        value["actions"], "persisted resolution actions"
-    ):
+    for raw_action in _object_list(value["actions"], "persisted resolution actions"):
         action = _exact_object(
             raw_action,
             required={
@@ -2181,9 +2244,7 @@ def _human_resolution_from_record(
             raise ReviewStaleError("curator instruction hash mismatch")
         approved = tuple(
             ApprovedFeedback(
-                feedback_ref=_require_string(
-                    item["feedback_ref"], "feedback_ref"
-                ),
+                feedback_ref=_require_string(item["feedback_ref"], "feedback_ref"),
                 feedback_sha256=_require_sha256(
                     item["feedback_sha256"], "feedback_sha256"
                 ),
@@ -2202,12 +2263,8 @@ def _human_resolution_from_record(
         )
         actions.append(
             ResolutionAction(
-                concept_ref=_require_string(
-                    action["concept_ref"], "concept_ref"
-                ),
-                action=_enum_string(
-                    action["action"], _RESOLUTION_ACTIONS, "action"
-                ),  # type: ignore[arg-type]
+                concept_ref=_require_string(action["concept_ref"], "concept_ref"),
+                action=_enum_string(action["action"], _RESOLUTION_ACTIONS, "action"),  # type: ignore[arg-type]
                 approved_feedback=approved,
                 curator_instruction=instruction,
                 curator_instruction_sha256=instruction_hash,
@@ -2223,14 +2280,10 @@ def _human_resolution_from_record(
         )
     merge_groups = tuple(
         MergeGroup(
-            merge_group_id=_require_safe_id(
-                group["merge_group_id"], "merge_group_id"
-            ),
+            merge_group_id=_require_safe_id(group["merge_group_id"], "merge_group_id"),
             source_refs=tuple(
                 _require_string(item, "merge source ref")
-                for item in _string_list(
-                    group["source_refs"], "merge source refs"
-                )
+                for item in _string_list(group["source_refs"], "merge source refs")
             ),
             reason=_free_text(
                 group["reason"],
@@ -2251,9 +2304,7 @@ def _human_resolution_from_record(
         )
     )
     partial = HumanResolution(
-        resolution_id=_require_safe_id(
-            value["resolution_id"], "resolution_id"
-        ),
+        resolution_id=_require_safe_id(value["resolution_id"], "resolution_id"),
         run_id=review_round.run_id,
         curator_name=_free_text(
             value["curator_name"],
@@ -2267,9 +2318,7 @@ def _human_resolution_from_record(
         actions=tuple(actions),
         merge_groups=merge_groups,
         uncovered_concept_refs=tuple(
-            _string_list(
-                value["uncovered_concept_refs"], "uncovered_concept_refs"
-            )
+            _string_list(value["uncovered_concept_refs"], "uncovered_concept_refs")
         ),
         coverage_override_reason=_optional_free_text(
             value["coverage_override_reason"],
@@ -2285,9 +2334,7 @@ def _human_resolution_from_record(
             "approved_feedback_set_sha256",
         ),
         closed_at=_timestamp(value["closed_at"], "closed_at"),
-        request_sha256=_require_sha256(
-            value["request_sha256"], "request_sha256"
-        ),
+        request_sha256=_require_sha256(value["request_sha256"], "request_sha256"),
         resolution_sha256=_require_sha256(
             value["resolution_sha256"], "resolution_sha256"
         ),
@@ -2419,10 +2466,18 @@ def _require_sha256(value: Any, label: str) -> str:
 def _enum_string(value: Any, allowed: frozenset[str], label: str) -> str:
     text = _require_string(value, label)
     if text not in allowed:
-        raise ReviewValidationError(
-            f"{label} must be one of {sorted(allowed)}"
-        )
+        raise ReviewValidationError(f"{label} must be one of {sorted(allowed)}")
     return text
+
+
+def _review_schema_version(value: Any) -> int:
+    if value is None:
+        return 1
+    if type(value) is not int or value not in _REVIEW_SCHEMA_VERSIONS:
+        raise ReviewValidationError(
+            f"schema_version must be one of {sorted(_REVIEW_SCHEMA_VERSIONS)}"
+        )
+    return value
 
 
 def _reaction_mapping(value: Any) -> dict[str, str]:

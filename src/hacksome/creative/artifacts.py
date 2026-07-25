@@ -6,6 +6,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Collection, Mapping, Sequence
+from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 from urllib.parse import urlsplit
 
@@ -24,15 +25,19 @@ from hacksome.creative.contracts import (
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
     C4_CHEAP_HOOK_REVIEW,
+    C4_SOFTWARE_DEMO_REVIEW,
     C5M_MEMORY_RECALL,
     C5M_MEMORY_REMIX,
     C5W_NOVELTY_SCAN,
     C6A_EVIDENCE_REVISE,
     C6B_PORTFOLIO_CURATE,
     C6C_FEEDBACK_REVISE,
+    CREATIVE_CONTRACT_VERSION,
     CREATIVE_STAGES,
     CreativeWorkflowSettings,
+    LEGACY_CREATIVE_CONTRACT_VERSION,
     StableReasonCode,
+    SUPPORTED_CREATIVE_CONTRACT_VERSIONS,
     parse_concept_revision_ref,
     territory_for_atom,
 )
@@ -51,7 +56,7 @@ CONSTRAINT_VIEW_HEADINGS = (
     "Time, Team and Deliverables",
     "Open Questions",
 )
-CREATIVE_BRIEF_HEADINGS = (
+LEGACY_CREATIVE_BRIEF_HEADINGS = (
     "Intended Reactions",
     "Anti-goals",
     "Audience and Experience Context",
@@ -59,7 +64,11 @@ CREATIVE_BRIEF_HEADINGS = (
     "Available Media and Boundaries",
     "Default Assumptions",
 )
-ATOM_HEADINGS = (
+CREATIVE_BRIEF_HEADINGS = (
+    *LEGACY_CREATIVE_BRIEF_HEADINGS,
+    "Software and Demo Boundaries",
+)
+LEGACY_ATOM_HEADINGS = (
     "Territory",
     "Trigger",
     "Audience Action",
@@ -69,6 +78,23 @@ ATOM_HEADINGS = (
     "Aftertaste",
     "Challenge Fit and Risks",
 )
+ATOM_HEADINGS = (
+    *LEGACY_ATOM_HEADINGS[:-1],
+    "Software Surface and Demo Proof",
+    LEGACY_ATOM_HEADINGS[-1],
+)
+LEGACY_CONCEPT_HEADINGS = (
+    "Intended Reaction",
+    "One-sentence Hook",
+    "First Impression",
+    "Audience Action",
+    "Setup, Reveal and Aftertaste",
+    "Real Input, Transformation and Output",
+    "Why It Is Unexpected Yet Legible",
+    "Minimum Hackathon Demo",
+    "Assumptions, Confusion and Risks",
+    "Parent Atoms",
+)
 CONCEPT_HEADINGS = (
     "Intended Reaction",
     "One-sentence Hook",
@@ -76,6 +102,8 @@ CONCEPT_HEADINGS = (
     "Audience Action",
     "Setup, Reveal and Aftertaste",
     "Real Input, Transformation and Output",
+    "Software Core and Runtime",
+    "Share Trigger and Artifact",
     "Why It Is Unexpected Yet Legible",
     "Minimum Hackathon Demo",
     "Assumptions, Confusion and Risks",
@@ -119,13 +147,17 @@ FINAL_IDEA_CARD_HEADINGS = (
     "Lineage",
 )
 
-HOOK_DIMENSIONS = (
+LEGACY_HOOK_DIMENSIONS = (
     "setup_legibility",
     "expectation_shift",
     "mechanism_driven_surprise",
     "thirty_second_moment",
     "one_sentence_retell",
     "capability_integrity",
+)
+HOOK_DIMENSIONS = (
+    *LEGACY_HOOK_DIMENSIONS,
+    "share_trigger",
 )
 HOOK_REASON_BY_DIMENSION: Mapping[str, str] = {
     "setup_legibility": StableReasonCode.SETUP_NOT_QUICKLY_LEGIBLE.value,
@@ -138,7 +170,47 @@ HOOK_REASON_BY_DIMENSION: Mapping[str, str] = {
     "capability_integrity": (
         StableReasonCode.REQUIRES_HIDDEN_LABOR_OR_IMPOSSIBLE_CAPABILITY.value
     ),
+    "share_trigger": (
+        StableReasonCode.SHARE_TRIGGER_NOT_IMMEDIATE_OR_CONCRETE.value
+    ),
 }
+
+SOFTWARE_DEMO_DIMENSIONS = (
+    "software_first_core",
+    "hardware_independence",
+    "technical_demo_substance",
+    "end_to_end_demo_path",
+    "dependency_integrity",
+    "hackathon_scope",
+    "core_proof",
+)
+SOFTWARE_DEMO_REASON_BY_DIMENSION: Mapping[str, str] = {
+    "software_first_core": StableReasonCode.CORE_NOT_SOFTWARE_FIRST.value,
+    "hardware_independence": (
+        StableReasonCode.REQUIRES_CUSTOM_HARDWARE_OR_FABRICATION.value
+    ),
+    "technical_demo_substance": (
+        StableReasonCode.CORE_IS_MANUAL_PERFORMANCE_OR_INSTALLATION.value
+    ),
+    "end_to_end_demo_path": (
+        StableReasonCode.NO_RUNNABLE_END_TO_END_DEMO_PATH.value
+    ),
+    "dependency_integrity": (
+        StableReasonCode.REQUIRES_UNAVAILABLE_DEPENDENCY_OR_PERMISSION.value
+    ),
+    "hackathon_scope": (
+        StableReasonCode.NOT_BUILDABLE_WITHIN_HACKATHON_BUDGET.value
+    ),
+    "core_proof": StableReasonCode.DEMO_DOES_NOT_PROVE_CORE_MECHANISM.value,
+}
+
+PORTFOLIO_DIMENSIONS = (
+    "software_demo_strength",
+    "surprise_fun_or_intrigue",
+    "one_sentence_clarity",
+    "immediate_share_trigger",
+    "novel_combination",
+)
 
 
 class CreativeArtifactError(ArtifactError):
@@ -159,6 +231,7 @@ class CreativeValidationContext(TypedDict):
     source_markdown: NotRequired[str]
     source_hooks: NotRequired[Collection[str]]
     source_mechanism_reveals: NotRequired[Collection[tuple[str, str]]]
+    contract_version: NotRequired[str]
 
 
 _ATOM_REF = re.compile(r"creative-atom-t[0-9]{2}-[0-9]{2}")
@@ -173,18 +246,37 @@ def validate_creative_output(
     *,
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext | None = None,
+    contract_version: str = CREATIVE_CONTRACT_VERSION,
+    schema_path: Path | None = None,
 ) -> dict[str, Any]:
     """Validate one schema-constrained envelope plus route semantic invariants."""
 
-    if stage not in CREATIVE_STAGES:
+    if contract_version not in SUPPORTED_CREATIVE_CONTRACT_VERSIONS:
+        raise CreativeArtifactError(
+            f"unsupported Creative contract version: {contract_version!r}"
+        )
+    if stage not in CREATIVE_STAGES or (
+        contract_version == LEGACY_CREATIVE_CONTRACT_VERSION
+        and stage == C4_SOFTWARE_DEMO_REVIEW
+    ):
         raise CreativeArtifactError(f"unknown Creative stage: {stage!r}")
     if not isinstance(settings, CreativeWorkflowSettings):
         raise TypeError("settings must be CreativeWorkflowSettings")
     normalized = _normalize_json_object(output)
-    _validate_stage_schema(stage, normalized)
+    _validate_stage_schema(
+        stage,
+        normalized,
+        contract_version=contract_version,
+        schema_path=schema_path,
+    )
     validator = _STAGE_VALIDATORS[stage]
+    validation_context = cast(
+        CreativeValidationContext,
+        dict(context or {}),
+    )
+    validation_context["contract_version"] = contract_version
     try:
-        validator(normalized, settings, context or {})
+        validator(normalized, settings, validation_context)
     except CreativeArtifactError:
         raise
     except ArtifactError as exc:
@@ -260,10 +352,20 @@ def _normalize_json_object(output: Mapping[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], normalized)
 
 
-def _validate_stage_schema(stage: str, output: Mapping[str, Any]) -> None:
-    from hacksome.creative.prompting import creative_prompt_catalog
+def _validate_stage_schema(
+    stage: str,
+    output: Mapping[str, Any],
+    *,
+    contract_version: str,
+    schema_path: Path | None,
+) -> None:
+    from hacksome.creative.prompting import creative_prompt_catalog_for_contract
 
-    path = creative_prompt_catalog[stage].schema_path
+    path = (
+        schema_path
+        if schema_path is not None
+        else creative_prompt_catalog_for_contract(contract_version)[stage].schema_path
+    )
     try:
         schema = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -305,10 +407,15 @@ def _validate_c1(
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext,
 ) -> None:
-    del settings, context
+    del settings
+    headings = (
+        LEGACY_CREATIVE_BRIEF_HEADINGS
+        if _is_legacy(context)
+        else CREATIVE_BRIEF_HEADINGS
+    )
     validate_markdown(
         output["markdown"],
-        required_h2=CREATIVE_BRIEF_HEADINGS,
+        required_h2=headings,
         label="Creative Brief",
     )
 
@@ -318,7 +425,7 @@ def _validate_c2(
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext,
 ) -> None:
-    del context
+    headings = LEGACY_ATOM_HEADINGS if _is_legacy(context) else ATOM_HEADINGS
     validate_markdown(output["territory_markdown"], label="Creative Territory")
     atoms = output["atoms"]
     if len(atoms) > settings.max_atoms_per_territory:
@@ -330,7 +437,7 @@ def _validate_c2(
         markdown = atom["markdown"]
         validate_markdown(
             markdown,
-            required_h2=ATOM_HEADINGS,
+            required_h2=headings,
             label=f"Creative Atom {index + 1}",
         )
         normalized = _normalize_text(markdown)
@@ -344,6 +451,7 @@ def _validate_c3(
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext,
 ) -> None:
+    headings = LEGACY_CONCEPT_HEADINGS if _is_legacy(context) else CONCEPT_HEADINGS
     concepts = output["concepts"]
     if len(concepts) > settings.max_concepts_per_synthesizer:
         raise CreativeArtifactError(
@@ -356,7 +464,7 @@ def _validate_c3(
         markdown = concept["markdown"]
         validate_markdown(
             markdown,
-            required_h2=CONCEPT_HEADINGS,
+            required_h2=headings,
             label=f"Creative Concept {index + 1}",
         )
         parent_refs = _unique_string_list(
@@ -389,11 +497,14 @@ def _validate_c4_review(
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext,
 ) -> None:
-    del settings, context
+    del settings
     validate_markdown(output["markdown"], label="Cheap Hook Review")
     dimensions = output["dimensions"]
     names = tuple(item["dimension"] for item in dimensions)
-    if names != HOOK_DIMENSIONS:
+    expected_dimensions = (
+        LEGACY_HOOK_DIMENSIONS if _is_legacy(context) else HOOK_DIMENSIONS
+    )
+    if names != expected_dimensions:
         raise CreativeArtifactError(
             "Cheap Hook dimensions must appear once in the stable contract order"
         )
@@ -415,7 +526,69 @@ def _validate_c4_review(
                 )
     if (output["overall_decision"] == "pass") is not all_pass:
         raise CreativeArtifactError(
-            "overall_decision=pass must match six passing Hook dimensions"
+            "overall_decision=pass must match all passing Hook dimensions"
+        )
+
+
+def _validate_c4_software_demo_review(
+    output: dict[str, Any],
+    settings: CreativeWorkflowSettings,
+    context: CreativeValidationContext,
+) -> None:
+    del settings
+    if _is_legacy(context):
+        raise CreativeArtifactError("C4F does not exist in Creative contract v1")
+    validate_markdown(output["markdown"], label="Software Demo Review")
+    dimensions = output["dimensions"]
+    names = tuple(item["dimension"] for item in dimensions)
+    if names != SOFTWARE_DEMO_DIMENSIONS:
+        raise CreativeArtifactError(
+            "Software Demo dimensions must appear once in stable contract order"
+        )
+    all_pass = True
+    hard_failure = False
+    has_non_pass = False
+    has_fail = False
+    for item in dimensions:
+        verdict = item["verdict"]
+        reason_code = item["reason_code"]
+        expected_reason = SOFTWARE_DEMO_REASON_BY_DIMENSION[item["dimension"]]
+        if verdict == "pass":
+            if reason_code is not None:
+                raise CreativeArtifactError(
+                    "passing Software Demo dimensions require null reason_code"
+                )
+        else:
+            all_pass = False
+            has_non_pass = True
+            has_fail = has_fail or verdict == "fail"
+            if reason_code != expected_reason:
+                raise CreativeArtifactError(
+                    f"{item['dimension']} must use reason code {expected_reason}"
+                )
+            if verdict == "fail" and item["dimension"] in {
+                "software_first_core",
+                "hardware_independence",
+                "technical_demo_substance",
+                "dependency_integrity",
+            }:
+                hard_failure = True
+    decision = output["overall_decision"]
+    if (decision == "pass") is not all_pass:
+        raise CreativeArtifactError(
+            "overall_decision=pass must match all passing Software Demo dimensions"
+        )
+    if decision == "repairable" and not has_non_pass:
+        raise CreativeArtifactError(
+            "overall_decision=repairable requires a non-passing dimension"
+        )
+    if decision == "invalid" and not has_fail:
+        raise CreativeArtifactError(
+            "overall_decision=invalid requires a failed dimension"
+        )
+    if hard_failure and decision != "invalid":
+        raise CreativeArtifactError(
+            "hard Software Demo failures require overall_decision=invalid"
         )
 
 
@@ -427,9 +600,10 @@ def _validate_c4_repair(
     if settings.max_hook_repairs < 1:
         raise CreativeArtifactError("C4 repair is disabled by max_hook_repairs")
     markdown = output["markdown"]
+    headings = LEGACY_CONCEPT_HEADINGS if _is_legacy(context) else CONCEPT_HEADINGS
     validate_markdown(
         markdown,
-        required_h2=CONCEPT_HEADINGS,
+        required_h2=headings,
         label="Hook-repaired Concept",
     )
     _validate_source_preservation(
@@ -515,7 +689,10 @@ def _validate_memory_remix(
     markdown = concept["markdown"]
     validate_markdown(
         markdown,
-        required_h2=CONCEPT_HEADINGS + MEMORY_REMIX_HEADINGS,
+        required_h2=(
+            (LEGACY_CONCEPT_HEADINGS if _is_legacy(context) else CONCEPT_HEADINGS)
+            + MEMORY_REMIX_HEADINGS
+        ),
         label="Memory challenger",
     )
     atom_refs = _unique_string_list(
@@ -624,7 +801,10 @@ def _validate_evidence_revision(
     markdown = output["markdown"]
     validate_markdown(
         markdown,
-        required_h2=CONCEPT_HEADINGS + EVIDENCE_REVISION_HEADINGS,
+        required_h2=(
+            (LEGACY_CONCEPT_HEADINGS if _is_legacy(context) else CONCEPT_HEADINGS)
+            + EVIDENCE_REVISION_HEADINGS
+        ),
         label="Evidence-informed Concept",
     )
     _validate_source_preservation(
@@ -654,6 +834,25 @@ def _validate_portfolio(
             "Portfolio classifications must cover every allowed Concept exactly once"
         )
     for item in classifications:
+        if not _is_legacy(context):
+            dimensions = item["dimensions"]
+            names = tuple(dimension["dimension"] for dimension in dimensions)
+            if names != PORTFOLIO_DIMENSIONS:
+                raise CreativeArtifactError(
+                    "Portfolio dimensions must appear once in stable contract order"
+                )
+            verdicts = tuple(dimension["verdict"] for dimension in dimensions)
+            expected_decision = (
+                "exclude"
+                if "fail" in verdicts
+                else "hold"
+                if "uncertain" in verdicts
+                else "include"
+            )
+            if item["decision"] != expected_decision:
+                raise CreativeArtifactError(
+                    "Portfolio decision must mechanically match categorical dimensions"
+                )
         possible = _unique_string_list(
             item["possible_duplicate_refs"],
             label="possible_duplicate_refs",
@@ -677,7 +876,10 @@ def _validate_feedback_revision(
     markdown = output["markdown"]
     validate_markdown(
         markdown,
-        required_h2=CONCEPT_HEADINGS + FEEDBACK_REVISION_HEADINGS,
+        required_h2=(
+            (LEGACY_CONCEPT_HEADINGS if _is_legacy(context) else CONCEPT_HEADINGS)
+            + FEEDBACK_REVISION_HEADINGS
+        ),
         label="Feedback-revised Final Idea",
     )
     primary = output["primary_territory_ref"]
@@ -775,12 +977,17 @@ def _normalize_text(value: str) -> str:
     return " ".join(re.findall(r"\w+", normalized, flags=re.UNICODE))
 
 
+def _is_legacy(context: CreativeValidationContext) -> bool:
+    return context.get("contract_version") == LEGACY_CREATIVE_CONTRACT_VERSION
+
+
 _STAGE_VALIDATORS = {
     C0_CHALLENGE_PARSE: _validate_c0,
     C1_BRIEF_NORMALIZE: _validate_c1,
     C2_TERRITORY_EXPLORE: _validate_c2,
     C3_CONCEPT_SYNTHESIZE: _validate_c3,
     C4_CHEAP_HOOK_REVIEW: _validate_c4_review,
+    C4_SOFTWARE_DEMO_REVIEW: _validate_c4_software_demo_review,
     C4_CHEAP_HOOK_REPAIR: _validate_c4_repair,
     C5M_MEMORY_RECALL: _validate_memory_recall,
     C5M_MEMORY_REMIX: _validate_memory_remix,
@@ -804,8 +1011,14 @@ __all__ = [
     "FINAL_IDEA_CARD_HEADINGS",
     "HOOK_DIMENSIONS",
     "HOOK_REASON_BY_DIMENSION",
+    "LEGACY_ATOM_HEADINGS",
+    "LEGACY_CONCEPT_HEADINGS",
+    "LEGACY_CREATIVE_BRIEF_HEADINGS",
     "MEMORY_REMIX_HEADINGS",
     "NOVELTY_SCAN_HEADINGS",
+    "PORTFOLIO_DIMENSIONS",
+    "SOFTWARE_DEMO_DIMENSIONS",
+    "SOFTWARE_DEMO_REASON_BY_DIMENSION",
     "compose_final_idea_card",
     "normalized_hook",
     "normalized_section",

@@ -18,6 +18,8 @@ from hacksome.creative.artifacts import (
     HOOK_DIMENSIONS,
     HOOK_REASON_BY_DIMENSION,
     NOVELTY_SCAN_HEADINGS,
+    SOFTWARE_DEMO_DIMENSIONS,
+    SOFTWARE_DEMO_REASON_BY_DIMENSION,
 )
 from hacksome.creative.contracts import (
     C5W_NOVELTY_SCAN,
@@ -66,12 +68,24 @@ def _concept_markdown(
             f"The object waits, reverses gesture {slot}, then leaves a shared echo."
         ),
         "Real Input, Transformation and Output": (
-            f"A real gesture {slot} is transformed locally into a visible echo."
+            f"A real browser gesture {slot} is transformed by code into a visible echo."
+        ),
+        "Software Core and Runtime": (
+            "A browser captures a click, sends it through a local WebSocket "
+            "server, and renders the transformed response; no special hardware "
+            "or unavailable permission is required."
+        ),
+        "Share Trigger and Artifact": (
+            "The surprising personalized replay creates a result URL that a "
+            "participant immediately sends to the friend whose gesture it echoes."
         ),
         "Why It Is Unexpected Yet Legible": (
             "The same action returns with one understandable rule changed."
         ),
-        "Minimum Hackathon Demo": "A sensor, a laptop, and one projected response.",
+        "Minimum Hackathon Demo": (
+            "Run two browser tabs and a local WebSocket server on one laptop; "
+            "a real click produces the live transformed response and share URL."
+        ),
         "Assumptions, Confusion and Risks": "The gesture remains opt-in and visible.",
         "Parent Atoms": atom_ref,
     }
@@ -135,6 +149,37 @@ def _hook_review(decision: str) -> dict[str, Any]:
         "overall_decision": decision,
         "dimensions": dimensions,
         "markdown": f"# Cheap Hook Review\n\nDecision: {decision}.\n",
+    }
+
+
+def _software_demo_review(
+    decision: str,
+    *,
+    failed_dimension: str = "end_to_end_demo_path",
+) -> dict[str, Any]:
+    dimensions: list[dict[str, Any]] = []
+    for dimension in SOFTWARE_DEMO_DIMENSIONS:
+        failed = decision != "pass" and dimension == failed_dimension
+        dimensions.append(
+            {
+                "dimension": dimension,
+                "verdict": "fail" if failed else "pass",
+                "reason_code": (
+                    SOFTWARE_DEMO_REASON_BY_DIMENSION[dimension]
+                    if failed
+                    else None
+                ),
+                "evidence": (
+                    "The exact Concept makes this dependency a hard core."
+                    if failed
+                    else "The browser executes a real input-to-output path."
+                ),
+            }
+        )
+    return {
+        "overall_decision": decision,
+        "dimensions": dimensions,
+        "markdown": f"# Software Demo Review\n\nDecision: {decision}.\n",
     }
 
 
@@ -219,10 +264,12 @@ class CreativeScriptedRunner:
         *,
         novelty_failure: bool = False,
         hook_mode: str = "pass",
+        software_demo_mode: str = "pass",
         memory_ref: dict[str, str] | None = None,
     ) -> None:
         self.novelty_failure = novelty_failure
         self.hook_mode = hook_mode
+        self.software_demo_mode = software_demo_mode
         self.memory_ref = memory_ref
         self.tasks: list[CodexTask] = []
         self._tasks_by_id: dict[str, CodexTask] = {}
@@ -349,6 +396,25 @@ class CreativeScriptedRunner:
             ):
                 return _hook_review("repairable")
             return _hook_review("pass")
+        if task_id.startswith("creative-c4f-software-demo-"):
+            if self.software_demo_mode == "hardware_invalid":
+                return _software_demo_review(
+                    "invalid",
+                    failed_dimension="hardware_independence",
+                )
+            if self.software_demo_mode == "installation_invalid":
+                return _software_demo_review(
+                    "invalid",
+                    failed_dimension="technical_demo_substance",
+                )
+            if (
+                self.software_demo_mode == "repair_success"
+                and "-c1" in task_id
+            ):
+                return _software_demo_review("repairable")
+            if self.software_demo_mode == "repair_unresolved":
+                return _software_demo_review("repairable")
+            return _software_demo_review("pass")
         if task_id.startswith("creative-c4-repair-"):
             source = _prompt_block(task.prompt, "CONCEPT_REVISION")
             atom_match = re.search(
@@ -582,6 +648,7 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         "creative-c2-",
                         "creative-c3-",
                         "creative-c4-review-",
+                        "creative-c4f-software-demo-",
                     )
                 )
             ]
@@ -627,6 +694,41 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(atom_markdown, task.prompt)
 
             state = workflow.hub.load_state()
+            policy_input = state["inputs"]["software_demo_policy"]
+            self.assertEqual(policy_input["source"], "controller")
+            self.assertEqual(policy_input["policy_version"], "2")
+            self.assertEqual(
+                policy_input["path"],
+                "input/software-demo-policy.json",
+            )
+            self.assertEqual(
+                sha256_text(
+                    (
+                        workflow.run_dir / policy_input["path"]
+                    ).read_text(encoding="utf-8")
+                ),
+                policy_input["sha256"],
+            )
+            policy_prompts = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith(
+                    (
+                        "creative-c1-",
+                        "creative-c2-",
+                        "creative-c3-",
+                        "creative-c4-review-",
+                        "creative-c4f-",
+                    )
+                )
+            ]
+            self.assertTrue(policy_prompts)
+            self.assertTrue(
+                all(
+                    "<BEGIN_SOFTWARE_DEMO_POLICY_" in task.prompt
+                    for task in policy_prompts
+                )
+            )
             for task in early_tasks:
                 parent_refs = state["tasks"][task.task_id]["parent_refs"]
                 self.assertNotIn("input:idea_memory", parent_refs)
@@ -851,6 +953,15 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     and "-c2-" in task.task_id
                 ]
                 self.assertEqual(len(second_cycle_reviews), 2)
+                second_cycle_feasibility = [
+                    task
+                    for task in runner.tasks
+                    if task.task_id.startswith(
+                        "creative-c4f-software-demo-"
+                    )
+                    and "-c2" in task.task_id
+                ]
+                self.assertEqual(len(second_cycle_feasibility), 1)
 
                 state = workflow.hub.load_state()
                 concept_revisions = sorted(
@@ -903,6 +1014,127 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         repaired_dispositions[0]["reason_codes"],
                     )
                 self.assertEqual(validate_run(workflow.run_dir), [])
+
+    async def test_software_demo_gate_rejects_hardware_and_installation_before_c5(
+        self,
+    ) -> None:
+        settings = CreativeWorkflowSettings(
+            territory_explorers=1,
+            max_atoms_per_territory=1,
+            concept_synthesizers=1,
+            max_concepts_per_synthesizer=1,
+            idea_memory_mode="off",
+            memory_remixers=0,
+            max_memory_challengers=0,
+        )
+        for mode, expected_reason in (
+            (
+                "hardware_invalid",
+                "requires_custom_hardware_or_fabrication",
+            ),
+            (
+                "installation_invalid",
+                "core_is_manual_performance_or_installation",
+            ),
+        ):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                runner = CreativeScriptedRunner(software_demo_mode=mode)
+                workflow = CreativeIdeaWorkflow.create(
+                    "Build a software-native viral surprise.",
+                    directory,
+                    settings=settings,
+                    run_id=f"creative-{mode}",
+                    runner=runner,
+                )
+
+                outcome = await workflow.execute_c0_c5()
+
+                self.assertEqual(outcome.hook_passed_refs, ())
+                self.assertEqual(outcome.novelty_scan_refs, ())
+                self.assertFalse(
+                    any(
+                        task.task_id.startswith(
+                            (
+                                "creative-c4-repair-",
+                                "creative-c5w-novelty-",
+                            )
+                        )
+                        for task in runner.tasks
+                    )
+                )
+                dispositions = [
+                    json.loads(workflow.hub.read_artifact(artifact_id))
+                    for artifact_id, record in workflow.hub.load_state()[
+                        "artifacts"
+                    ].items()
+                    if record["artifact_type"]
+                    == "creative_concept_disposition"
+                ]
+                terminal = [
+                    row
+                    for row in dispositions
+                    if row["outcome"] == "eliminated"
+                ]
+                self.assertEqual(len(terminal), 1)
+                self.assertIn(
+                    "c4_software_demo_invalid",
+                    terminal[0]["reason_codes"],
+                )
+                self.assertIn(expected_reason, terminal[0]["reason_codes"])
+                self.assertEqual(len(terminal[0]["evidence_refs"]), 3)
+                self.assertEqual(validate_run(workflow.run_dir), [])
+
+    async def test_repairable_software_detail_uses_shared_single_repair_budget(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = CreativeScriptedRunner(
+                software_demo_mode="repair_success"
+            )
+            workflow = CreativeIdeaWorkflow.create(
+                "Build a software-native viral surprise.",
+                directory,
+                settings=CreativeWorkflowSettings(
+                    territory_explorers=1,
+                    max_atoms_per_territory=1,
+                    concept_synthesizers=1,
+                    max_concepts_per_synthesizer=1,
+                    idea_memory_mode="off",
+                    memory_remixers=0,
+                    max_memory_challengers=0,
+                ),
+                runner=runner,
+            )
+
+            outcome = await workflow.execute_c0_c5()
+
+            self.assertEqual(
+                outcome.hook_passed_refs,
+                ("creative-concept-s01-01-r002",),
+            )
+            self.assertEqual(
+                sum(
+                    task.task_id.startswith("creative-c4-repair-")
+                    for task in runner.tasks
+                ),
+                1,
+            )
+            self.assertEqual(
+                sum(
+                    task.task_id.startswith("creative-c4-review-")
+                    for task in runner.tasks
+                ),
+                4,
+            )
+            self.assertEqual(
+                sum(
+                    task.task_id.startswith(
+                        "creative-c4f-software-demo-"
+                    )
+                    for task in runner.tasks
+                ),
+                2,
+            )
 
     async def test_memory_recall_indexes_repaired_active_revision(
         self,

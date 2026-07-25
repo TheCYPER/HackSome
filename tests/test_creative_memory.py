@@ -26,6 +26,7 @@ from hacksome.creative.memory import (
     validate_challenger_count,
     validate_memory_inspiration_packet,
     validate_remix_provenance,
+    expected_memory_classification,
 )
 from hacksome.state import sha256_json, sha256_text
 
@@ -671,6 +672,31 @@ class CreativeMemoryTests(unittest.TestCase):
         raw["raw_feedback"] = "secret"
         with self.assertRaisesRegex(MemoryValidationError, "private field"):
             IdeaMemorySnapshot.from_mapping(raw)
+
+    def test_all_software_demo_failures_remain_distinct_cautions(self) -> None:
+        reasons = (
+            "core_not_software_first",
+            "requires_custom_hardware_or_fabrication",
+            "core_is_manual_performance_or_installation",
+            "no_runnable_end_to_end_demo_path",
+            "requires_unavailable_dependency_or_permission",
+            "not_buildable_within_hackathon_budget",
+            "demo_does_not_prove_core_mechanism",
+        )
+
+        for reason in reasons:
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    expected_memory_classification(
+                        source_kind="concept_revision",
+                        terminal_outcome="eliminated",
+                        reason_codes=(
+                            "c4_software_demo_invalid",
+                            reason,
+                        ),
+                    ),
+                    "caution",
+                )
 
 
 if __name__ == "__main__":

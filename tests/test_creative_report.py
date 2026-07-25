@@ -10,9 +10,15 @@ from hacksome.creative.artifacts import (
     CONCEPT_HEADINGS,
     CREATIVE_BRIEF_HEADINGS,
     FINAL_IDEA_CARD_HEADINGS,
+    LEGACY_CONCEPT_HEADINGS,
+    LEGACY_CREATIVE_BRIEF_HEADINGS,
     NOVELTY_SCAN_HEADINGS,
 )
 from hacksome.creative.contracts import (
+    LEGACY_CREATIVE_CONTRACT_VERSION,
+    LEGACY_CREATIVE_PROMPT_POLICY_VERSION,
+    LEGACY_CREATIVE_REPORT_POLICY_VERSION,
+    LEGACY_CREATIVE_STAGE_POLICY_VERSION,
     DispositionOutcome,
     DispositionStage,
 )
@@ -54,10 +60,11 @@ def _concept_markdown(
     *,
     hook: str,
     parent_atom_ref: str,
+    legacy: bool = False,
 ) -> str:
     return _markdown(
         title,
-        CONCEPT_HEADINGS,
+        LEGACY_CONCEPT_HEADINGS if legacy else CONCEPT_HEADINGS,
         bodies={
             "Intended Reaction": "Surprise followed by delighted recognition.",
             "One-sentence Hook": hook,
@@ -404,11 +411,13 @@ def _zero_concept(
     outcome: DispositionOutcome,
     stage: DispositionStage,
     reason: str,
+    legacy: bool = False,
 ) -> ConceptProjection:
     markdown = _concept_markdown(
         "Zero Candidate",
         hook="A candidate that reaches a documented terminal outcome.",
         parent_atom_ref="creative-atom-t01-01",
+        legacy=legacy,
     )
     return ConceptProjection(
         concept_id="creative-concept-s01-01",
@@ -433,16 +442,29 @@ def _zero_concept(
 
 def _zero_projection(reason: str) -> CreativeReportProjection:
     challenge = _challenge()
-    brief = _brief()
+    legacy = reason == "all_candidates_failed_hook"
+    brief = (
+        _markdown("Creative Brief", LEGACY_CREATIVE_BRIEF_HEADINGS)
+        if legacy
+        else _brief()
+    )
     concepts: tuple[ConceptProjection, ...]
     if reason == "no_concepts_generated":
         concepts = ()
-    elif reason == "all_candidates_failed_hook":
+    elif reason in {
+        "all_candidates_failed_hook",
+        "all_candidates_failed_concept_screen",
+    }:
         concepts = (
             _zero_concept(
                 outcome=DispositionOutcome.ELIMINATED,
                 stage=DispositionStage.C4,
-                reason="c4_double_invalid",
+                reason=(
+                    "c4_software_demo_invalid"
+                    if reason == "all_candidates_failed_concept_screen"
+                    else "c4_double_invalid"
+                ),
+                legacy=legacy,
             ),
         )
     elif reason == "shortlist_empty":
@@ -500,6 +522,18 @@ def _zero_projection(reason: str) -> CreativeReportProjection:
         final_ideas=(),
         zero_reason_code=reason,
         empty_batch_skip_reason=reason if skipped else None,
+        route_contract_version=(
+            LEGACY_CREATIVE_CONTRACT_VERSION if legacy else "2"
+        ),
+        prompt_policy_version=(
+            LEGACY_CREATIVE_PROMPT_POLICY_VERSION if legacy else "2"
+        ),
+        stage_policy_version=(
+            LEGACY_CREATIVE_STAGE_POLICY_VERSION if legacy else "2"
+        ),
+        report_policy_version=(
+            LEGACY_CREATIVE_REPORT_POLICY_VERSION if legacy else "2"
+        ),
     )
 
 
@@ -588,10 +622,11 @@ class CreativeReportTests(unittest.TestCase):
             bundle.report_markdown.sha256,
         )
 
-    def test_all_four_zero_reasons_have_per_candidate_explanation(self) -> None:
+    def test_all_zero_reasons_have_per_candidate_explanation(self) -> None:
         reasons = (
             "no_concepts_generated",
             "all_candidates_failed_hook",
+            "all_candidates_failed_concept_screen",
             "shortlist_empty",
             "all_human_rejected",
         )

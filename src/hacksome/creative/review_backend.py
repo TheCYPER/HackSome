@@ -23,6 +23,7 @@ from hacksome.artifacts import (
 from hacksome.creative.artifacts import (
     CONCEPT_HEADINGS,
     EVIDENCE_REVISION_HEADINGS,
+    LEGACY_CONCEPT_HEADINGS,
     MEMORY_REMIX_HEADINGS,
     NOVELTY_SCAN_HEADINGS,
 )
@@ -49,13 +50,25 @@ _REVIEWER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 class RunReviewBackend:
     """ReviewBackend implementation backed by one review-ready Creative run."""
 
-    schema_version = 1
-
     def __init__(self, run_dir: str | Path) -> None:
         try:
             self.hub = RunHub(run_dir)
             self.hub.reconcile_pending()
             state = self.hub.load_state()
+            route = state.get("route")
+            contract_version = (
+                route.get("contract_version")
+                if isinstance(route, dict)
+                else None
+            )
+            if contract_version == "1":
+                self.schema_version = 1
+            elif contract_version == "2":
+                self.schema_version = 2
+            else:
+                raise ReviewValidationError(
+                    "unsupported Creative contract for human review"
+                )
             batch_artifact_id, batch, review_round, _wait = self._load_binding(state)
             self.batch_artifact_id = batch_artifact_id
             self.batch = batch
@@ -340,9 +353,18 @@ class RunReviewBackend:
         if record.get("sha256") != binding.concept_sha256:
             raise ReviewStaleError(f"Concept hash changed for {concept_ref}")
         markdown = self.hub.read_artifact(concept_ref)
+        route = state.get("route")
+        contract_version = (
+            route.get("contract_version") if isinstance(route, dict) else None
+        )
+        concept_headings = (
+            LEGACY_CONCEPT_HEADINGS
+            if contract_version == "1"
+            else CONCEPT_HEADINGS
+        )
         validate_markdown(
             markdown,
-            required_h2=CONCEPT_HEADINGS + EVIDENCE_REVISION_HEADINGS,
+            required_h2=concept_headings + EVIDENCE_REVISION_HEADINGS,
             label=f"review Concept {concept_ref}",
         )
         metadata = _metadata(record, concept_ref)
@@ -369,6 +391,19 @@ class RunReviewBackend:
             ),
             "core_mechanism": section_body(
                 markdown, "Real Input, Transformation and Output"
+            ),
+            "software_core_and_runtime": (
+                section_body(markdown, "Software Core and Runtime")
+                if contract_version != "1"
+                else section_body(
+                    markdown,
+                    "Real Input, Transformation and Output",
+                )
+            ),
+            "share_trigger_and_artifact": (
+                section_body(markdown, "Share Trigger and Artifact")
+                if contract_version != "1"
+                else ""
             ),
             "minimum_hackathon_demo": section_body(markdown, "Minimum Hackathon Demo"),
             "novelty": novelty,
@@ -455,6 +490,10 @@ class RunReviewBackend:
                 state,
                 concepts=concepts,
             ),
+            "feasibility_evidence": self._feasibility_evidence(
+                state,
+                concepts=concepts,
+            ),
             "uncovered_concept_refs": [
                 item.concept_ref for item in snapshot.coverage if not item.covered
             ],
@@ -471,6 +510,102 @@ class RunReviewBackend:
             },
         }
 
+    def _feasibility_evidence(
+        self,
+        state: Mapping[str, Any],
+        *,
+        concepts: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Project verified C4F evidence only to the curator workbench.
+
+        Contract-v1 waiting runs do not have C4F artifacts. They intentionally
+        produce an empty list while remaining reviewable.
+        """
+
+        rows: list[dict[str, Any]] = []
+        for concept in concepts:
+            concept_ref = str(concept["concept_ref"])
+            concept_record = _artifact_record(
+                state,
+                concept_ref,
+                expected_type="creative_concept",
+            )
+            metadata = _metadata(concept_record, concept_ref)
+            review_ref = metadata.get("software_demo_review_ref")
+            if review_ref is None:
+                continue
+            if not isinstance(review_ref, str) or not review_ref:
+                raise ReviewValidationError(
+                    f"{concept_ref} software_demo_review_ref must be a string"
+                )
+            _artifact_record(
+                state,
+                review_ref,
+                expected_type="creative_software_demo_review",
+            )
+            try:
+                raw = json.loads(self.hub.read_artifact(review_ref))
+            except (json.JSONDecodeError, UnicodeError) as exc:
+                raise ReviewValidationError(
+                    f"Software Demo Review {review_ref} is not valid JSON"
+                ) from exc
+            payload = _json_object(
+                raw,
+                label=f"Software Demo Review {review_ref}",
+            )
+            dimensions = payload.get("dimensions")
+            if not isinstance(dimensions, list):
+                raise ReviewValidationError(
+                    f"Software Demo Review {review_ref} dimensions must be an array"
+                )
+            projected_dimensions: list[dict[str, Any]] = []
+            for index, dimension in enumerate(dimensions):
+                item = _json_object(
+                    dimension,
+                    label=(
+                        f"Software Demo Review {review_ref} "
+                        f"dimension {index + 1}"
+                    ),
+                )
+                reason_code = item.get("reason_code")
+                if reason_code is not None and not isinstance(reason_code, str):
+                    raise ReviewValidationError(
+                        f"{review_ref} reason_code must be a string or null"
+                    )
+                projected_dimensions.append(
+                    {
+                        "dimension": _non_empty_string(
+                            item.get("dimension"),
+                            f"{review_ref} dimension",
+                        ),
+                        "verdict": _non_empty_string(
+                            item.get("verdict"),
+                            f"{review_ref} verdict",
+                        ),
+                        "reason_code": reason_code,
+                        "evidence": _non_empty_string(
+                            item.get("evidence"),
+                            f"{review_ref} evidence",
+                        ),
+                    }
+                )
+            rows.append(
+                {
+                    "concept_ref": concept_ref,
+                    "review_ref": review_ref,
+                    "overall_decision": _non_empty_string(
+                        payload.get("overall_decision"),
+                        f"{review_ref} overall_decision",
+                    ),
+                    "dimensions": projected_dimensions,
+                    "markdown": _non_empty_string(
+                        payload.get("markdown"),
+                        f"{review_ref} markdown",
+                    ),
+                }
+            )
+        return rows
+
     def _feedback_fragment_projection(
         self,
         fragment: FeedbackFragment,
@@ -481,7 +616,19 @@ class RunReviewBackend:
                 value
                 for value in (
                     _optional_text(payload.get("one_sentence_retell")),
+                    (
+                        "share="
+                        + _optional_text(payload.get("share_impulse"))
+                        if _optional_text(payload.get("share_impulse"))
+                        else ""
+                    ),
                     _optional_text(payload.get("share_target")),
+                    (
+                        "demo="
+                        + _optional_text(payload.get("demo_confidence"))
+                        if _optional_text(payload.get("demo_confidence"))
+                        else ""
+                    ),
                     _optional_text(payload.get("comment")),
                 )
                 if value
@@ -682,6 +829,15 @@ class RunReviewBackend:
         state: Mapping[str, Any],
         concept_ref: str,
     ) -> str:
+        route = state.get("route")
+        contract_version = (
+            route.get("contract_version") if isinstance(route, dict) else None
+        )
+        concept_headings = (
+            LEGACY_CONCEPT_HEADINGS
+            if contract_version == "1"
+            else CONCEPT_HEADINGS
+        )
         visited: set[str] = set()
         current = concept_ref
         while current not in visited:
@@ -695,7 +851,7 @@ class RunReviewBackend:
             try:
                 validate_markdown(
                     markdown,
-                    required_h2=CONCEPT_HEADINGS + MEMORY_REMIX_HEADINGS,
+                    required_h2=concept_headings + MEMORY_REMIX_HEADINGS,
                     label=f"Memory challenger {current}",
                 )
             except ArtifactError:

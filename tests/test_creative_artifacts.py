@@ -15,6 +15,9 @@ from hacksome.creative.artifacts import (
     HOOK_REASON_BY_DIMENSION,
     MEMORY_REMIX_HEADINGS,
     NOVELTY_SCAN_HEADINGS,
+    PORTFOLIO_DIMENSIONS,
+    SOFTWARE_DEMO_DIMENSIONS,
+    SOFTWARE_DEMO_REASON_BY_DIMENSION,
     compose_final_idea_card,
     normalized_hook,
     validate_creative_output,
@@ -24,9 +27,11 @@ from hacksome.creative.contracts import (
     C2_TERRITORY_EXPLORE,
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REVIEW,
+    C4_SOFTWARE_DEMO_REVIEW,
     C5M_MEMORY_REMIX,
     C5W_NOVELTY_SCAN,
     C6A_EVIDENCE_REVISE,
+    C6B_PORTFOLIO_CURATE,
     C6C_FEEDBACK_REVISE,
     CreativeWorkflowSettings,
 )
@@ -158,6 +163,22 @@ class CreativeArtifactValidationTests(unittest.TestCase):
                 {"concepts": [concept, duplicate]},
                 settings=SETTINGS,
             )
+        missing_runtime = dict(
+            concept,
+            markdown=concept["markdown"].replace(
+                "## Software Core and Runtime",
+                "## Runtime Details",
+            ),
+        )
+        with self.assertRaisesRegex(
+            CreativeArtifactError,
+            "Software Core and Runtime",
+        ):
+            validate_creative_output(
+                C3_CONCEPT_SYNTHESIZE,
+                {"concepts": [missing_runtime]},
+                settings=SETTINGS,
+            )
 
     def test_hook_review_requires_stable_dimension_order_and_reason_mapping(
         self,
@@ -191,6 +212,82 @@ class CreativeArtifactValidationTests(unittest.TestCase):
                 C4_CHEAP_HOOK_REVIEW,
                 output,
                 settings=SETTINGS,
+            )
+
+    def test_software_demo_review_is_ordered_and_reason_bound(self) -> None:
+        dimensions = [
+            {
+                "dimension": dimension,
+                "verdict": "pass",
+                "reason_code": None,
+                "evidence": "The browser runs a real end-to-end transformation.",
+            }
+            for dimension in SOFTWARE_DEMO_DIMENSIONS
+        ]
+        output = {
+            "overall_decision": "pass",
+            "dimensions": dimensions,
+            "markdown": "# Software Demo Review\n\nAll dimensions pass.",
+        }
+
+        validate_creative_output(
+            C4_SOFTWARE_DEMO_REVIEW,
+            output,
+            settings=SETTINGS,
+        )
+        dimensions[1]["verdict"] = "fail"
+        dimensions[1]["reason_code"] = SOFTWARE_DEMO_REASON_BY_DIMENSION[
+            "hardware_independence"
+        ]
+        output["overall_decision"] = "invalid"
+        validate_creative_output(
+            C4_SOFTWARE_DEMO_REVIEW,
+            output,
+            settings=SETTINGS,
+        )
+        dimensions[1]["reason_code"] = (
+            SOFTWARE_DEMO_REASON_BY_DIMENSION["hackathon_scope"]
+        )
+        with self.assertRaisesRegex(
+            CreativeArtifactError,
+            "requires_custom_hardware",
+        ):
+            validate_creative_output(
+                C4_SOFTWARE_DEMO_REVIEW,
+                output,
+                settings=SETTINGS,
+            )
+
+    def test_portfolio_decision_is_mechanical_not_a_score(self) -> None:
+        reference = "creative-concept-s01-01-r002"
+        row = {
+            "concept_ref": reference,
+            "decision": "include",
+            "dimensions": [
+                {
+                    "dimension": dimension,
+                    "verdict": "pass",
+                    "reason": "Categorical reason.",
+                    "evidence": "Exact Concept evidence.",
+                }
+                for dimension in PORTFOLIO_DIMENSIONS
+            ],
+            "rationale": "All categorical dimensions pass.",
+            "possible_duplicate_refs": [],
+        }
+        validate_creative_output(
+            C6B_PORTFOLIO_CURATE,
+            {"classifications": [row]},
+            settings=SETTINGS,
+            context={"allowed_concept_refs": {reference}},
+        )
+        row["dimensions"][0]["verdict"] = "uncertain"
+        with self.assertRaisesRegex(CreativeArtifactError, "mechanically"):
+            validate_creative_output(
+                C6B_PORTFOLIO_CURATE,
+                {"classifications": [row]},
+                settings=SETTINGS,
+                context={"allowed_concept_refs": {reference}},
             )
 
     def test_memory_remix_requires_complete_composite_refs(self) -> None:

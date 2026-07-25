@@ -21,12 +21,94 @@ from hacksome.prompting import (
 
 
 class PromptingTests(unittest.TestCase):
+    def test_creative_c3_requires_demo_de_risking_details(self) -> None:
+        template = creative_prompt_catalog[
+            "creative-concept-synthesize"
+        ].template_path.read_text(encoding="utf-8")
+        normalized = " ".join(template.split())
+
+        for marker in (
+            "Cold-start 30-second path",
+            "Required subsystems and integration surfaces",
+            "Riskiest technical assumption",
+            "Hook-preserving fallback slice",
+            "two people in 24 hours",
+            "at most one simple backend",
+            "one primary browser/device target",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, normalized)
+        self.assertIn("pre-opened second device", normalized)
+        self.assertIn("Return zero Concepts", normalized)
+
+    def test_creative_c4f_challenges_api_name_dropping_and_hidden_setup(
+        self,
+    ) -> None:
+        template = creative_prompt_catalog[
+            "creative-software-demo-review"
+        ].template_path.read_text(encoding="utf-8")
+
+        self.assertIn("standard Web APIs", template)
+        self.assertIn("components,\nnot evidence", template)
+        self.assertIn("conservative reference budget", template)
+        self.assertIn("two people, 24 hours", template)
+        self.assertIn("pre-seeded state", template)
+        self.assertIn("independently risky subsystems", template)
+        self.assertIn("overall decision `repairable`", template)
+        self.assertIn("high sharing and operator friction", template)
+        self.assertIn("do not make it a hard failure by itself", template)
+
+    def test_creative_c4h_requires_independent_retell_and_share_check(
+        self,
+    ) -> None:
+        template = creative_prompt_catalog[
+            "creative-cheap-hook-review"
+        ].template_path.read_text(encoding="utf-8")
+
+        self.assertIn("do not quote, copy, or lightly rearrange", template)
+        self.assertIn("`Reviewer retell:`", template)
+        self.assertIn("`Deviation:`", template)
+        self.assertIn("Judge this independently", template)
+        self.assertIn("why that person would open or continue it", template)
+        self.assertIn("recipient-side evidence", template)
+
+    def test_creative_c6b_checks_repetition_friction_and_demo_complexity(
+        self,
+    ) -> None:
+        template = creative_prompt_catalog[
+            "creative-portfolio-curate"
+        ].template_path.read_text(encoding="utf-8")
+
+        self.assertIn("not permission\nto rubber-stamp it", template)
+        self.assertIn("Standard API names are not integration proof", template)
+        self.assertIn("ready-to-send artifact", template)
+        self.assertIn("Manual screen-recording/trim/upload", template)
+        self.assertIn("across the entire supplied pool", template)
+        self.assertIn("possible_duplicate_refs", template)
+        self.assertIn("never list the Concept itself", template)
+        self.assertIn("Complexity is not surprise", template)
+
+    def test_creative_revision_prompts_preserve_demo_readiness(self) -> None:
+        repair = creative_prompt_catalog[
+            "creative-cheap-hook-repair"
+        ].template_path.read_text(encoding="utf-8")
+        evidence = creative_prompt_catalog[
+            "creative-evidence-revise"
+        ].template_path.read_text(encoding="utf-8")
+
+        self.assertIn("cold-start 30-second path", repair)
+        self.assertIn("Hook-preserving fallback slice", repair)
+        self.assertIn("Do not invent extra people, time, services", repair)
+        self.assertIn("Preserve or strengthen", evidence)
+        self.assertIn("falsifying spike", evidence)
+        self.assertIn("must not reintroduce", evidence)
+
     def test_creative_c2_prompt_forbids_collapsed_atom_sections(self) -> None:
         template = creative_prompt_catalog[
             "creative-territory-explore"
         ].template_path.read_text(encoding="utf-8")
 
-        self.assertIn("Use those eight H2 headings verbatim", template)
+        self.assertIn("Use those nine H2 headings verbatim", template)
         self.assertIn("Do not\ncompress them into one section", template)
         for heading in (
             "Territory",
@@ -36,6 +118,7 @@ class PromptingTests(unittest.TestCase):
             "Transformation",
             "Reveal",
             "Aftertaste",
+            "Software Surface and Demo Proof",
             "Challenge Fit and Risks",
         ):
             self.assertEqual(template.count(f"## {heading}\n"), 1)

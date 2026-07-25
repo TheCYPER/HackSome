@@ -39,6 +39,7 @@ def _review_payload(
     reviewer_name: str = "Percy 🐉",
     concept_indexes: tuple[int, ...] = (0,),
     supersedes_review_id: str | None = None,
+    schema_version: int | None = 2,
 ) -> dict[str, Any]:
     concept_reviews = [
         {
@@ -46,6 +47,14 @@ def _review_payload(
             "concept_sha256": review_round.concepts[index].concept_sha256,
             "one_sentence_retell": "观众转动旋钮，然后整间房发现自己改的是同一个秘密。",
             "share_target": "会把它转发给做装置艺术的朋友",
+            **(
+                {
+                    "share_impulse": "immediate",
+                    "demo_confidence": "yes",
+                }
+                if schema_version == 2
+                else {}
+            ),
             "reactions": {
                 "surprise": "yes",
                 "fun": "yes",
@@ -67,7 +76,7 @@ def _review_payload(
                 "reason": "左边的机制更容易在三十秒内讲清楚。",
             }
         )
-    return {
+    payload = {
         "review_id": review_id,
         "round_id": review_round.round_id,
         "round_sha256": review_round.round_sha256,
@@ -79,6 +88,9 @@ def _review_payload(
         "overall_comment": "值得继续，但别把神秘感解释得太满。",
         "supersedes_review_id": supersedes_review_id,
     }
+    if schema_version is not None:
+        payload["schema_version"] = schema_version
+    return payload
 
 
 def _resolution_payload(
@@ -146,7 +158,13 @@ class CreativeReviewTests(unittest.TestCase):
             settings={},
             codex_config=CodexConfig(),
             run_id="creative-run",
-            route="creative",
+            route={
+                "id": "creative",
+                "contract_version": "2",
+                "prompt_policy_version": "2",
+                "stage_policy_version": "2",
+                "report_policy_version": "2",
+            },
         )
         self.batch = ReviewBatch.build(
             run_id=self.hub.run_id,
@@ -187,6 +205,12 @@ class CreativeReviewTests(unittest.TestCase):
         self.assertEqual(pair[0].left_ref, _concept(1).concept_ref)
         with self.assertRaisesRegex(ReviewValidationError, "more than 8"):
             canonical_adjacent_pairs(tuple(_concept(index) for index in range(1, 10)))
+        skipped = ReviewBatch.build(
+            run_id=self.hub.run_id,
+            concepts=(),
+            skip_reason="all_candidates_failed_concept_screen",
+        )
+        self.assertEqual(skipped.status, "skipped_empty")
 
     def test_reviewer_display_swap_never_changes_canonical_pair(self) -> None:
         pair = self.review_round.pairs[0]
@@ -211,6 +235,9 @@ class CreativeReviewTests(unittest.TestCase):
 
         self.assertEqual(review.reviewer_name, "Percy 🐉")
         self.assertEqual(review.independence, "pre_reveal")
+        self.assertEqual(review.schema_version, 2)
+        self.assertEqual(review.concept_reviews[0].share_impulse, "immediate")
+        self.assertEqual(review.concept_reviews[0].demo_confidence, "yes")
         self.assertEqual(
             review.concept_reviews[0].feedback_ref,
             f"review-one:concept:{self.review_round.concepts[0].concept_ref}",
@@ -220,6 +247,109 @@ class CreativeReviewTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["submitted_at"], "2026-07-23T01:00:00+00:00")
         self.assertEqual(records[0]["reviewer_name"], "Percy 🐉")
+        self.assertEqual(records[0]["schema_version"], 2)
+        self.assertEqual(
+            records[0]["concept_reviews"][0]["share_impulse"],
+            "immediate",
+        )
+
+    def test_v2_signals_are_hash_bound_and_immediate_requires_target(self) -> None:
+        payload = _review_payload(self.review_round)
+        baseline = self.store.submit_review(payload)
+        fragment = baseline.concept_reviews[0]
+        self.assertEqual(
+            fragment.feedback_sha256,
+            self.store.feedback_fragments()[0].feedback_sha256,
+        )
+
+        changed = _review_payload(
+            self.review_round,
+            review_id="review-two",
+            reviewer_id="reviewer-two",
+        )
+        changed["concept_reviews"][0]["share_impulse"] = "maybe"
+        second = self.store.submit_review(changed)
+        self.assertNotEqual(
+            second.concept_reviews[0].feedback_sha256,
+            fragment.feedback_sha256,
+        )
+
+        invalid = _review_payload(
+            self.review_round,
+            review_id="review-three",
+            reviewer_id="reviewer-three",
+        )
+        invalid["concept_reviews"][0]["share_target"] = "   "
+        with self.assertRaisesRegex(ReviewValidationError, "share_target"):
+            self.store.submit_review(invalid)
+
+    def test_legacy_v1_receipt_without_new_signals_remains_readable(self) -> None:
+        legacy_hub = RunHub.create(
+            "Legacy Creative review",
+            self.root,
+            settings={},
+            codex_config=CodexConfig(),
+            run_id="creative-run-v1",
+            route="creative",
+        )
+        legacy_batch = ReviewBatch.build(
+            run_id=legacy_hub.run_id,
+            concepts=(_concept(1),),
+        )
+        legacy_round = ReviewRound.open(legacy_batch)
+        legacy_store = ReviewStore(
+            legacy_hub,
+            legacy_round,
+            clock=_Clock(),
+        )
+        legacy_store.initialize()
+        legacy = legacy_store.submit_review(
+            _review_payload(
+                legacy_round,
+                schema_version=None,
+            )
+        )
+        self.assertEqual(legacy.schema_version, 1)
+        self.assertIsNone(legacy.concept_reviews[0].share_impulse)
+        self.assertIsNone(legacy.concept_reviews[0].demo_confidence)
+        record = read_jsonl(legacy_store.reviews_path)[0]
+        self.assertNotIn("schema_version", record)
+        self.assertNotIn("share_impulse", record["concept_reviews"][0])
+
+        reloaded = ReviewStore(
+            legacy_hub,
+            legacy_round,
+            clock=_Clock(),
+        ).latest_receipts()
+        self.assertEqual(reloaded, (legacy,))
+        with self.assertRaisesRegex(
+            ReviewValidationError,
+            "run contract",
+        ):
+            self.store.submit_review(
+                _review_payload(self.review_round, schema_version=None)
+            )
+        with self.assertRaisesRegex(
+            ReviewValidationError,
+            "run contract",
+        ):
+            legacy_store.submit_review(
+                _review_payload(
+                    legacy_round,
+                    review_id="legacy-v2",
+                    schema_version=2,
+                )
+            )
+
+    def test_v2_payload_requires_signals_and_rejects_unknown_version(self) -> None:
+        missing = _review_payload(self.review_round)
+        del missing["concept_reviews"][0]["demo_confidence"]
+        with self.assertRaisesRegex(ReviewValidationError, "missing fields"):
+            self.store.submit_review(missing)
+        with self.assertRaisesRegex(ReviewValidationError, "schema_version"):
+            self.store.submit_review(
+                _review_payload(self.review_round, schema_version=3)
+            )
 
     def test_review_retry_is_idempotent_and_reuses_server_timestamp(self) -> None:
         payload = _review_payload(self.review_round)

@@ -20,13 +20,13 @@
           "dimension": {
             "type": "string",
             "enum": [
-              "setup_legibility",
-              "expectation_shift",
-              "mechanism_driven_surprise",
-              "thirty_second_moment",
-              "one_sentence_retell",
-              "capability_integrity",
-              "share_trigger"
+              "software_first_core",
+              "hardware_independence",
+              "technical_demo_substance",
+              "end_to_end_demo_path",
+              "dependency_integrity",
+              "hackathon_scope",
+              "core_proof"
             ]
           },
           "verdict": {
@@ -37,13 +37,13 @@
             "type": ["string", "null"],
             "enum": [
               null,
-              "setup_not_quickly_legible",
-              "reveal_does_not_shift_expectation",
-              "surprise_not_mechanism_driven",
-              "misses_thirty_second_moment",
-              "not_one_sentence_retainable",
-              "requires_hidden_labor_or_impossible_capability",
-              "share_trigger_not_immediate_or_concrete"
+              "core_not_software_first",
+              "requires_custom_hardware_or_fabrication",
+              "core_is_manual_performance_or_installation",
+              "no_runnable_end_to_end_demo_path",
+              "requires_unavailable_dependency_or_permission",
+              "not_buildable_within_hackathon_budget",
+              "demo_does_not_prove_core_mechanism"
             ]
           },
           "evidence": {"type": "string", "minLength": 1}
